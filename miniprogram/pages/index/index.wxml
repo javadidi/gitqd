@@ -1,0 +1,56 @@
+<view class="page-index">
+  <!-- 搜索栏 -->
+  <view class="search-bar">
+    <view class="search-input-wrap">
+      <text class="search-icon">🔍</text>
+      <input class="search-input" placeholder="搜索科室、医生、疾病" placeholder-class="search-placeholder" />
+    </view>
+  </view>
+
+  <!-- 快捷入口 -->
+  <view class="card">
+    <view class="quick-entries">
+      <view
+        wx:for="{{quickEntries}}"
+        wx:key="id"
+        class="quick-entry-item"
+        data-url="{{item.url}}"
+        data-label="{{item.label}}"
+        bindtap="onQuickEntryTap"
+      >
+        <view class="entry-icon-wrap">
+          <text class="entry-icon">{{item.icon === 'calendar' ? '📅' : item.icon === 'wallet' ? '💰' : item.icon === 'clock' ? '⏰' : item.icon === 'credit-card' ? '💳' : item.icon === 'file-text' ? '📋' : item.icon === 'book' ? '📖' : item.icon === 'pill' ? '💊' : '❤️'}}</text>
+        </view>
+        <text class="entry-label">{{item.label}}</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 公告通知 -->
+  <view class="card" wx:if="{{notices.length > 0}}">
+    <view class="section-title">公告通知</view>
+    <view wx:for="{{notices}}" wx:key="id" class="notice-item">
+      <text class="notice-text">{{item.title}}</text>
+      <text class="text-muted">{{item.time}}</text>
+    </view>
+  </view>
+
+  <!-- 健康百科 -->
+  <view class="card">
+    <view class="flex-between">
+      <text class="section-title" style="margin-bottom:0">健康百科</text>
+      <text class="text-muted">更多 ></text>
+    </view>
+    <view class="health-articles">
+      <view wx:for="{{healthArticles}}" wx:key="id" class="article-item">
+        <view class="article-info">
+          <text class="article-title">{{item.title}}</text>
+          <text class="text-muted">{{item.summary}}</text>
+        </view>
+      </view>
+      <view wx:if="{{healthArticles.length === 0}}" class="empty-hint">
+        <text class="text-muted">暂无健康百科内容</text>
+      </view>
+    </view>
+  </view>
+</view>

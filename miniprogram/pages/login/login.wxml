@@ -1,0 +1,43 @@
+<view class="page-login">
+  <view class="login-header">
+    <text class="login-logo">🏥</text>
+    <text class="login-title">医疗预约挂号</text>
+    <text class="login-subtitle">便捷就医，从预约开始</text>
+  </view>
+
+  <view class="login-body">
+    <button class="btn-primary login-btn" bindtap="onWechatLogin" loading="{{verifying}}">
+      微信一键登录
+    </button>
+
+    <view class="divider">
+      <view class="divider-line"></view>
+      <text class="divider-text">或</text>
+      <view class="divider-line"></view>
+    </view>
+
+    <view class="phone-login">
+      <view class="input-wrap">
+        <text class="input-prefix">+86</text>
+        <input
+          class="phone-input"
+          type="number"
+          maxlength="11"
+          placeholder="请输入手机号"
+          value="{{phoneNumber}}"
+          bindinput="onPhoneInput"
+        />
+      </view>
+      <button class="btn-outline login-btn" bindtap="onPhoneLogin">
+        手机号登录
+      </button>
+    </view>
+  </view>
+
+  <view class="login-footer">
+    <text class="text-muted">登录即表示同意</text>
+    <text class="text-primary"> 《用户服务协议》</text>
+    <text class="text-muted">和</text>
+    <text class="text-primary"> 《隐私政策》</text>
+  </view>
+</view>

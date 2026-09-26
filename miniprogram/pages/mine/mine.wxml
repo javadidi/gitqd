@@ -1,0 +1,45 @@
+<view class="page-mine">
+  <!-- 用户信息区 -->
+  <view class="user-section">
+    <view wx:if="{{isLoggedIn}}" class="user-info">
+      <view class="user-avatar">
+        <text>👤</text>
+      </view>
+      <view class="user-detail">
+        <text class="user-name">用户</text>
+        <text class="text-muted">欢迎使用医疗预约服务</text>
+      </view>
+    </view>
+    <view wx:else class="user-info" bindtap="onLoginTap">
+      <view class="user-avatar">
+        <text>👤</text>
+      </view>
+      <view class="user-detail">
+        <text class="login-hint">点击登录</text>
+        <text class="text-muted">登录后享受更多服务</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 菜单列表 -->
+  <view wx:for="{{menuItems}}" wx:key="group" class="menu-group">
+    <view class="menu-group-title">{{item.group}}</view>
+    <view class="card" style="margin-bottom: 0;">
+      <view
+        wx:for="{{item.items}}"
+        wx:for-item="menuItem"
+        wx:key="label"
+        class="menu-item"
+        data-url="{{menuItem.url}}"
+        data-label="{{menuItem.label}}"
+        bindtap="onMenuTap"
+      >
+        <view class="flex-row" style="gap: 20rpx;">
+          <text class="menu-icon">{{menuItem.icon}}</text>
+          <text class="menu-label">{{menuItem.label}}</text>
+        </view>
+        <text class="menu-arrow">></text>
+      </view>
+    </view>
+  </view>
+</view>

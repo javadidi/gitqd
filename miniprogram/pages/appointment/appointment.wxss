@@ -1,0 +1,67 @@
+.page-appointment {
+  padding: 24rpx;
+}
+
+.dept-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.dept-item {
+  padding: 16rpx 32rpx;
+  background: #f5f5f5;
+  border-radius: 8rpx;
+  font-size: 26rpx;
+  color: #666;
+}
+
+.dept-item.active {
+  background: #2563eb;
+  color: #fff;
+}
+
+.doctor-item {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.doctor-item:last-child {
+  border-bottom: none;
+}
+
+.doctor-avatar {
+  width: 80rpx;
+  height: 80rpx;
+  border-radius: 50%;
+  background: #f0f5ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 20rpx;
+  font-size: 36rpx;
+}
+
+.doctor-info {
+  flex: 1;
+}
+
+.doctor-name {
+  font-size: 30rpx;
+  font-weight: 500;
+}
+
+.doctor-title {
+  font-size: 22rpx;
+  color: #2563eb;
+  background: #f0f5ff;
+  padding: 2rpx 12rpx;
+  border-radius: 4rpx;
+}
+
+.empty-hint {
+  padding: 60rpx 0;
+  text-align: center;
+}

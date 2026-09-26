@@ -1,0 +1,31 @@
+# ---- 构建产物 ----
+# Maven（backend/target 含编译类、jar、surefire 报告）
+target/
+# Vite（admin/dist 是 npm run build 的输出）
+dist/
+# 依赖树，体积大且可由 package-lock.json 完整复原
+node_modules/
+
+# ---- 本地/私有配置 ----
+# 微信开发者工具的本机设置（appid、编译开关等），官方约定不进版本库；
+# 团队共享的 miniprogram/project.config.json 照常提交
+miniprogram/project.private.config.json
+# 环境变量与本地数据库覆盖
+.env
+.env.*
+application-local.yml
+
+# ---- 日志与临时文件 ----
+*.log
+logs/
+tmp/
+*.orig
+*.rej
+
+# ---- 编辑器与操作系统 ----
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini

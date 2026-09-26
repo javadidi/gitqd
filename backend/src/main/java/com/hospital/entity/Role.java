@@ -1,0 +1,12 @@
+package com.hospital.entity;
+
+public class Role extends BaseEntity {
+
+    private String name;
+    private String permissions;
+
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
+    public String getPermissions() { return permissions; }
+    public void setPermissions(String permissions) { this.permissions = permissions; }
+}

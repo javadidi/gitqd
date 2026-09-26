@@ -1,0 +1,37 @@
+<view class="page-appointment">
+  <view class="card">
+    <view class="section-title">选择科室</view>
+    <view class="dept-list">
+      <view
+        wx:for="{{departments}}"
+        wx:key="id"
+        class="dept-item {{selectedDept.id === item.id ? 'active' : ''}}"
+        data-dept="{{item}}"
+        bindtap="onDeptTap"
+      >
+        <text>{{item.name}}</text>
+      </view>
+    </view>
+    <view wx:if="{{departments.length === 0}}" class="empty-hint">
+      <text class="text-muted">科室数据将在 T10 任务卡中加载</text>
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{selectedDept}}">
+    <view class="section-title">{{selectedDept.name}} - 医生列表</view>
+    <view class="doctor-list">
+      <view wx:for="{{doctors}}" wx:key="id" class="doctor-item">
+        <view class="doctor-avatar">
+          <text>👨‍⚕️</text>
+        </view>
+        <view class="doctor-info">
+          <view class="flex-row" style="gap: 12rpx;">
+            <text class="doctor-name">{{item.name}}</text>
+            <text class="doctor-title">{{item.titleName}}</text>
+          </view>
+          <text class="text-muted">{{item.specialty}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>
