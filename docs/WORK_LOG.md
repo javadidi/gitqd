@@ -1710,6 +1710,28 @@ JS 204.01 → 210.21 kB（+6.2）、CSS 18.93 → 19.34 kB。这次是真接线�
 
 两条硬取证：**(1)** 红条那句 `验证码错误或已失效` 在 `admin/src` 全树 grep **零命中**（`No files found`），它只存在于后端 `ErrorCode.CAPTCHA_INVALID` —— 证明消息真来自后端 4003，不是前端写死的文案。**(2)** 三个角色的落地页由后端 `landingPage` 字段驱动、经白名单映射，浏览器地址栏逐条对上 T03 第 6 项。
 
+**第二轮补跑（提交 `8db7c9f` 之后，在一台全新的 dev server 上）**：第一轮是在上一会话遗留的进程里验的，端口与进程归属不清，所以提交后重开一台 server 再走一遍，并且把第一轮漏掉的三件事补上。
+
+先记一个**环境陷阱，跟代码无关但会骗人**：`TaskStop` 在这台 Windows 上只杀 bash 包装层，**子进程存活** —— `mvn spring-boot:run` 留下孤儿 `java.exe`（`netstat -ano | grep ':8080'` → PID 24640，`Get-CimInstance Win32_Process` 反查命令行末尾正是 `com.hospital.HospitalApplication`），`npm run dev` 留下孤儿 `node.exe` 占着 3000。结果新起的 Vite 静默漂移：
+
+```
+Port 3000 is in use, trying another one...
+  VITE v5.4.21  ready in 401 ms
+  ➜ Local: http://localhost:3001/
+```
+
+所以 `curl http://localhost:3000` 拿到 200 **不能证明我起的 server 起来了**，只证明有个旧的还活着。本轮全部改在 **3001** 上做。孤儿后端倒是可以复用 —— 先用只读 `curl http://localhost:8080/api/auth/captcha` 证实它跑的就是本卡代码（返回 `code:200` + `captchaKey` + PNG base64，且 `redis-cli --scan --pattern 'captcha:*'` 立刻扫到 `captcha:0ad04c6c…`），确认归属之后才敢拿它当验收对象。
+
+| 补验项 | 原始数据 |
+|---|---|
+| 第 4 个角色 `system` 登录（读图 `D8Q6`） | `Page navigated to http://localhost:3001/`，档案 `role:"system"`、8 模块、`caps:[APPROVE_REFUND,EDIT_SETTINGS,MANAGE_DOCTOR]`、`landingPage:"/dashboard"`；侧边栏底部 `S` / `system` / `系统管理员` |
+| 点「刷新验证码」按钮（不提交表单） | 图片 `len 4154 → 5090`、中段 `AAAL4E → AAAOoE`，验证码输入框保持 `""` —— 换图走的是 `loadCaptcha`，不是登录失败后的那条路径 |
+| **只删 token、保留档案**后真导航到 `/hospital/doctor` | 弹回 `href=http://localhost:3001/login`、`hasLoginForm:true`。这一条专门验 `RequireAuth` 里 `!isAuthenticated \|\| !getToken()` 的后半句：档案还在 `localStorage` 里，光看 `profile` 会放行，`getToken()` 每次现读存储才拦得住（对应 401 拦截器清 token 的那一刻） |
+| 占位页 `EmptyState` 的动作按钮 | 在 nurse 的 `/appointments/registration` 点「返回数据看板」→ `Page navigated to http://localhost:3001/`，浏览器真跳转，不是只断言按钮存在 |
+| 控制台 | `error` **0 条**（整轮跑完）；`warn` 2 条全是 react-router v6 的 future-flag 提示（`v7_startTransition` / `v7_relativeSplatPath`），属决策 (d) 里推迟到 react-router-dom 7 那张卡处理 |
+
+**顺带把 T06-E 的缺口在浏览器里钉死了**：`system` 档案有 8 个模块，`doctor` 只有 4 个（`dashboard/schedule/appointment/report`），但两者的侧边栏 `navigation` 节点完全一样 —— 都是「首页 / 预约管理 / 费用管理 / 医院管理 / 系统设置」四组全在。医生看得见"费用管理"和"系统设置"入口，正是任务卡第 341 行「4 角色登录导航项与 PRD 角色表逐条对上（护士无收费、医生无设置）」要消灭的东西。数据已经到位（`profile.modules` 就在档案里），缺的只是让 `AppLayout` 去读它。
+
 **本卡明确没做（不是漏了）**：
 
 | 未做 | 归属 | 原因 |
