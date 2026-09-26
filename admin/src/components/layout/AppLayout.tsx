@@ -35,15 +35,26 @@ export default function AppLayout() {
           collapsed ? 'w-16' : 'w-64',
         )}
       >
-        <div className="flex h-14 items-center gap-2 border-b px-4">
-          <Stethoscope className="h-6 w-6 text-primary" />
+        {/* 折叠态 w-16 只有 64px，装不下 图标+标题+按钮(96px)，flex 会把按钮压到点不中；
+            所以折叠时头部只放居中的按钮，展开时才渲染图标与标题 */}
+        <div
+          className={cn(
+            'flex h-14 items-center border-b',
+            collapsed ? 'justify-center px-2' : 'gap-2 px-4',
+          )}
+        >
           {!collapsed && (
-            <span className="text-base font-semibold tracking-tight">医疗预约管理</span>
+            <>
+              <Stethoscope className="h-6 w-6 shrink-0 text-primary" />
+              <span className="truncate text-base font-semibold tracking-tight">
+                医疗预约管理
+              </span>
+            </>
           )}
           <Button
             variant="ghost"
             size="icon"
-            className="ml-auto h-8 w-8"
+            className={cn('h-8 w-8 shrink-0', !collapsed && 'ml-auto')}
             onClick={() => setCollapsed(!collapsed)}
             aria-label={collapsed ? '展开侧边栏' : '折叠侧边栏'}
             title={collapsed ? '展开侧边栏' : '折叠侧边栏'}

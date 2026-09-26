@@ -1912,7 +1912,147 @@ JS 从 211.87 → 257.18 kB（+45 kB）。这个涨幅在预期内：上一刀�
 2. **侧边栏折叠按钮**同样因为桌面形态不可见而没点到；它和抽屉是两条独立的状态，折叠态下顶栏仍保留退出入口这一改动已被单测与代码路径覆盖。
 3. 抽屉内部的分组展开点击有一次 `Element could not be scrolled into the viewport`（窗口不可见导致真实滚动失败），改用了 DOM 级 `click()`；顶栏按钮和表单控件都是真实点击/填写。
 
-**当前状态**：代码 + 单测 + 4 角色浏览器验收完成，控制台 **0 error**（5 条消息里只有 vite debug、React DevTools info、2 条已挂账的 react-router v6 future-flag 建议）。**未提交**。
+**当前状态**：代码 + 单测 + 4 角色浏览器验收完成，控制台 **0 error**（5 条消息只有 vite debug、React DevTools info、2 条已挂账的 react-router v6 future-flag 建议）。已提交为 `47df29b`（8 文件 / +583 / −122）。
+
+---
+
+### T06-F · 收口门禁 + 附录 D（2026-09-26 起、09-27 续）
+
+**本卡的真实范围**：卡片第 320–343 行的 6 项「要做什么」与 J13 都已经在前几刀里做完并各自提交过了，所以 T06-F 不写新功能，只做附录 D（第 829–851 行）规定的收口动作：全量门禁 + 4 角色人工验收补漏 + 收尾提交。DoD 是「🚩 M0 地基完成」。
+
+**J13 的归属更正**：我最初把「J13 自检测试」挂在 T06-F 的待办上，核对后确认它**已经在 T06-B/C 交付**，不在本卡重做：
+
+| 证据 | 位置 |
+|---|---|
+| 单元测试 4 例（绿侧 + 覆盖率逐条对卡片 + 改坏数字 + 越界值） | `backend/src/test/java/com/hospital/SeedCheckTest.java` |
+| CLI 级绿侧（真启动 `--seed-check`） | 本文件第 1371 行起 |
+| CLI 级红侧（手改 `remaining_slots` 20→0，**不带 `--seed`** 跑，EXIT=1，改回 EXIT=0） | 本文件第 1380 行起 |
+
+#### 收口门禁 · 后端全量
+
+命令：`cd backend && mvn clean test`（**有意不加 `-q`**，见下方偏离表），输出重定向到临时文件后逐字摘取，退出码由重定向捕获而非管道末段：
+
+```
+MVN_EXIT=0
+[INFO] Tests run: 61, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+[INFO] Total time:  33.384 s
+[INFO] Finished at: 2026-09-26T21:37:45+08:00
+[ERROR] 行数：0
+```
+
+12 个测试类，**逐类求和 = 61，与汇总行一致**（防止「某类被跳过却不报数」）：
+
+| 测试类 | 用例 | 耗时 | 归属 |
+|---|---|---|---|
+| `AuditFieldFillTest` | 3 | 7.967s | T06-0 `updated_at` 填充 |
+| `AuditLogTest` | 3 | 0.144s | T04 审计同事务 |
+| `AuthIntegrationTest` | 7 | 1.532s | T03 登录 / JWT |
+| `FlywayMigrationTest` | 1 | 1.027s | T02/T03 V1+V2 |
+| `MoneyMaskingTest` | 7 | 0.056s | T04 金额裁剪 |
+| `SeedCheckTest` | 4 | 0.255s | **T06 J13** |
+| `SeedConstraintTest` | 4 | 0.183s | T06 唯一索引负向 fixture |
+| `CaptchaIntegrationTest` | 8 | 1.542s | T06-A 验证码 |
+| `CaptchaServiceTest` | 5 | 0.049s | T06-A |
+| `PermissionServiceTest` | 9 | 0.015s | T03 4 角色 × 8 模块 |
+| `SerialNumberServiceTest` | 3 | 0.008s | T02 |
+| `TaskKernelTest` | 7 | 0.357s | T05 J9–J12 |
+
+唯一警告是 JVM 自己的 `WARNING: A terminally deprecated method in sun.misc.Unsafe has been called`（Maven/依赖带入，非本项目代码）。已知副作用照常发生：`audit_log` 里 `APPROVE_REFUND` 行随每次 `mvn test` 增长（T04 遗留），所以任何计数断言必须按 `action + target_type + target_id` 过滤，禁止 `COUNT(*)`。
+
+#### 收口门禁 · 前端四连
+
+命令：`cd admin && npm run typecheck && npm run lint && npm run test && npm run build`，`&&` 串联使任一项非 0 即断链，退出码取整链：
+
+```
+GATES_EXIT=0
+> tsc --noEmit                     → 无输出（0 error）
+> eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0
+                                   → 无任何输出（0 error / 0 warning，且 max-warnings 0 未触发）
+> vitest run                       → Test Files 14 passed (14) / Tests 75 passed (75) / Duration 58.57s
+> tsc && vite build                → ✓ 1475 modules transformed · built in 11.88s
+                                     dist/assets/index-0gJx26oI.js 257.18 kB │ gzip: 83.04 kB
+```
+
+14 个测试文件逐档求和 11+3+8+3+3+4+3+9+3+2+4+7+8+7 = **75**，与汇总一致。日志中 8 处 `stderr` 全部是 react-router v6 的 v7 future-flag 提示，按决定 (d) 归属各自的大版本升级卡，不在本卡处置。**`vitest --ui` 全程未启动**（CRITICAL 公告唯一可达路径）。
+
+`npm run build` 之后 `git status --short` 仍只剩 `?? admin/curl`（用户自建的 0 字节文件，一贯不动）；`git check-ignore -v admin/dist/index.html` 回 `.gitignore:5:dist/`，证明构建产物没有污染仓库。因此**本卡无新增代码待提交，收尾提交只含这段 WORK_LOG**。
+
+#### 对附录 D 的三处有意偏离（逐条报备，不是漏做）
+
+| 卡片原文 | 实际执行 | 理由 |
+|---|---|---|
+| `mvn -q clean test` | `mvn clean test` | `-q` 会连 Surefire 的 `Tests run:` 汇总行一起吞掉，我就无法给出逐字证据；「验了多少条」是本卡 DoD 的组成部分 |
+| `pnpm typecheck && pnpm lint && pnpm build` | `npm run …` | 本工程自 T01 起就用 npm（`package-lock.json`），仓库里没有 pnpm 锁文件；照抄会引入第二套包管理器 |
+| `git add -A` | 按文件名 `git add <路径>` | `-A` 会把 `admin/curl` 这类未跟踪的本会话无关文件一起收进提交；附录 D 的意图是「别漏文件」，逐项列名可审计性更强 |
+
+#### 4 角色人工验收 · 已完成部分（本卡前的 4 刀累计，逐条对卡片第 341 行）
+
+| 角色 | 侧栏实见结果 | 持有模块键 | 卡片第 341 行要求 |
+|---|---|---|---|
+| `system` | 首页 / 预约管理 / 费用管理 / 医院管理 / 系统设置（5 组全见，28 条链接） | `*` | 满态参照 ✓ |
+| `admin` | 同上 5 组 | 8 键 | ✓ |
+| `doctor` | 只剩首页 / 预约管理，**费用管理·医院管理·系统设置三组整组不见** | `dashboard,schedule,appointment,report` | 「医生无设置」✓ |
+| `nurse` | 首页 / 预约管理 / 医院管理 / 系统设置，**费用管理不见**；展开医院管理只有 3 个体检项 | 6 键（无 `finance`/`settings`） | 「护士无收费」✓ |
+
+403 双向取证：`doctor` 手敲 `/hospital/doctors` → `无访问权限` + `/hospital/doctors · module=settings` + 「返回数据看板」按钮，`location.href` **原地不动**（不静默跳首页）；`nurse` 手敲 `/finance/refund` → 同页 `module=finance`，而她访问有权限的 `/hospital/physical-packages` 正常渲染。整轮控制台 0 error。
+
+#### 桌面 ≥1024px 形态 · 仍未验（本卡唯一开放项）
+
+这一项要求真实媒体查询命中，jsdom 不计算媒体查询，所以单测覆盖不了「断点切换正确」。取证的三次尝试：
+
+| 尝试 | 结果 | 结论 |
+|---|---|---|
+| `window.resizeTo(1600,900)` | `outerWidth` 变了，`innerWidth` 仍 785，`matchMedia('(min-width:1024px)').matches === false` | Chrome 对非脚本弹窗的 `resizeTo` 只动外框 |
+| `browser-use` 是否有 viewport/resize 工具 | `mcp_list(keyword="viewport")` → `{"tools":[],"total":0}` | 工具面没有提供 |
+| `press_key("Control+-")` 缩小页面缩放 | 按后 `innerWidth` 785、`devicePixelRatio` 1.5 **均未变** | 该按键是 DOM 级派发，进不了 Chrome 的缩放快捷键通道 |
+
+当前实测基线（写这段时复测）：`{ innerWidth: 785, lg: false, asideDisplay: "none", url: "http://localhost:3001/" }`。`dpr = 1.5` 说明 Windows 缩放 150%，`lg` 门槛 1024 CSS px 需要窗口 ≥1536 物理 px，而现状只有约 1178 物理 px。
+
+**因此挂起三项人工确认**，等窗口拉宽后补：① 桌面 `aside` 可见且吃到与抽屉同一份 `filterNav` 结果；② 折叠按钮把 `w-64` 切到 `w-16` 后，退出登录仍从顶栏可达（这是删除侧栏底部身份卡所修的真 bug）；③ 面包屑随路由更新且长标题走 `truncate` 不撑破 header。
+
+**明确拒绝的取巧做法**：往页面注入 CSS 强行显示 `aside`。`hidden lg:flex` 这一行的被测对象正是那条媒体查询，注入等于绕过机制，测出来的「正常」是假的——与卡片第 336 行「宁少勿假」同一把尺子。
+
+#### 桌面 ≥1024px 形态 · 复验通过 + 一个真 bug 的侦破（2026-09-27）
+
+**载体澄清**：桌面形态最终是在**用户自己的宽 Chrome**（`innerWidth: 1448`）里验的；受控浏览器（630/785px）永远命中不了 `lg`。两个窗口并存直接造成了前两轮探针取错窗口——第一轮 JSON 里 `btn: [0,0,0,0]` 不是按钮被压扁，而是探针跑在了 `aside` 为 `display:none` 的窄窗口上（隐藏元素的矩形全 0）。
+
+**真 bug（已修）**：折叠态 `w-16` = 64px 的头部要装 `px-4`(32) + 听诊器(24) + `gap-2`(8) + 按钮(32) = **96px**，flex 默认 `shrink:1` 把按钮压到真鼠标点不中。判别证据（用户宽窗口 Console 探针）：
+
+```
+{"hasReactProps":true,"onClickType":"function","nativeHits":1,"ariaNow":"展开侧边栏"}
+```
+
+onClick 挂着、原生事件派发成功、状态翻转成功 —— 即**代码点击（绕开命中检测）每次都灵，真鼠标在折叠态点不中**，命中区域问题坐实。
+
+**我的测量错误（记一笔）**：更早一轮探针在 `b.click()` 之后**同步**读 DOM，看到 `after` 与 `before` 相同就断言「onClick 没执行」。React 18 对程序化 click 的 flush 不在 `click()` 返回前完成，同步读必然读到旧 DOM —— 结论错在测量，不在产品。第二轮探针（把 `innerWidth` 一起带回、并改为只读点击后的状态）才给出正确判读。
+
+**修复**（`admin/src/components/layout/AppLayout.tsx` 头部）：折叠态头部改为 `justify-center px-2` 且**只渲染居中的 32px 按钮**；展开态才渲染图标与标题，并给图标 `shrink-0`、标题 `truncate`、按钮 `shrink-0` + `ml-auto`。64px 的盒子从此只装 32px 的东西。
+
+**回归测试**：`AppLayout.test.tsx` 新增 1 例「点一下翻到折叠态：aside 变 w-16、标题消失；再点一下翻回来」，该文件 9 例全绿；全量 14 文件 **76 例**全绿。
+
+**门禁复跑**（用户在自己的 cmd 里亲自执行 `cd admin && npm run typecheck && npm run lint && npm run test && npm run build`）：
+
+```
+Test Files  14 passed (14)
+      Tests  76 passed (76)
+✓ 1475 modules transformed · built in 3.77s
+dist/assets/index-CtduJzb4.js   257.28 kB │ gzip: 83.08 kB
+```
+
+bundle hash 由 `index-0gJx26oI.js` 变为 `index-CtduJzb4.js`，证明修复真的进了产物而非缓存。**披露**：lint 段的 `WARNING: ... YOUR TYPESCRIPT VERSION: 5.9.3`（@typescript-eslint 支持范围 `<5.4.0`）横幅**两轮都在**，我上一轮 grep 用小写 `warning` 过滤、漏看了大写 `WARNING:` 这行；它是 stderr 版本提示而非规则告警，`--max-warnings 0` 不受其影响（链能走到 vitest 即 eslint 退出码 0）。归属 T01 依赖版本账。
+
+**桌面验收勾单（卡片第 323/341 行）**：
+
+| 项 | 证据 |
+|---|---|
+| 桌面 `aside` 可见，且与抽屉吃同一份 `filterNav` | 用户 1448px 截图：首页(高亮) + 预约管理 4 项 + 费用管理 6 项 + 医院管理（截图内 10 项、余下在滚动区）+ 系统设置（滚动区下），与 admin 满态 28 链接一致 |
+| 折叠 ↔ 展开真鼠标可用 | 修复前：折叠态点不中（本 bug）；修复后用户真鼠标点开为展开态（截图即展开态），回归用例守住双向翻转 |
+| 面包屑随路由更新 | 受控浏览器 `navigate /finance/refund` → `nav[aria-label="面包屑"]` 内文 `费用管理 | 退款记录`；用户截图 `/` → `首页` |
+| 长标题不撑破 header | 1448px 截图 header 单行完整；`truncate` 类在 `TopBar` 面包屑 span 与侧栏标题上 |
+| 顶栏其余件 | 截图：命令面板按钮 + `⌘K` 键帽、头像 `A` + `admin` + `医院管理员` + 下拉箭头 |
+
+**仍存在的覆盖限制（如实记）**：受控浏览器到不了 `lg`，所以「断点切换」本身永远只有用户肉眼 + jsdom 单测（jsdom 不计算媒体查询）两层覆盖，没有自动化断言能证明 `min-width:1024px` 这条媒体查询自身的行为 —— 那是浏览器引擎的职责，不是本卡的。
 
 
 

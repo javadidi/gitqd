@@ -95,6 +95,25 @@ describe('AppLayout 移动端抽屉（卡片第 323 行「折叠/移动抽屉」
   })
 })
 
+describe('AppLayout 桌面侧栏折叠按钮（卡片第 323 行「折叠」）', () => {
+  it('点一下翻到折叠态：aside 变 w-16、标题消失；再点一下翻回来', async () => {
+    seed('admin', ['dashboard', 'schedule', 'appointment', 'finance', 'report', 'physical', 'settings', 'system'])
+    renderAt('/')
+    const aside = document.querySelector('aside')
+    expect(aside?.className).toContain('w-64')
+    expect(screen.getByText('医疗预约管理')).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: '折叠侧边栏' }))
+    expect(aside?.className).toContain('w-16')
+    // 折叠态头部只留居中的按钮：64px 装不下图标+标题+按钮，硬装会把按钮压到点不中
+    expect(screen.queryByText('医疗预约管理')).toBeNull()
+
+    await userEvent.click(screen.getByRole('button', { name: '展开侧边栏' }))
+    expect(aside?.className).toContain('w-64')
+    expect(screen.getByText('医疗预约管理')).toBeInTheDocument()
+  })
+})
+
 describe('AppLayout 模块级 403', () => {
   it('医生手敲 /hospital/doctors → 403 页，业务内容一个字都不渲染', () => {
     seed('doctor', ['dashboard', 'schedule', 'appointment', 'report'])
