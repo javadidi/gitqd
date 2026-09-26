@@ -29,6 +29,7 @@ public enum ErrorCode {
 
     PERMISSION_DENIED(4001, "权限不足"),
     ROLE_NOT_FOUND(4002, "角色不存在"),
+    CAPTCHA_INVALID(4003, "验证码错误或已失效"),
 
     DATA_NOT_FOUND(5001, "数据不存在"),
     DATA_ALREADY_EXISTS(5002, "数据已存在"),

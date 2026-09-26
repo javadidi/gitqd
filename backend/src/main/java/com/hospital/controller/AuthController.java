@@ -10,11 +10,13 @@ import com.hospital.exception.BizException;
 import com.hospital.mapper.AdminMapper;
 import com.hospital.mapper.RoleMapper;
 import com.hospital.security.LoginUser;
+import com.hospital.service.CaptchaService;
 import com.hospital.service.PermissionService;
 import com.hospital.util.JwtUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.validation.Valid;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -32,21 +34,34 @@ public class AuthController {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
     private final PermissionService permissionService;
+    private final CaptchaService captchaService;
 
     public AuthController(AdminMapper adminMapper,
                           RoleMapper roleMapper,
                           PasswordEncoder passwordEncoder,
                           JwtUtil jwtUtil,
-                          PermissionService permissionService) {
+                          PermissionService permissionService,
+                          CaptchaService captchaService) {
         this.adminMapper = adminMapper;
         this.roleMapper = roleMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
         this.permissionService = permissionService;
+        this.captchaService = captchaService;
+    }
+
+    @GetMapping("/captcha")
+    public Result<CaptchaService.Captcha> captcha() {
+        return Result.success(captchaService.generate());
     }
 
     @PostMapping("/login")
     public Result<LoginResponse> login(@Valid @RequestBody LoginRequest request) {
+        // 先消费验证码再查库：验证码一次性作废，密码错也要重新取图，防止脱机爆破
+        if (!captchaService.verifyAndConsume(request.getCaptchaKey(), request.getCaptchaCode())) {
+            throw new BizException(ErrorCode.CAPTCHA_INVALID);
+        }
+
         Admin admin = adminMapper.selectOne(
                 new LambdaQueryWrapper<Admin>().eq(Admin::getUsername, request.getUsername())
         );

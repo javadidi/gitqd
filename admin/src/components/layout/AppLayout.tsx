@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
-import { removeToken } from '@/api/client'
+import { roleLabel, useAuth } from '@/store/auth'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -154,10 +154,11 @@ function SidebarNavItem({ item, collapsed }: { item: NavItem; collapsed: boolean
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false)
   const navigate = useNavigate()
+  const { profile, signOut } = useAuth()
 
   const handleLogout = () => {
-    removeToken()
-    navigate('/login')
+    signOut()
+    navigate('/login', { replace: true })
   }
 
   return (
@@ -192,15 +193,27 @@ export default function AppLayout() {
         <div className="border-t p-3">
           <div className="flex items-center gap-3">
             <Avatar className="h-8 w-8">
-              <AvatarFallback className="text-xs">管</AvatarFallback>
+              <AvatarFallback className="text-xs">
+                {profile?.username.slice(0, 1).toUpperCase() ?? '?'}
+              </AvatarFallback>
             </Avatar>
             {!collapsed && (
               <div className="flex-1 overflow-hidden">
-                <p className="truncate text-sm font-medium">管理员</p>
+                <p className="truncate text-sm font-medium">{profile?.username ?? '未登录'}</p>
+                {profile && (
+                  <p className="truncate text-xs text-muted-foreground">{roleLabel(profile.role)}</p>
+                )}
               </div>
             )}
             {!collapsed && (
-              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleLogout}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8"
+                onClick={handleLogout}
+                aria-label="退出登录"
+                title="退出登录"
+              >
                 <LogOut className="h-4 w-4" />
               </Button>
             )}

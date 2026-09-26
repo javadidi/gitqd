@@ -1617,3 +1617,109 @@ JS 从 203.20 → 204.01 kB，正是上一节预言的那一跳：`PageHeader`/`
 
 **`/login` 目前仍是占位页**（标 `prd=4.1 card=T06`），T06-A 会把它换成真登录页；在那之前它带着一个"返回数据看板"的按钮，属于已知的过渡状态。
 
+### T06-A · 真登录页 + 图形验证码 + 路由守卫 + 角色落地页
+
+**卡片范围与出处**：这张活不是 T06 新造的，是 **T03 欠的三笔**在 T06 还：
+
+| 来源 | 原文 | 归属 |
+|---|---|---|
+| 任务卡 T03 第 2 项 | `/login`：账号密码 + 验证码 | 验证码整条顺延（见本文 `WORK_LOG.md:634`：「不做图形验证码……留待 T06 管理后台前端一起补」） |
+| 任务卡 T03 第 5 项 | 未认证 401、认证无权限 403；前端按权限渲染侧边栏 + **路由守卫兜底** | 本卡只做"路由守卫兜底"，侧边栏归 T06-E |
+| 任务卡 T03 第 6 项 | 落地页：管理员→`/dashboard`，医生→`/schedule`，护士→`/appointments` | 后端 `resolveLandingPage` 早已实现，缺的是前端消费 |
+| PRD §4.1 | 管理员账号密码登录 / 支持验证码 / 登录后进入管理后台首页 | 见下面"两处规格打架" |
+
+**先说一个排查结论**：`POST /auth/login` 其实**早就返回 `token/adminId/username/role/modules/caps/landingPage` 全套**（`AuthController.java:73-80`），`LoginResponse` 一个字段都不缺。真正缺的只有验证码这一环，以及前端从来没调用过这个接口 —— `api/client.ts` 自 T01 建好以来全站零调用点。所以本卡是"补两刀 + 接线"，不是重写。
+
+**后端改动**：
+
+| 文件 | 改了什么 |
+|---|---|
+| `service/CaptchaService.java` | 新建。`BufferedImage` + `Graphics2D` 手绘 120×40 PNG，`ImageIO` 编码后 Base64；答案写 Redis `captcha:{key}`，TTL 5 分钟 |
+| `dto/LoginRequest.java` | 新增 `captchaKey` / `captchaCode`，均 `@NotBlank` |
+| `common/ErrorCode.java` | 新增 `CAPTCHA_INVALID(4003, "验证码错误或已失效")` |
+| `controller/AuthController.java` | 新增 `GET /auth/captcha`；`login` 首行先消费验证码 |
+| `config/SecurityConfig.java` | `permitAll` 从 `/auth/login` 扩到 `/auth/login, /auth/captcha` |
+| `service/CaptchaServiceTest.java` | 新建，5 用例（纯函数，不连 Redis） |
+| `service/CaptchaIntegrationTest.java` | 新建，8 用例（真连 Redis + MockMvc 打登录接口） |
+
+**三个刻意的决定**：
+
+1. **验证码一次性，且猜错也作废**。`verifyAndConsume` 取出后无条件 `delete`。理由：如果只有猜对才删，攻击者就能拿同一张图穷举 33⁴≈118 万种组合；取出即删把"一图一试"变成硬约束。
+2. **先验验证码，再查库**。`login` 的第一条语句就是验证码校验，密码对不对根本走不到。否则验证码形同虚设 —— 拿有效验证码可以无限速地试密码。
+3. **字符集剔除 `0/O/1/I/l`**。`ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ"`（32 个字符）。这是纯可用性决定：用户分不清"是零还是 O"就会报"验证码明明对了却说不匹配"。
+
+**两处规格打架，怎么裁的**：PRD §4.1 说「登录后进入管理后台首页（数据看板）」，任务卡 T03 第 6 项说三个角色各落各的页。取**任务卡**（更具体、且后端 `resolveLandingPage` 已按它实现并有测试）。但卡片里的 `/dashboard`、`/schedule`、`/appointments` 是**字面路径，本项目的真实路由表里一个都不存在**（首页是 `/`，排班是 `/appointments/schedule`）。所以前端 `store/auth.ts` 里放了一张映射表，它同时兼任白名单：
+
+```ts
+const LANDING_ROUTES: Record<string, string> = {
+  '/dashboard': '/',
+  '/schedule': '/appointments/schedule',
+  '/appointments': '/appointments/registration',
+}
+export function resolveLanding(landingPage?: string | null): string {
+  return (landingPage && LANDING_ROUTES[landingPage]) || '/'
+}
+```
+
+表外的值一律回首页。**为什么不干脆改后端返回真实路径**：路由表是前端的知识，后端不该知道前端有几级路径；把"语义"（哪个角色落哪类页）留在后端、把"坐标"（那页在前端是哪条 route）留在前端，两边各自拥有自己该拥有的。
+
+**开放重定向这条红线怎么守的**：T06-C 那节记录过 react-router@6 的开放重定向公告，处置条件是"落地目标必须走白名单、绝不接受用户可控的 redirect 参数"。本卡落实为两点：(a) 上面那张 `LANDING_ROUTES`；(b) `RequireAuth` 里 `<Navigate to="/login" replace />` **刻意不带 `?redirect=` 也不带 `location.state`**，源码里写了注释说明原因。带 redirect 参数是登录页最常见的写法，也正好是公告描述的可达面 —— 未登录访问 `/finance/refund` 只会记住"要登录"，不会把 `/finance/refund` 存起来等登录后跳回去。
+
+**我自己写的两个错，都是"凭印象写 API"**：
+
+| 错 | 编译器原话 | 正解 |
+|---|---|---|
+| `image.setRgb(...)` | `找不到符号` `CaptchaService.java:[88,22]` | JDK 是 `BufferedImage.setRGB`，RGB 全大写 |
+| `Duration ttl = redisTemplate.getExpire(key)` | `不兼容的类型: java.lang.Long无法转换为java.time.Duration` | `getExpire(K)` 返回剩余**秒数** `Long`，不是 `Duration` |
+
+另外测试初稿里我写了个 `storedCodeOfFreshCaptcha(String ignored)` 靠 `lastCaptchaKey` 字段在方法间传状态 —— 自己写完立刻换成 `private record FreshCaptcha(String key, String code)`，隐式侧信道比多一个类型名贵得多。
+
+**环境插曲（不是代码问题，但值得记）**：`mvn test` 第一次跑之前，`docker ps` 报 `failed to connect to the docker API … daemon is running` —— Docker Desktop 没开，Redis 容器不在。先探端口定性：`6379 → Connection refused`、`3306 → OPEN`，确认是"Redis 单独没起"而不是"整套都没了"（本机 MySQL 是原生安装，不在 compose 里）。拉起 Docker Desktop 时我先猜了 `C:\Program Files\Docker\Docker\Docker Desktop.exe`，报「系统找不到文件」；`find` 出来真路径是 **`E:\docker_desktop\Docker Desktop.exe`**。起来后 `docker exec hospital-redis redis-cli ping` → `PONG` 才开跑。**这一步不能省**：Redis 不在，`CaptchaIntegrationTest` 8 条会全挂，看起来像代码错了。
+
+**lint 又撞 react-refresh**：`store/auth.tsx` 同时导出组件 `AuthProvider` 和非组件 `resolveLanding`/`roleLabel`/`useAuth`，报 3 条 warning，`--max-warnings 0` 直接失败。和 T04-E 那次同因，但这次**不能删导出**（都是真在用的），所以按规则自己的建议拆文件：`store/auth.ts`（类型 + 纯函数 + Context + `useAuth`）与 `store/AuthProvider.tsx`（只有组件）。这也是本仓第二次因这条规则返工 —— 结论值得背下来：**`.tsx` 里放组件，`.ts` 里放逻辑**。
+
+**四道门 + 后端**：
+
+```
+=== 后端 ===   [INFO] Tests run: 61, Failures: 0, Errors: 0, Skipped: 0
+               [INFO] BUILD SUCCESS
+               （48 → 61：CaptchaServiceTest 5 + CaptchaIntegrationTest 8）
+=== test ===   Test Files  10 passed (10)
+                    Tests  46 passed (46)   （26 → 46，新增 20）
+=== tsc ===    TSC_OK（无输出）
+=== lint ===   LINT_EXIT=0
+=== build ===  ✓ 1416 modules transformed · built in 3.30s
+ dist/assets/index-BO39MUeR.css   19.34 kB │ gzip:  4.64 kB
+ dist/assets/index-CCylqOAM.js   210.21 kB │ gzip: 67.72 kB
+```
+
+JS 204.01 → 210.21 kB（+6.2）、CSS 18.93 → 19.34 kB。这次是真接线：`LoginPage` 与 auth store 被 `App.tsx` import，不再被 tree-shaking 丢掉。
+
+**浏览器实测（不是只跑单测）**：起了 `mvn spring-boot:run` + `npm run dev`，用 browser-use 打开 `http://localhost:3000`。
+
+| 场景 | 观测到的原始数据 |
+|---|---|
+| 未登录直敲 `/finance/refund` | 落到 `href=http://localhost:3000/login`，`pathname=/login`，`search=""`，`history.state.usr=null` |
+| 读图登录 admin | 截图上肉眼读出 `F X R Y`，填 `admin/admin123` → `href=/`，`localStorage.hospital_token` = PRESENT，档案 8 模块 + 3 能力 |
+| 侧边栏底部 | `admin` / `医院管理员` / 头像 `A`（原来写死"管理员"） |
+| 点「退出登录」 | `Page navigated to http://localhost:3000/login`，`token=null`、`profile=null` |
+| 故意填错验证码（`NE2F` 填成 `ZZZZ`） | 红条 `验证码错误或已失效`；验证码输入框被清空；图片 base64 长度 `4742 → 4022`、中段取样 `AAANmU → AAALf0`（**确认真换了一张图**，不是只清输入）；`token` 仍 null、仍在 `/login` |
+| 换图后填对 `FTWY`（doctor） | `Page navigated to http://localhost:3000/appointments/schedule`，档案 `modules` 只剩 4 项、`caps: []` |
+| 清空存储后直敲 `/` | 弹回 `/login` |
+| 护士 `DNSZ` 登录 | `Page navigated to http://localhost:3000/appointments/registration` |
+
+两条硬取证：**(1)** 红条那句 `验证码错误或已失效` 在 `admin/src` 全树 grep **零命中**（`No files found`），它只存在于后端 `ErrorCode.CAPTCHA_INVALID` —— 证明消息真来自后端 4003，不是前端写死的文案。**(2)** 三个角色的落地页由后端 `landingPage` 字段驱动、经白名单映射，浏览器地址栏逐条对上 T03 第 6 项。
+
+**本卡明确没做（不是漏了）**：
+
+| 未做 | 归属 | 原因 |
+|---|---|---|
+| 按模块权限裁剪侧边栏 | T06-E | 卡片把"导航按 T03 权限动态裁剪"写在布局项下，属 T06-E |
+| 认证无权限 → 403 页（T03 人工验收「手敲无权限路由 → 403 页面，非静默跳首页」） | T06-E | **需要"路由 → 模块键"映射表**，而这张表现在定不下来：模块键 `report` 在 `App.tsx` 无任何 `/report*` 路由（PRD §4 也没有对应章节），医院管理/体检又对不上 `settings`/`physical` 的字面语义。硬凑一张映射表就是凭猜实现，宁可等 T06-E 连着导航一起定 |
+| `⌘K` 命令面板 / 任务红点 / 用户下拉 | T06-E | 卡片布局项 |
+| 登录失败次数锁定、验证码音频替代 | 无规格 | PRD 与任务卡都没提，不做 |
+| 登录页没用 react-hook-form + zod | 无规格（且我一度误记成卡片要求） | 卡片第 118 行那条红线原文只管「**弹窗**表单不用 shadcn Dialog+Form」，登录页是独立页不是弹窗；第 178 行只要求 T01 把 rhf+zod **装进依赖**。三字段单页表单硬套 RHF 只会多出一层 `Controller`，属凭猜实现，所以取受控 `Input` + 原生 `required`。**教训**：任务卡里没有的措辞不要写进任务描述，否则下一次会当成欠了债去"还" |
+
+**过渡状态**：`/login` 不再是占位页了，`App.tsx` 里那条 `prd="4.1" card="T06"` 的占位路由已被 `LoginPage` 取代。
+
+
