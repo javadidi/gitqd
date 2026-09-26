@@ -1494,3 +1494,69 @@ slot_mismatch=0   past_open_appt=0
 
 `fixAvailable` 对这几条全都报 `isSemVerMajor: true`（vite 8.3.1 / vitest 5.0.2 / react-router-dom 7.18.4）—— 三个 major 一起升是另开一张卡的工程，混进 T06 违反"不实现业务功能"的红线边界。处置决定：① 从不启动 `vitest --ui`，把 critical 的可达面钉死为零；② vite/esbuild/vite-node 属开发期专用面，接受；③ react-router 两条已用 grep 证明今天不可达 —— 全站只有 `AppLayout.tsx:94/135` 的 `to={item.to}`（硬编码 navItems）和 `AppLayout.tsx:160` 的 `navigate('/login')`，`main.tsx:6` 是 `createRoot` 不是 SSR hydration，没有一处把用户输入喂给 `to`/`href`。**⚠️ 这条结论对 T06-A 有直接约束**：登录成功后的角色落地页跳转一旦接受用户可控的 redirect 参数，就正好造出该公告说的可达面，所以 `sendRedirect` 目标必须走白名单。
 
+### T06-D · 补齐 6 个业务组件 + 各自渲染测试
+
+**卡片范围**：任务卡第 3 项「补齐 6 组件：StatusBadge/PageHeader/EmptyState/MetricCard/ConfirmDialog/PatientCell，各带渲染测试」，职责定义在 §2.2 的十组件表，视觉约束在 §2.1 设计令牌 + §2.3 反面清单。
+
+**新增/改动文件（`wc -l` 实测，不是估的）**：
+
+| 文件 | 行数 | 性质 |
+|---|---|---|
+| `admin/src/components/ui/dialog.tsx` | 95 | 新建。radix `@radix-ui/react-dialog@1.1.23` 之前装了但**从没包过**，`ConfirmDialog` 立在它上面 |
+| `admin/src/components/ui/textarea.tsx` | 18 | 新建。`requireReason` 的输入控件 |
+| `admin/src/components/ui/avatar.tsx` | 26 → 37 | 补 `AvatarImage`。原文件只有 `Avatar` + `AvatarFallback`，无法显示真实头像 |
+| `admin/src/components/business/StatusBadge.tsx` | 97 | 新建 |
+| `admin/src/components/business/PageHeader.tsx` | 23 | 新建 |
+| `admin/src/components/business/EmptyState.tsx` | 32 | 新建 |
+| `admin/src/components/business/MetricCard.tsx` | 45 | 新建 |
+| `admin/src/components/business/ConfirmDialog.tsx` | 88 | 新建 |
+| `admin/src/components/business/PatientCell.tsx` | 26 | 新建 |
+| 上述 6 个组件的 `*.test.tsx` | 合计 228 行 / 6 文件 / 24 用例 | 与组件同名同目录（`include: ['src/**/*.test.{ts,tsx}']`） |
+| `admin/src/components/business/AuditTimeline.tsx` | 改 1 行 | `groupByTargetDesc` 去掉 `export`（见下文"lint 第一次变绿"） |
+| `admin/src/test/setup.ts` | 1 → 9 | 补 `afterEach(cleanup)` |
+
+（第一版这段我是凭写完的印象填的行数，`wc -l` 一量六项全偏，故按实测重写 —— 日志里的数字要能复核。）
+
+**StatusBadge 的色板不是凭感觉定的**。两处规范来源，逐个状态都能落到行号：
+
+- 取值域 = `V1__init.sql` 各表 `status` 列注释的并集，共 20 个值：`PENDING_PAYMENT/CONFIRMED/CANCELLED/COMPLETED`(L124)、`PENDING/SUCCESS/REFUNDED`(L147/L163)、`APPROVED/REJECTED`(L179)、`WAITING/CALLING/SERVING/DONE`(L193)、`ISSUED`(L243)、`IN_PROGRESS`(L318)、`SHIPPED/DELIVERED`(L334)、`REPLIED/CLOSED`(L363)、`OPEN`(L422)。
+- 色调 = §2.1 六行令牌：成功 `emerald-600`、提醒 `amber-500`、危险 `rose-600`、信息 `sky-600`、灰 `zinc-400`、品牌 `blue-600`（后者对应 `index.css:11` 的 `--primary`，即 shadcn 默认主题就是 blue-600，所以主按钮无需特殊处理）。
+
+`PENDING` 在缴费表语义是"待缴费"、在退款表是"待审核"，同一个值两种文案 —— 所以留了 `label` prop 让调用方改名，但**色板仍按状态取**（测试第 4 用例钉的正是这条：`label="待审核"` 时文案变了、`data-tone` 仍是 `warning`）。未登记的值一律退回 `neutral` 并原样显示状态字符串，不会静默变成空白徽章。§2.1「禁止纯色圆点」由"图标 + 文字 + 颜色"三重编码满足，测试里用 `container.querySelector('svg')` 断言图标确实在 DOM 里。
+
+**`EmptyState` 的"必带下一步动作"做成了编译期约束**：`action: React.ReactNode` 无问号，漏传直接报类型错。测试第 3 用例用 `// @ts-expect-error` 把这条钉死 —— 如果哪天有人把它改成可选，`@ts-expect-error` 会变成"未使用的指令"从而让 `tsc` 失败，等于给反面清单加了个编译器守卫。
+
+**`ConfirmDialog` 用 shadcn Dialog 但没用 react-hook-form**（一个刻意的偏离，说明理由）：§2.3 要求"弹窗表单用 shadcn Dialog+Form"，而本组件的表单只有一个必填字符串。RHF 的收益是字段联动、批量校验和订阅式重渲染，单字段一个都不涉及，硬套只会多出一层 `Controller`。所以取 `Dialog + <label> + Textarea + Button`，`requireReason` 时确认按钮 `disabled` 直到 `reason.trim()` 非空，回调只把 trim 后的值传出去。真正的多字段业务表单在 T07+ 出现，届时再建 `ui/form.tsx`。
+
+**过程中我自己犯的四个错**（都不是组件逻辑错，值得记下来免得重犯）：
+
+1. **凭空的 API**：StatusBadge 测试初稿里我写了两次 `screen.getByTestIdPlaceholder(...)` —— testing-library **没有这个方法**，是我照着 `getByPlaceholderText` 造出来的词。改成按 `data-status` 属性查（`document.querySelector('[data-status="X"]')`），并把"查不到就抛错"写进辅助函数，避免断言悄悄空过。
+2. **`globals: false` 的连带后果**：首轮跑出 `Multiple elements found`，5 个文件里 3 个红。根因不在组件——`@testing-library/react` 的自动 cleanup 是靠检测到全局 `afterEach` 才注册的，我把 vitest 的 `globals` 关了，于是**同一文件内前一个用例的 DOM 一直挂在 `document.body` 上**。补 `afterEach(() => cleanup())` 到 `setup.ts` 后 20 个用例立刻全绿。教训：关 globals 是换来显式 import 的可读性，代价就是 cleanup 要自己接管。
+3. **编辑只改开标签不改闭标签**：把 `dialog.tsx` 里的 `<DialogPrimitive.Portal>` 换成 `<DialogPortal>` 时漏了闭标签，esbuild 报 `Unexpected closing "DialogPrimitive.Portal" tag does not match opening "DialogPortal" tag`。这个报错表现为**整个测试文件 0 个用例、suite 级失败**（`Transform failed`），而不是某条断言红，看日志时容易误判成 radix/jsdom 兼容问题。
+4. **`vi.fn()` 没 import**：`globals` 关了之后 `vi` 也要显式从 `'vitest'` 引，EmptyState 测试初稿漏了。
+
+**"lint 第一次变绿"是一笔 T04 欠账**：`npm run lint` 报 `AuditTimeline.tsx:29:17 warning react-refresh/only-export-components`，`--max-warnings 0` 直接退出非零。这不是本卡引入的——T04-E 写 `AuditTimeline` 时把纯函数 `groupByTargetDesc` 和组件放在同一文件导出，而 T04-G 当时**只跑了 typecheck 没跑 lint**，所以这条从 T04 起一直坏着。修法不是拆新文件：`grep groupByTargetDesc` 确认全项目只有该文件内部第 50 行用它，那个 `export` 本就是多余的，去掉即合规又删掉一个无人使用的出口。
+
+**四道门的最终证据**：
+
+```
+=== vitest ===
+ ✓ src/components/business/MetricCard.test.tsx    (3 tests)  74ms
+ ✓ src/components/business/StatusBadge.test.tsx   (8 tests)  87ms
+ ✓ src/components/business/PageHeader.test.tsx    (3 tests) 210ms
+ ✓ src/components/business/PatientCell.test.tsx   (3 tests) 203ms
+ ✓ src/components/business/EmptyState.test.tsx    (3 tests) 275ms
+ ✓ src/components/business/ConfirmDialog.test.tsx (4 tests) 623ms
+ Test Files  6 passed (6)
+      Tests  24 passed (24)
+
+=== tsc --noEmit ===   (无输出，退出码 0)
+=== eslint . --ext ts,tsx --max-warnings 0 ===   LINT_EXIT=0
+=== npm run build ===
+ ✓ 1408 modules transformed.
+ dist/assets/index-BjETwf-7.css   18.95 kB │ gzip:  4.53 kB
+ dist/assets/index-CUJX6ReP.js   203.20 kB │ gzip: 65.24 kB
+```
+
+**一个从 bundle 数字里读出来的事实**：CSS 从 14.04 kB 涨到 18.95 kB（新用到 `emerald/amber/rose/sky/zinc` 五色工具类），而 JS 只从 203.04 → 203.20 kB（+0.16 kB）。这 6 个组件目前**还没有任何页面 import 它们**，所以被 tree-shaking 掉了 —— 连带 radix Dialog 也没进包。符合预期（本卡红线就是不实现业务功能），但也说明它们的真正接线发生在 T06-E 的占位页与侧边栏，届时 JS 体积会明显上跳，那是正常的不是回归。
+

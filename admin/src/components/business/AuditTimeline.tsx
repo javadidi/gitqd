@@ -26,7 +26,7 @@ function timeOf(entry: AuditEntry): number {
 }
 
 /** 按 target 分组：最近被操作的对象排在最前，组内再按时间倒序 */
-export function groupByTargetDesc(entries: AuditEntry[]): AuditEntry[][] {
+function groupByTargetDesc(entries: AuditEntry[]): AuditEntry[][] {
   const groups = new Map<string, AuditEntry[]>()
   for (const entry of entries) {
     const key = targetKey(entry)
