@@ -1,27 +1,34 @@
-import { Card, CardContent } from '@/components/ui/card'
-import { Construction } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Button } from '@/components/ui/button'
+import EmptyState from '@/components/business/EmptyState'
+import PageHeader from '@/components/business/PageHeader'
 
 interface PlaceholderPageProps {
   title: string
-  module: string
+  /** PRD 章节号，例如 '4.3.1' */
+  prd: string
+  /** 实现该页面的任务卡号，例如 'T25' */
+  card: string
 }
 
-export default function PlaceholderPage({ title, module }: PlaceholderPageProps) {
+export default function PlaceholderPage({ title, prd, card }: PlaceholderPageProps) {
+  const navigate = useNavigate()
+
   return (
     <div className="space-y-4">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
-        <p className="text-muted-foreground">对应任务卡 {module}</p>
-      </div>
-      <Card>
-        <CardContent className="flex flex-col items-center justify-center py-16">
-          <Construction className="mb-4 h-12 w-12 text-muted-foreground" />
-          <p className="text-lg font-medium">功能开发中</p>
-          <p className="mt-1 text-sm text-muted-foreground">
-            此页面将在任务卡 {module} 中实现
-          </p>
-        </CardContent>
-      </Card>
+      <PageHeader
+        title={title}
+        description={`对应 PRD ${prd} / 待 ${card}`}
+      />
+      <EmptyState
+        title="功能开发中"
+        description={`此页面将在任务卡 ${card} 中实现，当前仅为占位。`}
+        action={
+          <Button variant="outline" size="sm" onClick={() => navigate('/')}>
+            返回数据看板
+          </Button>
+        }
+      />
     </div>
   )
 }
