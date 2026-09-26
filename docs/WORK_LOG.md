@@ -1408,5 +1408,82 @@ payment_record=4  recharge_record=3  refund_record=2  audit_log=3（未被动）
 
 `audit_log` 从 T05 核验时的 1 条涨到 3 条，来源是后续 `mvn test` 里 `AuditLogTest` 的运行，与种子无关。所有计数断言仍必须按 `action`+`target_type`+`target_id` 过滤，不能数总数。
 
-**db:reset 尚未跑过一次完整 DROP**：`scripts/db-reset.sh` 的第 2 步（迁移+种子+自检）已按上面对应命令逐段验证，但第 1 步 `DROP DATABASE` 是抹库动作，未征得用户同意不执行。
+### T06-C 补录 · `db:reset` 完整跑过一次真实 DROP（2026-09-26 12:51，用户批准"跑，验证一条命令到底通不通"）
+
+上面那句"尚未跑过一次完整 DROP"已作废。以下是整条命令从空库到绿的逐段证据。
+
+**跑之前的只读预检**（先确认客户端能连、凭据对、当前基线是多少，才允许执行抹库）：
+
+```
+version = 8.0.46
+patient=10  schedule=150  audit_log=3  tables=29
+```
+
+`/e/Mysql/Server/bin/mysql.exe --host=localhost --port=3306 --user=root --password=123456` —— 这组凭据不是猜的：`application.yml:13-15` 的 `${MYSQL_USER:root}` / `${MYSQL_PASSWORD:123456}` 与 `scripts/db-reset.sh:20-21` 的默认值必须同源，否则第 1 步用 root 建的库、第 2 步应用连不上，"一条命令"就是假的。
+
+**`bash scripts/db-reset.sh` 全量输出关键行**（`RESET_EXIT=0`）：
+
+| 阶段 | 日志原文 | 说明 |
+|---|---|---|
+| 清库 | `==> [1/2] 清库：localhost:3306/hospital` | DROP + CREATE，字符集 `utf8mb4 / utf8mb4_unicode_ci` 对齐 `docker-compose.yml` |
+| 迁移 | `Migrating schema 'hospital' to version "2 - init admin"` → `Successfully applied 2 migrations to schema 'hospital', now at version v2 (execution time 00:00.551s)` | 空库上 V1+V2 全量重放；中间 20 余条 `Integer display width is deprecated ... (Error Code: 1681)` 是 MySQL 8 对 `int(11)` 写法的弃用告警，**不是错误**，V1 的 DDL 风格问题，不影响结果 |
+| 启动 | `Tomcat started on port 58802 (http) with context path '/api'` · `Started HospitalApplication in 5.276 seconds` | `--server.port=0` 生效：随机端口 58802，不与本机可能常驻的 8080 抢 |
+| 种子 | `种子数据已应用：db/seed.sql` | `SeedService` 走 `ScriptUtils.executeSqlScript` |
+| 自检 | `种子自检通过：号源=预约数、就诊卡号唯一、住院号唯一 三项均无违规` | `SeedCheckService` 三项全绿 |
+| 收尾 | `HikariPool-1 - Shutdown initiated... / Shutdown completed.` → `==> db:reset 完成` | `context.close()` + `System.exit(0)`，进程不常驻 |
+
+**跑完之后的对账**（18 项探针，全部命中预检/预测值）：
+
+```
+flyway=v2 applied=2   tables=29   department=3   title=3   doctor=5
+user=4   admin=4   role=4   patient=10   inpatient=5
+schedule=150   sched_dates=15   appointment=13
+payment=4   recharge=3   refund=2   audit_log=0
+slot_mismatch=0   past_open_appt=0
+```
+
+- `tables / patient / schedule` 与预检逐项相等 ⇒ **从空库重放出来的结果和之前那份库是同一状态**，DROP 没有丢东西、也没有多出来。
+- `admin=4 / role=4 / user=4` 来自 V2 迁移与种子，不是重复插入。
+- `audit_log=3 → 0`：这是脚本第 14 行预告过的代价 —— 清库会连带抹掉 T04/T05 的审计基线行。基线本来就会随 `mvn test` 增长（1→3），下次跑测试即恢复，无需人工补。
+- `slot_mismatch` 这条探针这次多加了 `remaining_slots NOT BETWEEN 0 AND total_slots` 的越界判断，仍是 0 ⇒ 自检 SQL 与手工对账 SQL 结论一致。
+- `past_open_appt=0`：历史时段 5 条全部是 `COMPLETED/CANCELLED`；状态分布 `CANCELLED=2 / COMPLETED=4 / CONFIRMED=4 / PENDING_PAYMENT=3`，未来 8 条。
+
+**两个跑偏的探针，记下来免得再犯**：第一次对账用 `hospital.sys_user` 猜后台账号表名 → `ERROR 1146`，`SHOW TABLES` 后确认实际叫 `admin`；第二次用 `appointment.appointment_date` → `ERROR 1054`，`SHOW COLUMNS FROM appointment` 确认实际是 `appointment_time datetime(3)`，默认状态 `PENDING_PAYMENT`。**列名要从 `SHOW COLUMNS` 读，不能从任务卡的中文措辞推**。
+
+**结论**：`db:reset` 一条命令真的通 —— 空库 → 迁移 → 种子 → 自检 → 退出码 0，全程无人工介入，且每一步都有可证伪的对账。
+
+### T06-A0 补录 · 前端测试依赖与 12 条 audit 的处置
+
+| 动作 | 结果 |
+|---|---|
+| `npm install @radix-ui/react-dialog` | `added 25 packages`；贡献 **0** 条漏洞（逐个 `npm ls` 核对过） |
+| `npm install -D vitest@^1.6.0 jsdom @testing-library/react @testing-library/user-event @testing-library/jest-dom` | `added 112 packages`；audit 10 → 12（新增 1 critical 来自 vitest 自身，见下） |
+| `npm audit fix` | **完全空操作**，12 → 12。用 `git status`/`git diff --stat` 证明，而不是信 npm 自己打的字 |
+| 定位 7 条 high 的根源 | `npm ls minimatch` → `@typescript-eslint/{eslint-plugin,parser}@6.21.0`（`^6.14.0` 的天花板）→ `typescript-estree@6.21.0` → `minimatch@9.0.3`，而 `npm view ... dependencies.minimatch` 显示是**精确钉死**的 `9.0.3`。9.0.0–9.0.6 全在受影响区间内 ⇒ 不存在非 major 的升级路径，只有 `overrides` 一条路 |
+| 加 scoped override 后 `npm install` | `changed 1 package`；`npm ls minimatch` 显示 `typescript-estree@6.21.0 overridden → minimatch@9.0.9 overridden`，而 eslint 侧四条链（`@eslint/eslintrc`、`@humanwhocodes/config-array`、`file-entry-cache→flat-cache→rimraf→glob`、`eslint` 本身）**仍各自保留 `minimatch@3.1.5`** |
+| `npm audit` 复跑 | **12 → 6**：high 7 → 1，moderate 4 → 4，critical 0 → 1 |
+
+**为什么用 scoped 而不是 blanket `"overrides": {"minimatch": "^9.0.9"}`**：eslint@8.57.1 依赖的是 minimatch **3.x** API，blanket 覆盖会把上面那四条链一起抬到 9.x，属于"为了消警告把 lint 搞坏"。写 `{"@typescript-eslint/typescript-estree": {"minimatch": "^9.0.9"}}` 只作用于那一个父包。
+
+**runner 接线验证**：`vitest` 的 `test` 块直接加在 `vite.config.ts`（配 `/// <reference types="vitest" />`），**不另建 `vitest.config.ts`** —— 那样会把 `@` alias 抄第二份，两处漂移就是"改了一个忘了另一个"的经典现场。临时写了个 `src/test/wiring.test.tsx` 做接线探针：
+
+```
+ RUN  v1.6.1 E:/qdspace/qd1/admin
+ ✓ src/test/wiring.test.tsx  (1 test) 124ms
+ Test Files  1 passed (1)      Tests  1 passed (1)
+```
+
+`toBeInTheDocument()` 能解析 ⇒ `setupFiles` 真的加载了；`npx tsc --noEmit` 输出为空 ⇒ `test` 键没破坏类型检查；`npm run build` → `✓ 1408 modules transformed · built in 3.46s` ⇒ 生产构建忽略 `test` 键，dist 无变化。**探针跑完即删**，任务卡只要求 6 个业务组件各带渲染测试，没有"接线测试"这一项，正式用例在 T06-D 落地。`package.json` 增加 `"test": "vitest run"`。
+
+**剩余 6 条的定性**（`npm audit --json` 逐条读 `via`）：
+
+| 包 | 级别 | 通道 | 暴露面判定 |
+|---|---|---|---|
+| `vite@5.4.21` | high ×3 | dev-server 路径穿越 / NTLMv2 UNC 泄漏 / `server.fs.deny` Windows 绕过 | 只在 `npm run dev` 监听 localhost 时存在；**不进 dist** |
+| `esbuild`（vite 传递） | moderate | dev server 任意请求读取 | 同上，仅开发期 |
+| `vitest` | **critical** | Vitest UI server 任意文件读取，区间 `<3.2.6` | **是我自己钉进来的**：`^1.6.0` 正落在区间内。可达面只有 `vitest --ui`，仓库里没有任何地方调用它 |
+| `vite-node` | moderate | 转引 vite | 同上 |
+| `react-router(-dom)@6` | moderate ×2 | 反斜杠开放重定向 / SSR `deserializeErrors()` 任意构造器注入 | 生产包里有代码，但**当前不可达**（见下） |
+
+`fixAvailable` 对这几条全都报 `isSemVerMajor: true`（vite 8.3.1 / vitest 5.0.2 / react-router-dom 7.18.4）—— 三个 major 一起升是另开一张卡的工程，混进 T06 违反"不实现业务功能"的红线边界。处置决定：① 从不启动 `vitest --ui`，把 critical 的可达面钉死为零；② vite/esbuild/vite-node 属开发期专用面，接受；③ react-router 两条已用 grep 证明今天不可达 —— 全站只有 `AppLayout.tsx:94/135` 的 `to={item.to}`（硬编码 navItems）和 `AppLayout.tsx:160` 的 `navigate('/login')`，`main.tsx:6` 是 `createRoot` 不是 SSR hydration，没有一处把用户输入喂给 `to`/`href`。**⚠️ 这条结论对 T06-A 有直接约束**：登录成功后的角色落地页跳转一旦接受用户可控的 redirect 参数，就正好造出该公告说的可达面，所以 `sendRedirect` 目标必须走白名单。
 
