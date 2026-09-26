@@ -121,6 +121,20 @@ export const navItems: NavItem[] = [
 ]
 
 /**
+ * 顶栏面包屑（卡片第 323 行）。数据只有 navItems 一个来源，所以面包屑、侧边栏、
+ * 403 判定三者永远不会打架 —— 新增路由只要进表就三处同时生效。
+ * 未映射的路由返回空数组：面包屑不编造名字，交给 403 页显示原始 pathname。
+ */
+export function breadcrumbOf(pathname: string): string[] {
+  for (const item of navItems) {
+    if (item.to === pathname) return [item.title]
+    const child = item.children?.find((c) => c.to === pathname)
+    if (child) return [item.title, child.title]
+  }
+  return []
+}
+
+/**
  * 按授权模块裁剪导航。分组本身不挂模块键 —— 只要还剩一个可见子项就渲染，
  * 全被裁掉才整组消失，这样分组粒度不会和 8 个键强行 1:1。
  * 未映射的路由一律不显示（fail-closed）：宁可漏入口，不可漏出口。

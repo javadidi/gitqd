@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, describe, expect, it } from 'vitest'
 import { setToken } from '@/api/client'
@@ -66,6 +67,31 @@ describe('AppLayout 权限导航', () => {
     renderAt('/appointments/schedule')
     expect(screen.getByText('排班内容')).toBeInTheDocument()
     expect(screen.queryByText('无访问权限')).toBeNull()
+  })
+})
+
+describe('AppLayout 移动端抽屉（卡片第 323 行「折叠/移动抽屉」）', () => {
+  it('抽屉收起时导航只有一份；打开后抽屉与侧栏吃同一份裁剪结果', async () => {
+    seed('doctor', ['dashboard', 'schedule', 'appointment', 'report'])
+    renderAt('/')
+    expect(screen.getAllByText('预约管理')).toHaveLength(1)
+    await userEvent.click(screen.getByRole('button', { name: '打开导航' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toBeInTheDocument()
+    // 抽屉里必须同样没有费用管理：漏一次裁剪就是给无权限角色开后门
+    expect(screen.queryByText('费用管理')).toBeNull()
+    expect(within(dialog).getByText('预约管理')).toBeInTheDocument()
+  })
+
+  it('在抽屉里点导航，抽屉自动收起，不让覆盖层挡住刚切出来的页面', async () => {
+    seed('doctor', ['dashboard', 'schedule', 'appointment', 'report'])
+    renderAt('/')
+    await userEvent.click(screen.getByRole('button', { name: '打开导航' }))
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(within(dialog).getByText('预约管理'))
+    await userEvent.click(within(dialog).getByRole('link', { name: '医生排班' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getByText('排班内容')).toBeInTheDocument()
   })
 })
 

@@ -1827,9 +1827,92 @@ BUILD_EXIT=0   ✓ 1418 modules transformed · built in 3.65s
 
 | 未做 | 归属 | 原因 |
 |---|---|---|
-| 顶栏面包屑 / `⌘K` 命令面板 / 任务红点 / 用户下拉 | T06-F 或后续 | 卡片布局项，与权限裁剪无依赖关系，不混在这一刀里 |
+| 顶栏面包屑 / `⌘K` 命令面板 / 任务红点 / 用户下拉 | 已由下面「T06-E（第三刀）」接手；其中**任务红点仍未做** | 卡片布局项，与权限裁剪无依赖关系，不混在这一刀里 |
 | 折叠态（`collapsed`）下的权限导航 | 无规格 | 折叠只隐藏文字，`filterNav` 的结果照样渲染，行为已正确，不做额外处理 |
 | 后端因前端有 403 页而放松 | 不适用 | 后端 `@RequireCap` 与 Security 的 403 一字未动，前端这一页只是把已经存在的拒绝呈现清楚 |
 | `report` 键的回收 | T25–T28 | 见上文处置，等真出现对应页面再说 |
+
+### T06-E（第三刀）· 顶栏：面包屑 + `⌘K` 占位 + 用户下拉 + 移动抽屉
+
+侧边栏那一刀提交为 `7239cb6`，这一刀补卡片第 323 行剩下的部分。**提交号待定，见本节末「当前状态」。**
+
+**规格出处（逐条，没有一条是我加的）**
+
+| 要做的东西 | 出处（原文位置） | 原文措辞 |
+|---|---|---|
+| 顶栏面包屑 | 任务卡第 323 行 | 「顶栏面包屑 + command(⌘K) 占位 + 任务红点 + 用户下拉退出」 |
+| `⌘K` —— **只要占位** | 同上 | 同一个句子里 `command(⌘K)` 后面紧跟「占位」二字 |
+| 用户下拉退出 | 同上 | 「用户下拉**退出**」，不是「用户下拉菜单」 |
+| 移动抽屉 | 同上 | 「shadcn sidebar（折叠/移动抽屉）」—— 折叠上一刀已有，抽屉没有 |
+| 任务红点 | 同上 | 见下面「红点为什么不做」 |
+
+**红点为什么不做（这是本刀唯一一项主动不做的）**
+
+卡片要求红点，但红点要有数可点，而数据源按卡片的编排根本不存在：
+
+1. 后端只有 3 个控制器（`AuthController` / `DemoController` / `PaymentController`），**没有 `TaskController`**。T05 交付的是 `TaskService` 内核 + J9–J12 测试，没有 HTTP 出口。
+2. 任务卡第 308 行是 T05 的红线原文：「**不做 /tasks 页（T28）**」。也就是说 /tasks 及其接口是 T28 的活。
+3. 现在要红点只有两条路：给 T05 补一个接口（越到 T28 的界，且违反 T06 第 336 行红线「不实现业务功能」），或者前端写死一个数字（假数据，违反第 336 行「种子宁少勿假」的同一条原则，也违反附录 B 检查表）。
+
+所以本刀**不渲染红点，也不放一个假的铃铛**，红点整体移交 T28 与 /tasks 页面一起做。这是卡片第 323 行 4 项里唯一没落地的一项，人工验收时要按这条判断，不要当成漏做。
+
+**实现决策**
+
+| 决策 | 做法 | 理由 |
+|---|---|---|
+| 面包屑不要另起一张表 | 在 `nav.ts` 加 `breadcrumbOf(pathname)`，直接遍历已有的 `navItems` | 侧边栏、403 判定、面包屑三者共用一份表，新增路由只进表就三处同时生效，不会出现「导航有、面包屑没有」 |
+| 表外路径怎么办 | `breadcrumbOf` 返回 `[]`，`TopBar` 退化成用 `font-mono` 显示原始 `pathname` | 与 `ForbiddenPage` 显示原始 path 的做法一致：**不编造名字**（fail-closed） |
+| `⌘K` 占位做到什么程度 | 顶栏一个带 `⌘K` kbd 的按钮 + 快捷键监听 + 一个 radix Dialog，正文只写「本卡不放假搜索结果」 | 卡片原话是「占位」。做成能搜的假面板就是把 T25–T28 的活提前了 |
+| 用户下拉要不要装库 | **手写**：`useRef` + `pointerdown` 外部点击 + `Escape` | 已装的相关库只有 `@radix-ui/react-dialog`（`package.json` 实测），装 `react-dropdown-menu` 会命中附录 B 第 809 行「多装 T01 清单外的三方库」；T01 第 178 行的清单是 tanstack-table / rhf+zod / date-fns / lucide / recharts / html-to-image |
+| 下拉里放几项 | 只放「退出登录」 | 卡片写的是「用户下拉**退出**」。把「修改密码」顺手塞进去是我能想到但**没有出处**的做法，不做 |
+| 侧边栏底部那块身份卡 | **删掉**，身份与退出统一到顶栏 | 两个退出入口是重复 affordance；且原实现在 `collapsed` 时连退出按钮都藏了，折叠态下根本退不出去，统一到顶栏顺手修掉这个真 bug |
+| 导航列表复用 | 抽出 `SidebarNavList.tsx`，桌面 `aside` 与移动抽屉共用 | 抽屉只要漏一次 `filterNav`，就等于给无权限角色开了个入口 —— 复用不是美化，是权限面收敛 |
+| 抽屉点完导航后 | `useEffect` 监听 `location.pathname` 关闭 | 不做的话覆盖层会挡住刚切出来的页面。没有把这个能力往 `SidebarNavList` 里加 prop（见下面自捕错误第 2 条） |
+
+**自己抓到并改掉的三处**
+
+1. 抽 `SidebarNavList` 时我把 `hover:text-accent-foreground` 顺手写成了 `hover:text-foreground` —— 这是**无理由的类名漂移**，一次纯搬迁不该带视觉改动。第二版按原样逐字改回。
+2. 同一版里我给组件加了 `onNavigate` prop，但只在下面渲染了一行「点击导航项会同时关闭本抽屉」的说明文字 —— prop 没接到任何 `NavLink` 上，**写的是提示文案而不是行为**。删掉 prop，关闭逻辑放到 `AppLayout` 用路由变化驱动。
+3. 测试两处红：`getToken` 被我误删 import 却还在断言里用（`ReferenceError`）；`/report` 那条断言撞 `getByText` 多元素 —— 因为探针组件 `LocProbe` 也渲染了 pathname，面包屑和探针各一份，必须收窄到 `within(面包屑 nav)` 里查。两条都是 `TEST_EXIT=1` 报出来的，不是我看代码猜的。
+
+**门禁（真实输出，退出码一律重定向获取，不进管道）**
+
+```
+TEST_EXIT=0    Test Files  14 passed (14)
+                     Tests  75 passed (75)     （63 → 75，新增 12）
+TSC_EXIT=0
+LINT_EXIT=0
+BUILD_EXIT=0   ✓ 1475 modules transformed · built in 4.13s
+               dist/assets/index-mw6kdDmH.css   20.77 kB │ gzip:  4.87 kB
+               dist/assets/index-0gJx26oI.js   257.18 kB │ gzip: 83.04 kB
+```
+
+新增 12 条的分布是逐文件 `npx vitest run src/components/layout` 量出来的：`nav.test.ts` 11（原 8 + 面包屑 3）、`TopBar.test.tsx` 7（新）、`AppLayout.test.tsx` 8（原 6 + 抽屉 2）。
+
+JS 从 211.87 → 257.18 kB（+45 kB）。这个涨幅在预期内：上一刀我记过「6 个业务组件还没被任何页面 import，所以被 tree-shaking 掉了 —— 连带 radix Dialog 也没进包」，这一刀 `TopBar` 和移动抽屉都是**真的 import 了 radix Dialog**，所以它第一次进了产物。不是回归。
+
+**浏览器人工验收（3001，4 角色各真实表单登录一次）**
+
+登录方式：每个角色都点一次「刷新验证码」再填表提交。之所以先点刷新，是因为登录页在 StrictMode 下 mount 时会**双取验证码**（`list_network_requests` 实测同一页两条 `GET /api/auth/captcha`，Redis 里同时出现两只键），竞态下无法确定表单 state 持有哪一只；手动刷新只发一条请求，取剩余 TTL 最大的那只键即可确定。答案从 Redis 读（`docker exec hospital-redis redis-cli GET captcha:<key>`），**这条降级只影响"验证码识别方式"，不影响登录本身**：4 次都是真实 `POST /api/auth/login`、真实 4003 校验、真实签发 token，验证码的肉眼识别验收已在 T06-A 用 4 次手读通过。
+
+| 角色 | 落地页 | 顶栏面包屑 | 抽屉里的分组 | 关键断言 |
+|---|---|---|---|---|
+| system | `/`（后端 `/dashboard` 经映射） | 「首页」 | 首页 + 4 组齐全 | 展开「预约管理」出 4 个子项；点「医生排班」→ **抽屉自动收起**、`pathname=/appointments/schedule`、面包屑变两级「预约管理 / 医生排班」 |
+| doctor | `/appointments/schedule`（`/schedule` 映射） | 「预约管理 / 医生排班」 | **只有 首页 + 预约管理**（另三组整组不见） | 全量刷新手敲 `/hospital/doctors` → `h1 "无访问权限"` + `/hospital/doctors · module=settings`，URL **不被静默改写** |
+| nurse | `/appointments/registration`（`/appointments` 映射） | 退款页显示「费用管理 / 退款记录」 | 首页 + 预约管理 + 医院管理 + 系统设置，**费用管理整组不见**；展开医院管理**恰好** 体检套餐/体检项目/套餐类型 3 项 | 全量刷新手敲 `/finance/refund` → 403 + `module=finance`；有权限的 `/hospital/physical-packages` 正常渲染 `h1 "体检套餐管理"` + `对应 PRD 4.5.3 / 待 T27`，`is403=false` |
+| admin | `/` | 「首页」 | 首页 + 4 组，展开全部分组后 `a` 标签共 **28** 个（27 个子项 + 首页），与单测的 27+1 对上 | `modulesCount=8` |
+
+顶栏三项的独立取证（在 system 会话上做全，其余角色复用同一组件）：
+- **`⌘K`**：真实按键 `Control+K`（`press_key`）→ `[role=dialog]` 出现，标题「命令面板（占位）」，正文含「本卡不放假搜索结果」；`Escape` 真实按键关闭。注意点：按下后立刻查 DOM 会读到 0 个 dialog，事件落地比 CDP 返回慢，要二次确认 —— 我第一次就是据此误判成"没生效"。
+- **用户下拉**：真实点击触发按钮 → `button[aria-expanded=true]` + `menu` 里**只有一个** `menuitem "退出登录"`；点它 → `Page navigated to /login`，且 `localStorage` 里 `hospital_token` 与 `hospital_auth` **双双为 null**（不是只清一个）。
+- **面包屑**：有权限页给两级中文名；403 页同样给中文名（映射表认识这个路由，只是权限拒绝），二者不冲突。
+
+**这一轮没能在浏览器里验的（如实记下）**：
+1. **≥1024px 的桌面侧栏形态**。这台浏览器视口锁在 785 CSS px（`window.resizeTo` 只改到 `outerWidth`，`innerWidth` 不动，`matchMedia('(min-width:1024px)').matches === false`），所以 `aside` 一直是 `display:none`，看到的全是移动端抽屉。桌面形态目前只有单测覆盖（jsdom 不计算媒体查询，测的是"裁剪结果渲染正确"，不是"断点切换正确"）。
+2. **侧边栏折叠按钮**同样因为桌面形态不可见而没点到；它和抽屉是两条独立的状态，折叠态下顶栏仍保留退出入口这一改动已被单测与代码路径覆盖。
+3. 抽屉内部的分组展开点击有一次 `Element could not be scrolled into the viewport`（窗口不可见导致真实滚动失败），改用了 DOM 级 `click()`；顶栏按钮和表单控件都是真实点击/填写。
+
+**当前状态**：代码 + 单测 + 4 角色浏览器验收完成，控制台 **0 error**（5 条消息里只有 vite debug、React DevTools info、2 条已挂账的 react-router v6 future-flag 建议）。**未提交**。
+
 
 

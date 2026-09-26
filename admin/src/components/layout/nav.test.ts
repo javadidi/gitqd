@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterNav, moduleOf, navItems, type ModuleKey } from './nav'
+import { breadcrumbOf, filterNav, moduleOf, navItems, type ModuleKey } from './nav'
 
 const ALL: ModuleKey[] = [
   'dashboard',
@@ -74,6 +74,31 @@ describe('moduleOf：路由 → 模块键', () => {
       expect(moduleOf(item.to)).not.toBe('report')
       for (const child of item.children ?? []) {
         expect(moduleOf(child.to), child.to).not.toBe('report')
+      }
+    }
+  })
+})
+
+describe('breadcrumbOf：顶栏面包屑（卡片第 323 行）', () => {
+  it('首页与四个分组的叶子各自成链', () => {
+    expect(breadcrumbOf('/')).toEqual(['首页'])
+    expect(breadcrumbOf('/appointments/schedule')).toEqual(['预约管理', '医生排班'])
+    expect(breadcrumbOf('/finance/refund')).toEqual(['费用管理', '退款记录'])
+    expect(breadcrumbOf('/hospital/feedback')).toEqual(['医院管理', '用户反馈'])
+    expect(breadcrumbOf('/system/password')).toEqual(['系统设置', '修改密码'])
+  })
+
+  it('表外路径返回空链，由 TopBar 退化成显示原始 pathname（不编名字）', () => {
+    expect(breadcrumbOf('/report')).toEqual([])
+    expect(breadcrumbOf('/appointments/registration/detail')).toEqual([])
+  })
+
+  it('导航表里 27 个叶子全部能成链，且链尾就是入口标题（两者不可能打架）', () => {
+    const leaves = navItems.flatMap((item) => item.children ?? [])
+    expect(leaves).toHaveLength(27)
+    for (const item of navItems) {
+      for (const child of item.children ?? []) {
+        expect(breadcrumbOf(child.to), child.to).toEqual([item.title, child.title])
       }
     }
   })
