@@ -1419,7 +1419,14 @@ version = 8.0.46
 patient=10  schedule=150  audit_log=3  tables=29
 ```
 
-`/e/Mysql/Server/bin/mysql.exe --host=localhost --port=3306 --user=root --password=123456` —— 这组凭据不是猜的：`application.yml:13-15` 的 `${MYSQL_USER:root}` / `${MYSQL_PASSWORD:123456}` 与 `scripts/db-reset.sh:20-21` 的默认值必须同源，否则第 1 步用 root 建的库、第 2 步应用连不上，"一条命令"就是假的。
+客户端命令（口令用 `MYSQL_PASSWORD` 环境变量传，不落进文档也不进 shell 历史）：
+
+```
+/e/Mysql/Server/bin/mysql.exe --host=localhost --port=3306 --user=root \
+    --password="$MYSQL_PASSWORD" --database=hospital --batch -e "..."
+```
+
+这组凭据不是猜的：`application.yml:13-15` 的 `${MYSQL_USER:root}` / `${MYSQL_PASSWORD:...}` 与 `scripts/db-reset.sh:20-21` 的默认值必须同源，否则第 1 步用 root 建的库、第 2 步应用连不上，"一条命令"就是假的。**具体口令值不写进本日志** —— 它已经是仓库里跟踪的文件（`application.yml` 的开发默认值）的一部分，在叙述文本里再抄一遍只会扩大 grep 式密钥扫描的命中面，也让人更容易误当成生产凭据。
 
 **`bash scripts/db-reset.sh` 全量输出关键行**（`RESET_EXIT=0`）：
 
