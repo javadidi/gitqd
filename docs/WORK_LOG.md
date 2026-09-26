@@ -1744,4 +1744,92 @@ Port 3000 is in use, trying another one...
 
 **过渡状态**：`/login` 不再是占位页了，`App.tsx` 里那条 `prd="4.1" card="T06"` 的占位路由已被 `LoginPage` 取代。
 
+### T06-E（下半）· 权限动态侧边栏 + 模块级 403
+
+**卡片范围**：T03 第 5 项欠的两笔（「前端按权限渲染侧边栏」＋「认证无权限 403」），以及第 341 行的人工验收「4 角色登录导航项与 PRD 角色表逐条对上（护士无收费、医生无设置）」。
+
+**动手前先把规格查到底，因为映射表不能凭感觉建**。查到的事实是：
+
+| 出处 | 原文给了什么 | 没给什么 |
+|---|---|---|
+| 任务卡第 256 行 | 「admin 全模块、doctor **仅查看排班/预约**、nurse **无 finance**、system 为 `*`」 | 8 个键各自对应哪些页面 |
+| 任务卡第 263 行 | 「模块权限=看不看得见菜单；能力权限=能不能点审批」 | 同上 |
+| 任务卡第 341 行 | 「护士无收费、医生无设置」 | 同上 |
+| `V2__init_admin.sql:8-10` | 四个角色的 modules JSON 数组 | 键的中文含义，一个注释都没有 |
+| `PermissionServiceTest:47-68` | 只断言集合成员（`hasModule("doctor","report")` 为真、`physical`/`settings` 为假） | 键→页面 |
+| PRD §2 角色表（第 33-41 行） | 系统管理员/医院管理员/医生三行有说明，**没有「护士」这一行** | 护士的页面范围只能靠卡片第 341 行反推 |
+
+结论：**卡片只给了三条硬约束，映射表必须我自己建，那就必须逐行标出处**。最终表落在单一事实源 `admin/src/components/layout/nav.ts`（不放 `.tsx`，避免又撞 `react-refresh/only-export-components` —— 本仓第三次）：
+
+| 路由 | 模块键 | 出处强度 |
+|---|---|---|
+| `/` | `dashboard` | 键名字面 + PRD 4.2 |
+| `/appointments/schedule` | `schedule` | 键名字面 + PRD 4.3.4 |
+| `/appointments/{registration,nucleic-acid,physical}` | `appointment` | 键名字面 + PRD 4.3.1–4.3.3 |
+| `/finance/*`（6 条） | `finance` | 键名字面 + PRD 4.4.x，且卡片第 341 行「护士无收费」直接要求它独立成键 |
+| `/hospital/{physical-packages,physical-items,package-types}` | `physical` | 键名即"体检"，PRD 4.5.3–4.5.5 正是体检套餐/项目/类型 |
+| `/hospital/*` 剩余 9 条内容页 | `settings` | **全表唯一一条排除法推断**：8 键里除 `report` 外已无候选。代码注释与测试都标了，T27 建真页面时必须回查 |
+| `/system/*`（5 条） | `system` | 键名字面 + PRD 4.6.x |
+| —— | `report` | **刻意不映射**。PRD §4 没有任何报告章节（3.4 报告查询是小程序端功能），所以它不产生导航入口、也不产生 403 |
+
+`report` 这条就是上一节留的悬案，处置是：**不动后端一个字节**。键继续留在 `PermissionService.ALL_MODULES` 和 V2 的授权数据里（`AuthIntegrationTest`/`PermissionServiceTest` 的断言全部原样通过），只是前端导航"只渲染在映射表里的路由"。代价写清楚：`report` 从此是"有授权、无入口"的悬空键，等真出现报告类管理页（若有）再回收。这样做的理由 —— 侧边栏的红线是**不造出无处可去的入口**，一行过滤就能满足；而改后端键要牵动迁移数据与两处测试断言，收益为零。
+
+**三条实现决定**：
+
+1. **分组不挂模块键**。`预约管理` 这一组同时含 `schedule` 和 `appointment` 两个键，所以规则是"只要还剩一个可见子项就渲染该组，全被裁光才整组消失"。测试 `nav.test.ts` 里那条「有 appointment 无 schedule → 预约管理 4 项变 3 项但组还在」就是钉这个的，防止后来人误以为组粒度=键粒度。
+2. **未映射一律 fail-closed**。`moduleOf()` 返回 `null` 的路由在导航里不显示，也不判 403（宁可漏入口，不可漏出口）。
+3. **裁掉入口不等于关掉页面**。`AppLayout` 里除了 `filterNav`，还按 `useLocation().pathname` 反查模块键，无权限就用 `ForbiddenPage` 顶掉 `<Outlet />`。这条是刻意的：只做侧边栏过滤，就把 T04 那条"不只前端藏菜单"的红线在前端这一侧又犯了一遍 —— 手敲 URL 就能绕过。
+
+**我自己造的第二个假证据**（第一个是上一节的 `git status` 漏抄）：四道门第一次跑的时候输出里有
+
+```
+✖ 1 problem (0 errors, 1 warning)
+ESLint found too many warnings (maximum: 0).
+LINT_EXIT=0
+```
+
+`LINT_EXIT=0` 是我写的 `npm run lint | tail -12; echo LINT_EXIT=$?` 里 **`tail` 的退出码**，不是 eslint 的。真实情况是 lint 红的（`useMemo` 带了多余依赖 `profile` —— `hasModule` 本身已在 `AuthProvider` 的 `useMemo` 里随 profile 变化，去掉即可）。改成 `npm run lint > /tmp/lint.out 2>&1; echo LINT_EXIT=$?`（重定向而非管道）之后才拿到真的 0。**凡是 `... | tail; echo $?` 的写法，测的都是管道最后一段**，这条得记住。
+
+**测试里还有一个错**：`ForbiddenPage.test.tsx` 把 `<Route>` 直接写在 `<MemoryRouter>` 底下，3 条全挂，报的是
+
+```
+Error: A <Route> is only ever to be used as the child of <Routes> element, never rendered directly.
+```
+
+补一层 `<Routes>` 即好。同一次还漏了 `Routes` 的 import。
+
+**四道门**（这次退出码都是命令自己的）：
+
+```
+TEST_EXIT=0    Test Files  13 passed (13)
+                      Tests  63 passed (63)      （46 → 63，新增 17）
+TSC_EXIT=0     （无输出）
+LINT_EXIT=0    （无 warning 无 error）
+BUILD_EXIT=0   ✓ 1418 modules transformed · built in 3.65s
+ dist/assets/index-Clke2jDT.css   19.48 kB │ gzip:  4.66 kB
+ dist/assets/index-CxjXnw-M.js   211.87 kB │ gzip: 68.32 kB
+```
+
+新增 17 条的分布（逐文件 `vitest run <file>` 量出来的，不是估的）：`nav.test.ts` **8** 条（`moduleOf` 对 28 条路由逐条比对 + 表外返回 null + `report` 不覆盖任何导航路由；`filterNav` 对 4 角色 + 空模块 + 部分裁剪）、`AppLayout.test.tsx` **6** 条（医生缺三组、管理员五组齐、护士正常页不误判、医生/护士手敲越权页出 403 且**不渲染业务内容也不跳首页**、管理员同路径放行）、`ForbiddenPage.test.tsx` **3** 条（路径与模块键显示、module 为 null 时不显示 `module=`、动作按钮真跳转）。
+
+**浏览器实测**。这一轮的取证方式有个必须说明的降级：内嵌浏览器窗口拿不到可见表面（`NATIVE_BROWSER_VIEWPORT_UNAVAILABLE … visibilityState=hidden`，重试两次同样），**截图读不了验证码图**，所以 doctor/nurse 的会话改由后端真发一次登录建立（`curl /api/auth/captcha` → `redis-cli GET captcha:<key>` → `POST /api/auth/login`），把返回的 `token/modules/landingPage` 原样写进 `localStorage` 再刷新。这样档案仍是后端真值、不是我手写的，但**它不能用来验验证码** —— 验证码那条已经用四张肉眼读的图（`8S2E`/`3JYN`/`M5PC`/`D8Q6`）验过了，这里不重复主张。
+
+| 角色 | 侧边栏 `navigation` 实际渲染出来的 | 后端真值 `modules` |
+|---|---|---|
+| system | 首页 / 预约管理 / 费用管理 / 医院管理 / 系统设置（5 组齐） | 8 键全 |
+| doctor | **首页 / 预约管理**（另三组整组不见） | `dashboard,schedule,appointment,report` |
+| nurse | 首页 / 预约管理 / **医院管理** / 系统设置，**费用管理不见** | `dashboard,schedule,appointment,report,physical,system` |
+| nurse 展开医院管理 | 只有 3 项：体检套餐管理 / 体检项目管理 / 套餐类型管理 | 同上（`physical` 命中、`settings` 缺失） |
+
+403 的浏览器取证：doctor 手敲 `/hospital/doctors` → `main` 里是 `heading "无访问权限"` + `/hospital/doctors · module=settings` + `这个页面不在你的权限范围内` + `返回数据看板` 按钮，**`location.href` 仍停在 `/hospital/doctors`**（没有静默跳首页）；点动作按钮 → `Page navigated to http://localhost:3001/`。nurse 同一路径同样 403（她也没有 `settings`），而 nurse 访问有权限的 `/hospital/physical-packages` 正常渲染出 `体检套餐管理` + `对应 PRD 4.5.3 / 待 T27`。整轮控制台 `error` **0 条**。
+
+**本卡明确没做（不是漏了）**：
+
+| 未做 | 归属 | 原因 |
+|---|---|---|
+| 顶栏面包屑 / `⌘K` 命令面板 / 任务红点 / 用户下拉 | T06-F 或后续 | 卡片布局项，与权限裁剪无依赖关系，不混在这一刀里 |
+| 折叠态（`collapsed`）下的权限导航 | 无规格 | 折叠只隐藏文字，`filterNav` 的结果照样渲染，行为已正确，不做额外处理 |
+| 后端因前端有 403 页而放松 | 不适用 | 后端 `@RequireCap` 与 Security 的 403 一字未动，前端这一页只是把已经存在的拒绝呈现清楚 |
+| `report` 键的回收 | T25–T28 | 见上文处置，等真出现对应页面再说 |
+
 

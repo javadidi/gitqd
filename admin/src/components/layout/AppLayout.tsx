@@ -1,87 +1,13 @@
-import { useState } from 'react'
-import { Outlet, NavLink, useNavigate } from 'react-router-dom'
+import { useMemo, useState } from 'react'
+import { Outlet, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { roleLabel, useAuth } from '@/store/auth'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import {
-  LayoutDashboard,
-  CalendarCheck,
-  CreditCard,
-  Building2,
-  Settings,
-  Menu,
-  LogOut,
-  ChevronLeft,
-  Stethoscope,
-} from 'lucide-react'
-
-interface NavItem {
-  title: string
-  to: string
-  icon: React.ComponentType<{ className?: string }>
-  children?: { title: string; to: string }[]
-}
-
-const navItems: NavItem[] = [
-  { title: '首页', to: '/', icon: LayoutDashboard },
-  {
-    title: '预约管理',
-    to: '/appointments',
-    icon: CalendarCheck,
-    children: [
-      { title: '预约挂号', to: '/appointments/registration' },
-      { title: '核酸检测', to: '/appointments/nucleic-acid' },
-      { title: '体检预约', to: '/appointments/physical' },
-      { title: '医生排班', to: '/appointments/schedule' },
-    ],
-  },
-  {
-    title: '费用管理',
-    to: '/finance',
-    icon: CreditCard,
-    children: [
-      { title: '门诊消费记录', to: '/finance/outpatient-consume' },
-      { title: '门诊充值记录', to: '/finance/outpatient-recharge' },
-      { title: '住院充值记录', to: '/finance/inpatient-recharge' },
-      { title: '住院消费记录', to: '/finance/inpatient-consume' },
-      { title: '病案配送记录', to: '/finance/medical-record-delivery' },
-      { title: '退款记录', to: '/finance/refund' },
-    ],
-  },
-  {
-    title: '医院管理',
-    to: '/hospital',
-    icon: Building2,
-    children: [
-      { title: '医生管理', to: '/hospital/doctors' },
-      { title: '科室管理', to: '/hospital/departments' },
-      { title: '体检套餐管理', to: '/hospital/physical-packages' },
-      { title: '体检项目管理', to: '/hospital/physical-items' },
-      { title: '套餐类型管理', to: '/hospital/package-types' },
-      { title: '健康百科', to: '/hospital/health-articles' },
-      { title: '就诊指南', to: '/hospital/guides' },
-      { title: '医院导航', to: '/hospital/navigation' },
-      { title: '医院简介', to: '/hospital/introduction' },
-      { title: '预约须知', to: '/hospital/appointment-notice' },
-      { title: '病案配送须知', to: '/hospital/delivery-notice' },
-      { title: '用户反馈', to: '/hospital/feedback' },
-    ],
-  },
-  {
-    title: '系统设置',
-    to: '/system',
-    icon: Settings,
-    children: [
-      { title: '管理员管理', to: '/system/admins' },
-      { title: '角色管理', to: '/system/roles' },
-      { title: '职称管理', to: '/system/titles' },
-      { title: '消息公告', to: '/system/notices' },
-      { title: '修改密码', to: '/system/password' },
-    ],
-  },
-]
+import ForbiddenPage from '@/pages/ForbiddenPage'
+import { filterNav, moduleOf, type ModuleKey, type NavItem } from './nav'
+import { Menu, LogOut, ChevronLeft, Stethoscope } from 'lucide-react'
 
 function SidebarNavItem({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
   const [expanded, setExpanded] = useState(false)
@@ -154,7 +80,14 @@ function SidebarNavItem({ item, collapsed }: { item: NavItem; collapsed: boolean
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false)
   const navigate = useNavigate()
-  const { profile, signOut } = useAuth()
+  const location = useLocation()
+  const { profile, hasModule, signOut } = useAuth()
+
+  const items = useMemo(() => filterNav((key: ModuleKey) => hasModule(key)), [hasModule])
+
+  // 侧边栏裁掉入口还不够：手敲地址也得给出 403，否则"看不见菜单"就成了唯一防线
+  const currentModule = moduleOf(location.pathname)
+  const denied = currentModule !== null && !hasModule(currentModule)
 
   const handleLogout = () => {
     signOut()
@@ -185,7 +118,7 @@ export default function AppLayout() {
         </div>
         <ScrollArea className="flex-1 py-2">
           <nav className="space-y-1 px-2">
-            {navItems.map((item) => (
+            {items.map((item) => (
               <SidebarNavItem key={item.to} item={item} collapsed={collapsed} />
             ))}
           </nav>
@@ -222,7 +155,11 @@ export default function AppLayout() {
       </aside>
       <main className="flex flex-1 flex-col overflow-hidden">
         <div className="flex-1 overflow-auto p-6">
-          <Outlet />
+          {denied ? (
+            <ForbiddenPage module={currentModule} path={location.pathname} />
+          ) : (
+            <Outlet />
+          )}
         </div>
       </main>
     </div>
