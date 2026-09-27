@@ -1,0 +1,53 @@
+<view class="page-dept-detail">
+  <view class="container">
+    <view class="card">
+      <view class="dept-detail-name">{{name}}</view>
+      <view class="dept-detail-lines">
+        <view class="flex-between">
+          <text class="text-muted">位置</text>
+          <text class="dept-detail-value">{{location || '—'}}</text>
+        </view>
+      </view>
+      <view class="dept-detail-intro">{{intro || '暂无简介'}}</view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">科室医生</view>
+
+      <!-- 空态必须带下一步动作（反面清单第 4 条） -->
+      <view wx:if="{{!loading && doctors.length === 0}}" class="dept-doctors-empty">
+        <view class="empty-icon">👨‍⚕️</view>
+        <view class="empty-title">该科室暂无医生</view>
+        <view class="text-muted empty-desc">换个科室看看，或稍后再来</view>
+        <button class="btn-outline dept-doctors-empty-btn" bindtap="onBackToList">返回科室列表</button>
+      </view>
+
+      <view
+        wx:for="{{doctors}}"
+        wx:key="id"
+        class="doctor-row"
+        data-id="{{item.id}}"
+        bindtap="onDoctorTap"
+      >
+        <view class="doctor-avatar">
+          <image wx:if="{{item.avatar}}" class="doctor-avatar-img" src="{{item.avatar}}" mode="aspectFill" />
+          <text wx:else>👨‍⚕️</text>
+        </view>
+        <view class="doctor-info">
+          <view class="flex-row doctor-head">
+            <text class="doctor-name">{{item.name}}</text>
+            <text class="doctor-title">{{item.titleName || '—'}}</text>
+          </view>
+          <view class="doctor-specialty">{{item.specialty || '暂无擅长信息'}}</view>
+          <view class="doctor-available">
+            <text wx:if="{{item.availableCount > 0}}" class="doctor-available-yes">
+              近两周可约 {{item.availableCount}} 个时段
+            </text>
+            <text wx:else class="doctor-available-no">近两周暂无可约时段</text>
+          </view>
+        </view>
+        <text class="menu-arrow">></text>
+      </view>
+    </view>
+  </view>
+</view>

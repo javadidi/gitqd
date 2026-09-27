@@ -1,0 +1,145 @@
+.page-doctor-detail {
+  padding-bottom: 40rpx;
+}
+
+.doctor-head-row {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.doctor-head-avatar {
+  width: 120rpx;
+  height: 120rpx;
+  border-radius: 50%;
+  background: #eef2ff;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 56rpx;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.doctor-head-img {
+  width: 120rpx;
+  height: 120rpx;
+}
+
+.doctor-head-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.doctor-name-line {
+  gap: 16rpx;
+}
+
+.doctor-name-text {
+  font-size: 36rpx;
+  font-weight: 600;
+}
+
+.doctor-rank {
+  font-size: 24rpx;
+  color: #2563eb;
+  background: #eef2ff;
+  border-radius: 8rpx;
+  padding: 4rpx 12rpx;
+}
+
+.doctor-head-dept {
+  margin-top: 12rpx;
+  font-size: 26rpx;
+  color: #666;
+}
+
+.doctor-field {
+  margin-top: 24rpx;
+  padding-top: 24rpx;
+  border-top: 2rpx solid #f0f0f0;
+}
+
+.doctor-field-value {
+  margin-top: 12rpx;
+  font-size: 28rpx;
+  color: #333;
+  line-height: 1.7;
+}
+
+.doctor-schedule-empty {
+  padding: 60rpx 20rpx;
+  text-align: center;
+}
+
+.doctor-schedule-empty .empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.doctor-schedule-empty .empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.doctor-schedule-empty .empty-desc {
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.doctor-schedule-empty-btn {
+  width: 60%;
+}
+
+.schedule-row {
+  display: flex;
+  align-items: center;
+  padding: 24rpx 0;
+  border-bottom: 2rpx solid #f5f5f5;
+}
+
+.schedule-row:last-child {
+  border-bottom: none;
+}
+
+.schedule-row-booked {
+  opacity: 0.45;
+}
+
+.schedule-date {
+  width: 220rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 6rpx;
+  flex-shrink: 0;
+}
+
+.schedule-date-day {
+  font-size: 28rpx;
+  color: #333;
+}
+
+.schedule-date-weekday {
+  font-size: 24rpx;
+  color: #999;
+}
+
+.schedule-slot {
+  flex: 1;
+  font-size: 28rpx;
+  color: #555;
+}
+
+.schedule-slots {
+  font-size: 26rpx;
+  flex-shrink: 0;
+}
+
+.schedule-slots-left {
+  color: #16a34a;
+}
+
+.schedule-slots-booked {
+  color: #999;
+}

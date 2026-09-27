@@ -1,0 +1,126 @@
+.page-dept-detail {
+  padding-bottom: 40rpx;
+}
+
+.dept-detail-name {
+  font-size: 36rpx;
+  font-weight: 600;
+}
+
+.dept-detail-lines {
+  margin-top: 20rpx;
+}
+
+.dept-detail-value {
+  font-size: 26rpx;
+  color: #555;
+}
+
+.dept-detail-intro {
+  margin-top: 20rpx;
+  padding-top: 20rpx;
+  border-top: 2rpx solid #f0f0f0;
+  font-size: 26rpx;
+  color: #666;
+  line-height: 1.7;
+}
+
+.dept-doctors-empty {
+  padding: 60rpx 20rpx;
+  text-align: center;
+}
+
+.dept-doctors-empty .empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.dept-doctors-empty .empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.dept-doctors-empty .empty-desc {
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.dept-doctors-empty-btn {
+  width: 60%;
+}
+
+.doctor-row {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding: 24rpx 0;
+  border-bottom: 2rpx solid #f5f5f5;
+}
+
+.doctor-row:last-child {
+  border-bottom: none;
+}
+
+.doctor-avatar {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 50%;
+  background: #eef2ff;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 44rpx;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.doctor-avatar-img {
+  width: 96rpx;
+  height: 96rpx;
+}
+
+.doctor-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.doctor-head {
+  gap: 16rpx;
+}
+
+.doctor-name {
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.doctor-title {
+  font-size: 24rpx;
+  color: #2563eb;
+}
+
+.doctor-specialty {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #999;
+  line-height: 1.6;
+}
+
+.doctor-available {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+}
+
+.doctor-available-yes {
+  color: #16a34a;
+}
+
+.doctor-available-no {
+  color: #999;
+}
+
+.menu-arrow {
+  color: #ccc;
+  font-size: 28rpx;
+  flex-shrink: 0;
+}

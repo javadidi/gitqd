@@ -9,7 +9,9 @@
     "pages/patient/edit",
     "pages/inpatient/list",
     "pages/inpatient/bind",
-    "pages/inpatient/detail"
+    "pages/inpatient/detail",
+    "pages/department/detail",
+    "pages/doctor/detail"
   ],
   "window": {
     "navigationBarBackgroundColor": "#ffffff",

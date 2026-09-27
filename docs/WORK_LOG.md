@@ -3203,6 +3203,265 @@ DELETE FROM user      WHERE id=173 AND wechat_openid LIKE 'MOCK_OPENID_%'; -- 1 
 - 本节不改动任何产品代码（新增的 `fn/fill-inp.js` 与 7 个参数文件都在仓库外），故不触发后端门禁与 admin 门禁。
 - T09 至此**全卡收口**：后端 98 例 + 真 HTTP 20 步 + UI 9 项，三层证据齐。下一张卡 T10，未获明确指示不开工。
 
+---
+
+## T10 · 科室与医生管理（2026-09-28）
+
+**开工指令**：用户「把任务卡涵盖的 P2（T10~T13）依次开展吧」——本轮不再逐卡等批准，按卡提交、按里程碑推送（🚩M1 = T12），卡边界只汇报不停车。
+
+### 任务卡原文 → 实现对照（卡片 411–423 行逐条）
+
+| 卡片原文 | 实现 | 落点 |
+|---|---|---|
+| 412 科室列表：展示所有科室（名称/简介/位置） | `GET /user/departments` → 全部未删科室，按 `sort_order` 升序、再按 id；三字段 + `sortOrder` | `DepartmentController:40` / `CatalogService.listDepartments` |
+| 413 科室详情：展示该科室下所有医生 | `GET /user/departments/{id}` → 科室自身字段 + `doctors[]`（**扁平**，`data.name` 而非 `data.department.name`） | `DepartmentController:46` / `CatalogService.departmentDetail` |
+| 414 医生列表：展示医生信息（姓名/职称/擅长/头像） | `GET /user/doctors?departmentId=` → 姓名/职称名/擅长/头像 + `availableCount` | `DoctorController:41` / `CatalogService.listDoctors` |
+| 415 医生详情：展示医生简介、**排班时间** | `GET /user/doctors/{id}` → 简介/擅长/科室名/职称 + `schedules[]`（今天及以后，日期升序 → 上午<下午<晚上） | `DoctorController:47` / `CatalogService.doctorDetail` |
+| 417 **红线**：不做排班管理（T11） | 四个端点**全是 GET**；无 POST/PUT/DELETE；`schedule` 表一行未写（测试用库计数前后相等机械证明） | `CatalogIntegrationTest:70 cleanupAndAssertReadOnly` |
+| 417 **红线**：不做预约（T12） | 无 `appointment` 表读写、无下单端点、小程序医生详情页**没有预约按钮** | `git diff --stat` 可证 |
+| 420 J22 科室列表 → 数据正确 | 6 例：种子 3 科室 + 排序 + 中文关键词过滤 + 无匹配空数组 + 纯空格等同不搜 + 软删科室四处都不可见 | `CatalogIntegrationTest` |
+| 421 J23 科室详情 → 医生列表正确 | 11 例：详情字段与医生、无医生科室回空数组、医生列表全量/按科室/未知科室 5001、无职称医生省略键、`availableCount` 口径、医生详情三例、排班排序 | `CatalogIntegrationTest` |
+| 423 **DoD**：科室/医生查询通 | 后端 117 例全绿 + 真 HTTP 35 步 35/35 PASS | 见「真 HTTP 验收」 |
+
+### 范围判定：五个来源对齐，两处**有意偏离**卡片字面
+
+T08-G 的教训是「只看动词清单会漏范围」。本卡开写前把五个来源全摆出来：
+
+| 来源 | 原文 | 卡片没写、但来源要求的 |
+|---|---|---|
+| 卡片 412–415「要做什么」 | 科室列表 / 科室详情 / 医生列表 / 医生详情 | — |
+| 卡片 423 DoD | 「科室/医生查询通」 | — |
+| 卡片 417 红线 | 「不做排班管理（T11）；不做预约（T12）」 | 反向约束 |
+| PRD §9.1 接口概览（609 行） | 「科室/医生 \| 科室列表、医生列表、医生详情、**排班查询**」 | 多一个「排班查询」 |
+| PRD §3.3.1 页面流程（77–79 行） | 「选择科室 — 展示医院所有科室列表，**支持搜索**」「科室详情页 — 展示该科室下所有医生**及排班信息**」「医生信息 — 展示医生简介、职称、擅长领域、**排班时间**」 | 科室列表要能搜索；科室详情页要带排班信息 |
+| PRD §6.1 页面清单（511 行） | 「门诊服务-预约挂号 \| 选择就诊人、**选择科室、科室详情**、预约须知、**医生信息**、确认预约信息、预约信息」 | 小程序 3 个页面（其余 4 页属 T12） |
+
+**偏离一（放宽）：医生列表加 `availableCount`。** 卡片 414 只要求「姓名/职称/擅长/头像」，但 PRD 77 行要求科室详情页展示医生「**及排班信息**」。按 T08-G 的同一条教训——**规格取宽不取窄**——`DoctorSummaryResponse` 带上「近两周可约时段数」。
+口径 PRD 没规定，属本卡自定：**只回数、不回日期**（`SELECT doctor_id, COUNT(*)` 级别的信息量），日期明细留在医生详情页的 `schedules` 里。理由：科室详情页一屏要放 2~5 个医生，把每个医生的排班日期全铺出来会把「挑医生」变成「读时刻表」；而「有没有号」是挑医生的第一决策点，一个数字就够。
+
+**偏离二（收窄）：不给「排班查询」单独端点。** §9.1 那格写了 4 项，本卡只出 3 个 GET 端点 + 医生详情内嵌排班。证据链：
+- T11 卡片 430 行「**排班列表：展示医生排班（日期/时段/总号源/剩余号源）**」——这就是 §9.1 的「排班查询」，且 T11 是管理后台的卡；
+- T10 卡片 417 行红线明确「不做排班管理（T11）」；
+- 卡片 415 行**又**要求医生详情展示排班时间。
+
+三条合起来只有一个自洽解：T10 把排班当**只读内嵌视图**塞进医生详情（`ScheduleItemResponse`），不开放独立的排班端点。等 T11 落地后台 CRUD 时，管理端那条「排班列表」自然由 T11 出。
+
+**零迁移、零 SecurityConfig 改动**：`department` / `title` / `doctor` / `schedule` 四张表 V1 就建好了（实体 + 裸 `BaseMapper` 也在），seed 已灌 3 科室 / 3 职称 / 5 医生 / 150 排班，T11 要用的 `uk_doctor_date_slot` 唯一索引也已存在。两个新控制器都挂在 `/user/**` 下，自动继承 `.requestMatchers("/user/**").hasRole("patient")`——员工 token 403/4001、匿名 401/401，真 HTTP 实测过（12.x / 13.x 八步）。
+
+**零新错误码**：查不到一律 `DATA_NOT_FOUND(5001)`。PRD 没有错误码表（全文 grep「错误码」无命中），现有 1xxx 是用户/就诊人/住院人、2xxx 是排班/预约，科室与医生两边都不属；T09 同样一个新码没加。
+
+### 新增/修改文件清单（17 个文件，1653 + 198 行）
+
+| 文件 | 状态 | 行数 | 说明 |
+|---|---|---|---|
+| `backend/.../dto/DepartmentResponse.java` | 新增 | 36 | id/name/intro/location/sortOrder；不回 created_at/updated_at/deleted |
+| `backend/.../dto/DepartmentDetailResponse.java` | 新增 | 26 | `extends DepartmentResponse` + `doctors`（永不为 null，空则 `[]`） |
+| `backend/.../dto/DoctorSummaryResponse.java` | 新增 | 44 | id/name/departmentId/titleName/specialty/avatar/**availableCount** |
+| `backend/.../dto/DoctorDetailResponse.java` | 新增 | 56 | 简介/擅长/科室名/职称 + `schedules`；**故意不继承** Summary（`availableCount` 在详情里冗余） |
+| `backend/.../dto/ScheduleItemResponse.java` | 新增 | 41 | id/date(LocalDate)/timeSlot(码值)/totalSlots/remainingSlots；无 doctorId（上一层已有） |
+| `backend/.../service/CatalogService.java` | 新增 | 345 | 科室 + 医生共用一个只读服务；四个公开查询 + 两个批量私有方法（消 N+1） |
+| `backend/.../controller/DepartmentController.java` | 新增 | 50 | `GET /user/departments`、`GET /user/departments/{id}` |
+| `backend/.../controller/DoctorController.java` | 新增 | 51 | `GET /user/doctors`、`GET /user/doctors/{id}` |
+| `backend/.../service/CatalogIntegrationTest.java` | 新增 | 499 | J22/J23 共 19 例 + 只读快照断言 |
+| `backend/.../AuditFieldFillTest.java` | 修改 | +11/−3 | **跨卡修复**：`titleMapper.delete` 是逻辑删，改走裸 SQL 物理删（见下节） |
+| `miniprogram/utils/format.js` | 修改 | +33/−1 | 加 `TIME_SLOT_LABELS` / `timeSlotLabel` / `WEEKDAY_LABELS` / `weekdayLabel` |
+| `miniprogram/pages/appointment/appointment.{js,wxml,wxss}` | 重写 | +57/+71/+99 | 占位页 → 真科室列表 + 搜索 + 两种空态 |
+| `miniprogram/pages/department/detail.{js,wxml,wxss,json}` | 新增 | 50/53/126/3 | 科室详情页（PRD 511 行「科室详情」） |
+| `miniprogram/pages/doctor/detail.{js,wxml,wxss,json}` | 新增 | 68/57/145/3 | 医生信息页（PRD 511 行「医生信息」） |
+| `miniprogram/app.json` | 修改 | +4/−2 | 注册上面两个新页 |
+
+`admin/` 一行未动 → **跳过 pnpm typecheck / lint / build 三道门禁**，理由是附录 D 那三条命令针对「本卡改过的工程」，管理后台本卡零改动（T10 是小程序端只读目录，后台的科室/医生 CRUD 属 T27）。
+
+### 后端门禁：117 例 / 16 类全绿
+
+```
+MVN_EXIT=0
+[INFO] Tests run: 117, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+| 测试类 | 例数 | | 测试类 | 例数 |
+|---|---|---|---|---|
+| AuditFieldFillTest | 3 | | **CatalogIntegrationTest（本卡新增）** | **19** |
+| AuditLogTest | 3 | | InpatientIntegrationTest | 11 |
+| AuthIntegrationTest | 7 | | PatientIntegrationTest | 17 |
+| FlywayMigrationTest | 1 | | PermissionServiceTest | 9 |
+| MoneyMaskingTest | 7 | | SerialNumberServiceTest | 3 |
+| SeedCheckTest | 4 | | UserAuthIntegrationTest | 9 |
+| SeedConstraintTest | 4 | | TaskKernelTest | 7 |
+| CaptchaIntegrationTest | 8 | | CaptchaServiceTest | 5 |
+
+逐类相加 `3+3+7+1+7+4+4+8+5+19+11+17+9+3+9+7 = 117`，与汇总行一致。基线对比：T09 收尾 98 例 / 15 类，本卡 **+19 例 / +1 类**，既有用例一例未红。
+
+> 门禁跑在**停后端之后**（`mvn clean test` 与常驻 8080 抢不了同一套 Flyway/Hikari）；跑完再重启后端做真 HTTP 验收。`clean` 会删 `backend/target/`，所以所有日志都落在仓库外 `E:/qdspace/_mp-driver/t10-mvn*.log`，取证不被自己删掉。
+
+J22 / J23 两条场景的 19 个用例分派：
+
+| 编号 | 用例 | 钉住什么 |
+|---|---|---|
+| J22 | `j22_departmentList_returnsSeedDepartmentsInSortOrder` | 种子 3 科室全出、`sort_order` 升序、名称/简介/位置三字段非空 |
+| J22 | `j22_departmentList_keywordFiltersByName` | 中文关键词只回名字含它的那些（PRD 77 行「支持搜索」） |
+| J22 | `j22_departmentList_keywordWithoutMatch_returnsEmptyArray` | 无匹配回 `[]` **不是 null**（小程序 `wx:for` 才不炸） |
+| J22 | `j22_departmentList_blankKeyword_returnsAll` | 纯空格等同不搜（`trimToNull` 口径） |
+| J22 | `j22_softDeletedDepartment_isInvisibleEverywhere` | 把某科室 `deleted=1` 后：列表不见、详情 5001、按它筛医生 5001、它下面的医生也不见 |
+| J22 | `j22_departmentDetail_unknownId_returnsDataNotFound` | 未知 id → 5001，不是 500 也不是 `data:null` |
+| J23 | `j23_departmentDetail_returnsDepartmentFieldsAndItsDoctors` | 详情同时带科室自身字段与 `doctors[]`，医生字段齐（含 `availableCount`） |
+| J23 | `j23_departmentDetail_departmentWithoutDoctors_returnsEmptyArray` | 空科室回 `doctors: []`，键**在**（`non_null` 不会把空集合吞掉） |
+| J23 | `j23_doctorList_withoutFilter_returnsAllSeedDoctors` | 不传 `departmentId` = 全部 5 位 |
+| J23 | `j23_doctorList_filtersByDepartment` | 传了就只回该科室的，且 `departmentId` 全等 |
+| J23 | `j23_doctorList_unknownDepartmentId_returnsDataNotFound` | 未知科室 id → 5001 而**不是**空数组（否则前端会把「打错 id」显示成「这科室没人」） |
+| J23 | `j23_doctorWithoutTitle_omitsTitleNameKey` | 医生 `title_id` 为 NULL 时，JSON 里 `titleName` **整个键消失**（钉住 `non_null`，前端必须 `|| '—'`） |
+| J23 | `j23_availableCount_ignoresPastAndFullyBookedSlots` | 插三条探针排班（昨天有余号 / 今天满号 / 后天有余号），`availableCount` 只数到 1 条 |
+| J23 | `j23_doctorDetail_returnsIntroSpecialtyAndDepartmentName` | 简介/擅长/科室名/职称名齐；`departmentName` 是真去 `department` 表查的，不是冗余列 |
+| J23 | `j23_doctorDetail_schedulesAreTodayOnwardSortedByDateThenSlot` | 四条探针的日期序 = `[today, today, +2, +2]`、时段序 = `[MORNING, EVENING, MORNING, AFTERNOON]`（同日按上午<下午<晚上，**不是字母序**）；且 `totalSlots=20` 原样出（号源不被金额裁剪） |
+| J23 | `j23_doctorDetail_unknownId_returnsDataNotFound` | 未知医生 → 5001 |
+| J23 | `j23_doctorDetail_withoutSchedules_returnsEmptyArray` | 未来无排班 → `schedules: []` |
+| 越权 | `staffToken_cannotReachCatalogEndpoints` | 员工 token 打四个端点全 403 + 4001 |
+| 越权 | `anonymousRequest_isRejected` | 匿名打四个端点全 401 |
+
+**只读红线的机械证明**（不靠「我没写」这种自述）：`@BeforeEach` 记下 `department` / `doctor` / `title` / `schedule` 四张表的 `COUNT(*)`，`@AfterEach` 先删本例探针行，再断言四个计数**与开跑前逐一相等**。任何一例真写了库，这条断言当场红。
+
+**一个踩到的坑（记进 CONVENTIONS 候选）**：`jsonPath("$.data[?(@.id == 9)].availableCount")` 在 Spring 的 `jsonPath(...).value(...)` 下**返回 null 而不是空集合**——Jayway 的过滤表达式语义如此。第一次跑就是这个坑红的：`expected:<[1]> but was:<null>`，分不清「值不对」还是「那个医生压根不在数组里」。改法是解析 body 到 `List<Map>` 再用 `findDoctor(list, id)`（找不到就 `orElseThrow AssertionError`）在 Java 里断言，语义明确。
+
+### 顺手修掉的跨卡 bug：T06 的 `title` 逻辑删泄漏（11 行死数据）
+
+本卡开写前数库，发现 `title` 表有 **14 行**，seed 只有 3 行。
+
+| 步骤 | 做法 | 结果 |
+|---|---|---|
+| 现象 | `SELECT COUNT(*) FROM title` | 14（应为 3） |
+| 定位多余行 | `HEX(LEFT(name,2))='5430'`（即 "T0"）、`CHAR_LENGTH(name)=10`、`sort_order=100`、`deleted=1` | 11 行，`created_at` 从 2026-09-26 起**每跑一次全套测试多一行** |
+| 根因 | `AuditFieldFillTest:44` 用 `titleMapper.delete(...)` 收尾。`Title extends BaseEntity`，`deleted` 上有 `@TableLogic` → MyBatis-Plus 把它变成 `UPDATE ... SET deleted=1`，**行还在**。同一个测试里的 `taskMapper.deleteById` 是物理删，因为 `task` 表没有 `deleted` 列——两种行为混在一个 `@AfterEach` 里，T06 收口时没看出来 | 逻辑删 vs 物理删 |
+| 为什么中文没直接 grep | `mysql.exe` 是原生程序，命令行里的中文字面量以 GBK 到达 → 用 `HEX()` / `CHAR_LENGTH()` 代替中文字面量比对 | — |
+| 修法 | `AuditFieldFillTest` 注入 `JdbcTemplate`，`title` 收尾改 `jdbcTemplate.update("DELETE FROM title WHERE name = ?", TITLE_NAME)`，并在代码里写明为什么必须裸 SQL | 见 diff（+11/−3） |
+| 清历史脏数据 | `DELETE FROM title WHERE name LIKE 'T06%' AND deleted=1 AND sort_order=100` | `ROW_COUNT=11`，`title_total_after=3`，id 1–3 三行完好 |
+| 复核 `task` 没漏 | `SELECT COUNT(*) FROM task WHERE related_type='TEST_T06'` | 0，且 `task` 表无 `deleted` 列 → 从来是物理删 |
+| 复验修法 | 重跑全套 117 例，再数一次 | `title=3`、`title_t06_leak=0` |
+
+这是**跨卡改动**，按附录 C 第 825 行「跨卡钩子改完强制重跑被改卡的全部 J 测试」——T06 的 `AuditFieldFillTest` 3 例与全套 117 例都重跑过，全绿。
+
+### 真 HTTP 验收：35 步全过（真实后端 + 真实 MySQL + 真实 Redis）
+
+MockMvc 已经 19 例全绿，还要再跑一遍真 HTTP，是因为 MockMvc 不起 Tomcat、不走真实过滤器链顺序，**中文 query 参数的 URL 编解码**和 `context-path=/api` 只有真 HTTP 能证。脚本 `E:/qdspace/_mp-driver/t10_http.py`（只用标准库 urllib/subprocess/json，不装三方包）；管理员 token 走真登录，验证码答案从 Redis 读回（`docker exec hospital-redis redis-cli GET captcha:<key>`）不猜；患者 token 走 `POST /auth/wechat-login`（mock 模式派生 openid）。
+
+```
+patient_id=316 staff_token_len=428 patient_token_len=249
+科室名=['消化内科', '普外科', '儿科']
+合计 35 步，PASS 35，FAIL 0        PY_EXIT=0
+```
+
+| 编号 | 步骤 | expect | actual | 结果 |
+|---|---|---|---|---|
+| 0a | `GET /auth/captcha` | 200 | 200 | PASS |
+| 0b | Redis 取回验证码答案 | 4–6 位字符 | `5WD7` | PASS |
+| 0c | `POST /auth/login` 管理员真登录 | 200 | 200（role=admin） | PASS |
+| 0d | `POST /auth/wechat-login` 患者登录 | 200 | 200（userId=316） | PASS |
+| 1 | `GET /user/departments` 种子科室数 | 3 | 3 | PASS |
+| 1b | 按 `sort_order` 升序 | `[1,2,3]` | `[1,2,3]` | PASS |
+| 1c | 字段齐（名称/简介/位置） | id+name+sortOrder 在 | keys=`[id, intro, location, name, sortOrder]` | PASS |
+| 1d | 不回 created_at/updated_at/deleted | False | False | PASS |
+| 2 | `?keyword=消`（**中文 query 参数**） | 命中且都含「消」 | 命中 1 条 `['消化内科']` | PASS |
+| 3 | `?keyword=无匹配` → 空数组不是 null | `[]` | `[]` | PASS |
+| 4 | `?keyword=` 纯空格 → 等同不搜 | 3 | 3 | PASS |
+| 5 | `GET /user/departments/{id}` 科室字段 | 消化内科 | 消化内科（id=1） | PASS |
+| 5b | 扁平结构（`data.name` 不是 `data.department.name`） | True | True | PASS |
+| 5c | `doctors` 非空且每人带 `availableCount` | True | True | PASS |
+| 6 | `GET /user/departments/999999` → 5001 | 5001 | 5001（message=数据不存在） | PASS |
+| 7 | `GET /user/doctors` 种子医生数 | 5 | 5 | PASS |
+| 7b | 字段齐（姓名/职称/擅长/头像/可约数） | True | True | PASS |
+| 8 | `?departmentId=1` 只回该科室 | 2 | 2（`departmentId` 全等） | PASS |
+| 9 | `?departmentId=999999` → 5001（不是空数组） | 5001 | 5001 | PASS |
+| 10 | `GET /user/doctors/{id}` 简介+擅长+科室名+职称 | True | True | PASS |
+| 10b | 详情不回 `availableCount`（冗余） | False | False | PASS |
+| 10c | 排班日期是 `YYYY-MM-DD` 字符串（`LocalDate` 不走 `date-format`） | True | True | PASS |
+| 10d | 只含今天及以后 | True | True（today=2026-09-28） | PASS |
+| 10e | 日期升序、同日 上午<下午<晚上 | 排序键已排好 | `[MORNING, AFTERNOON, MORNING, AFTERNOON, …]` | PASS |
+| 10f | 号源是原始数字、未被金额裁剪 | True | True | PASS |
+| 10g | `0 ≤ remaining ≤ total`（无负号源） | True | True | PASS |
+| 11 | `GET /user/doctors/999999` → 5001 | 5001 | 5001 | PASS |
+| 12.1–12.4 | **员工 token** 打 科室列表/科室详情/医生列表/医生详情 | HTTP 403 + code 4001 | 403 / 4001 ×4 | PASS |
+| 13.1–13.4 | **匿名** 打 同上四个端点 | HTTP 401 + code 401 | 401 / 401 ×4 | PASS |
+
+10c 值得单记一句：`spring.jackson.date-format: yyyy-MM-dd HH:mm:ss` **只管 `java.util.Date`**，对 `LocalDate` 无效，`LocalDate` 走 JSR-310 默认输出 `2026-09-28`。这个形状不能靠假设，所以既在 MockMvc 里断过、也在真 HTTP 里断过（T09 的 `boundAt` 同一条先例）。
+
+### 只读证明 + 数据自净（库计数前后逐行对照）
+
+| 表 | 验收前 | 验收后（清理前） | 清理后 | 结论 |
+|---|---|---|---|---|
+| `department` | 3 | 3 | 3 | 一行未动 |
+| `doctor` | 5 | 5 | 5 | 一行未动 |
+| `title` | 3 | 3 | 3 | 一行未动 |
+| `schedule` | 150 | 150 | 150 | **一行未写**（红线 417 机械证明） |
+| `audit_log` | 12 | 12 | 12 | 只读端点不产审计（PRD 485 行把审计范围定在管理后台） |
+| `task` | 0 | 0 | 0 | 不派任务 |
+| `user` | 4 | 6 | 4 | +2 是两次跑脚本 `wechat-login` 建的验收账号，已删净 |
+| `mock_users` | 0 | 2 | 0 | 同上 |
+| `patient` / `inpatient` | 10 / 5 | — | 10 / 5 | 与 T09 收尾基线一致 |
+
+清理语句：`DELETE FROM user WHERE id > 4 AND wechat_openid LIKE 'MOCK_OPENID_%';` → `user_deleted_rows=2`。
+
+### 小程序三页（PRD 511 行：选择科室 / 科室详情 / 医生信息）
+
+| 页面 | 打的接口 | 关键取舍 |
+|---|---|---|
+| `pages/appointment/appointment`（tabBar「预约」，原占位页重写） | `GET /user/departments?keyword=` | ① 未登录**不自动跳登录页**：这是 tabBar 页，每次点 tab 都被劫持会让整个 tab 不可用，改成带「去登录」按钮的空态；② 搜索绑 `bindconfirm`（键盘「搜索」键）而**不逐字符请求**：弱网下每敲一个字刷一次列表会抖，也没有任何规格要求实时联想；③ 搜索无结果的空态带「清空搜索条件」按钮——反面清单第 4 条：空态必须给下一步动作 |
+| `pages/department/detail` | `GET /user/departments/{id}` | 科室卡片（名称/位置/简介）+ 医生列表（头像/姓名/职称/擅长/「近两周可约 N 个时段」）；导航栏标题用 `wx.setNavigationBarTitle` 动态设成科室名；无医生时空态给「返回科室列表」 |
+| `pages/doctor/detail` | `GET /user/doctors/{id}` | 头像/姓名/职称/科室 + 擅长领域 + 医生简介 + **出诊时间表**（日期 + 周几 + 时段中文 + `余 x/y`）；**约满的行不隐藏**，改成 `opacity:.45` 灰掉 + 明写「已约满」——藏起来等于告诉患者「这位医生那天不出诊」，是误导；**没有预约按钮**（红线 417，预约属 T12） |
+
+前端补两件事，都是「后端只回码、文案在前端」这条既有取舍的延续：
+- `timeSlotLabel`：`MORNING/AFTERNOON/EVENING` → 上午/下午/晚上（码值出处 V1:105 列注释）；
+- `weekdayLabel`：排班只有 `YYYY-MM-DD`，没有「周几」，而患者挑号是按星期几看的，所以在前端用 `getDay()` 补算。
+
+`non_null` 序列化的兜底一律写成 `item.x || '—'` / `|| '暂无简介'`：null 的键会**整个消失**，`undefined` 直接渲染成空白。但 `doctors` / `schedules` 永不为 null（后端保证空数组），所以列表空态可以放心用 `length === 0` 判断。
+
+### 附录 B · 全局红线检查表（14 条逐条扫）
+
+| # | 红线 | 本卡结论 |
+|---|---|---|
+| 1 | 金额有没有 FLOAT/DOUBLE | **N/A**：本卡零金额字段。`totalSlots`/`remainingSlots`/`availableCount` 是**号源个数**，`INT`，不是钱 |
+| 2 | 护士视角新接口会不会吐金额 | **N/A**：四个端点都在 `/user/**`，员工 token 实测 403/4001（12.1–12.4） |
+| 3 | 新写操作有没有写 audit_log、同事务吗 | **N/A**：本卡零写操作。`audit_log` 计数前后都是 12，机械证明 |
+| 4 | 跨表写入是否一个 `@Transactional`、外部调用是否 afterCommit | **N/A**：`CatalogService` 全是纯读，**故意不加** `@Transactional`（只读查询套事务只是白占连接）；无微信/短信等外部调用 |
+| 5 | 指标口径有没有在别处重算 | **不适用但已守住单一出处**：「近两周可约时段数」只在 `CatalogService.countAvailableSchedules` 一处算，小程序不自己数 `schedules` |
+| 6 | 权限判断是否只写在 UI | **不是**：`SecurityConfig` 的 `/user/** → hasRole("patient")` 是服务端硬拦；小程序的 `onShow` token 判断只是体验层，真 HTTP 12.x/13.x 八步证明后端独立拦得住 |
+| 7 | 自动派发的任务是否幂等 | **N/A**：本卡不派任务（`task` 计数前后都是 0） |
+| 8 | 小程序端新接口是否强制注入 userId 归属校验 | **N/A，且已写明**：`department`/`doctor`/`schedule` 三张表**没有 `user_id` 列**，是全院公共目录，不存在「别人的科室」；归属校验对本卡无对象可校（`CatalogService` 类注释里记了这条判断） |
+| 9 | 金额用 `<Money>`、列表用 `<DataTable>`、状态用 `<StatusBadge>` | **N/A**：`admin/` 一行未动，本卡不产管理后台页面 |
+| 10 | 列表筛选/搜索/分页是否进 URL | **N/A（小程序端）**：该条针对管理后台浏览器地址栏。小程序侧搜索词是页面内即时状态，`navigateTo` 到详情页不需要带搜索词（返回时列表还在）；本卡无分页（种子 3 科室 / 5 医生，规格也没要求分页） |
+| 11 | 有没有多装 T01 清单外的三方库 | **没有**：后端零新依赖（`pom.xml` 未改）；小程序只用 `utils/request.js` + `utils/format.js` 两个自有模块；验收脚本只用 Python 标准库 |
+| 12 | 有没有实现附录 A「首版不做」的东西 | **没有**：真实微信支付、多院区、消息推送、企微/公众号一行未碰；`schedule` 只读不写 |
+| 13 | 本卡测试场景（J 编号）是否逐条真实通过 | **是**：J22 6 例 + J23 11 例 + 越权 2 例，`mvn clean test` 实跑 117/117、`MVN_EXIT=0`，日志 `E:/qdspace/_mp-driver/t10-mvn3.log`；另有真 HTTP 35/35 |
+| 14 | 身份证/手机号是否加密存储 | **N/A**：本卡不碰 `patient` / `user` 表，四个响应 DTO 里没有任何敏感字段（无身份证、无手机号、无 openid） |
+
+### 本卡有意未做的事（附录 D 第 3 条）
+
+| 未做 | 依据 |
+|---|---|
+| 排班的增删改（后台排班管理） | 卡片 417 行红线 → T11 |
+| 独立的「排班查询」端点 | §9.1 那格由 T11 卡片 430 行「排班列表」承接；T10 只在医生详情里内嵌只读排班 |
+| 预约下单、预约按钮、号源扣减 | 卡片 417 行红线 → T12；医生详情页刻意**不放**预约按钮 |
+| 选择就诊人 / 预约须知 / 确认预约信息 / 预约信息 四页 | PRD 511 行同属「预约挂号」模块，但是 T12 的页面 |
+| 科室/医生的后台 CRUD | PRD §4.5.2 / §9.2 → T27 |
+| 科室列表分页 | 规格无要求，种子仅 3 条；等数据量真起来再说（不做投机设计） |
+| 医生头像上传 | `doctor.avatar` 只读展示，图片管理属后台 T27 |
+| 新错误码 | 查不到统一 5001，PRD 无错误码表，1xxx/2xxx 都不涵盖科室与医生 |
+| DB 迁移（V4） | 四张表 V1 已建齐、索引 `uk_doctor_date_slot` 已在、seed 数据已够 |
+
+### 遗留 TODO（非本卡范围，记账不忘）
+
+- 公开仓库历史里的默认凭据（`JWT_SECRET`、seed `admin123` 的 BCrypt 值、`MYSQL_PASSWORD:-123456`、`crypto.key` 默认值）——启动日志里 `CryptoService` 那条 WARN 每次都会打；上线前必须轮换。
+- `HttpMessageNotReadableException` 仍落到通用处理，宜单独一张小卡改成 400 + 友好文案。
+- `admin/curl`（0 字节、未跟踪）仍在工作区，提交按显式清单绕开，**不用 `git add -A`**。
+- `@TableLogic` 逻辑删这个坑值得写进 `docs/CONVENTIONS.md`：**测试收尾删数据必须确认目标表有没有 `deleted` 列**，有就得走裸 SQL，否则每跑一次测试留一行死数据（本卡就是这么发现 T06 泄漏 11 行的）。
+- 仓库外 `E:\qdspace\_mp-driver` 驱动脚本与验收脚本可视情况清理。
+
+### 当前状态
+
+- 后端 **117 例 / 16 类全绿**（+19 例 / +1 类，既有 98 例零回归）；真 HTTP **35/35 PASS**；库已回基线（`schedule` 150 一行未写）；附录 B 14 条扫完。
+- 跨卡修复一处：`AuditFieldFillTest` 的 `title` 逻辑删泄漏，并重跑 T06 + 全套测试验证（附录 C 825 行）。
+- 后端进程**在后台运行**（PID 65164，8080，context-path `/api`，日志 `E:/qdspace/_mp-driver/t10-backend.log`），T10-M 小程序 UI 验收要用；下次跑 `mvn clean test` 前必须先停它。
+- UI 验收结果见下一节「T10-M」。提交按显式清单，**不推送**（下个推送点 T12 / 🚩M1）。
+
 
 
 

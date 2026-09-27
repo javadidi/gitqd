@@ -9,6 +9,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -34,6 +35,9 @@ class AuditFieldFillTest {
     @Autowired
     private TitleMapper titleMapper;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @AfterEach
     void cleanUp() {
         List<Task> tasks = taskMapper.selectList(
@@ -41,7 +45,12 @@ class AuditFieldFillTest {
         for (Task task : tasks) {
             taskMapper.deleteById(task.getId());
         }
-        titleMapper.delete(new LambdaQueryWrapper<Title>().eq(Title::getName, TITLE_NAME));
+        // title 必须走裸 SQL 物理删：title 继承 BaseEntity，@TableLogic 让
+        // titleMapper.delete(...) 只是把 deleted 置 1，行还在。T06 收口时没发现，
+        // 到 T10 数库才暴露——每跑一次全套测试就往开发库多留一行 sort_order=100 的死行，
+        // 累计 11 行（见 docs/WORK_LOG.md 的 T10 节）。
+        // task 表没有 deleted 列，所以上面那个 deleteById 本来就是物理删，不用改。
+        jdbcTemplate.update("DELETE FROM title WHERE name = ?", TITLE_NAME);
     }
 
     private Task newTask(Long relatedId) {

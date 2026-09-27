@@ -43,4 +43,35 @@ function relationLabel(relation) {
   return RELATION_LABELS[relation] || relation || '—'
 }
 
-module.exports = { formatMoney, formatDate, maskPhone, RELATION_LABELS, relationLabel }
+// 时段码 → 中文标签。码值来自后端 V1__init.sql:105 的 schedule.time_slot 列注释
+// 「MORNING/AFTERNOON/EVENING」，后端只回码不回中文（同 RELATION_LABELS 的取舍）。
+const TIME_SLOT_LABELS = {
+  MORNING: '上午',
+  AFTERNOON: '下午',
+  EVENING: '晚上',
+}
+
+function timeSlotLabel(timeSlot) {
+  return TIME_SLOT_LABELS[timeSlot] || timeSlot || '—'
+}
+
+const WEEKDAY_LABELS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+
+// 排班日期只有 YYYY-MM-DD，没有"周几"，而患者挑号是按星期几看的，所以在前端补。
+function weekdayLabel(dateStr) {
+  if (!dateStr) return ''
+  const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return ''
+  return WEEKDAY_LABELS[d.getDay()]
+}
+
+module.exports = {
+  formatMoney,
+  formatDate,
+  maskPhone,
+  RELATION_LABELS,
+  relationLabel,
+  TIME_SLOT_LABELS,
+  timeSlotLabel,
+  weekdayLabel,
+}

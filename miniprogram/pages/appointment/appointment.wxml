@@ -1,37 +1,58 @@
 <view class="page-appointment">
-  <view class="card">
-    <view class="section-title">选择科室</view>
-    <view class="dept-list">
+  <view class="container">
+    <!-- 未登录：不自动跳登录页。这是 tabBar 页，每次点 tab 都被劫持到登录页会让整个 tab 不可用；
+         按反面清单要求，空态必须带下一步动作 -->
+    <view wx:if="{{!isLoggedIn}}" class="card empty-card">
+      <view class="empty-icon">🔒</view>
+      <view class="empty-title">登录后查看科室与医生</view>
+      <view class="text-muted empty-desc">科室、医生与排班信息仅对已登录的患者开放</view>
+      <button class="btn-primary login-empty-btn" bindtap="onLoginTap">去登录</button>
+    </view>
+
+    <block wx:else>
+      <view class="card">
+        <view class="section-title">选择科室</view>
+        <view class="dept-search">
+          <input
+            class="dept-search-input"
+            type="text"
+            value="{{keyword}}"
+            placeholder="输入科室名称搜索"
+            confirm-type="search"
+            bindinput="onKeywordInput"
+            bindconfirm="onSearch"
+          />
+          <text wx:if="{{keyword}}" class="dept-search-clear" bindtap="onClearKeyword">清空</text>
+        </view>
+      </view>
+
+      <!-- 搜索无结果：空态带"清空搜索条件"这个下一步动作，不能只写"暂无数据" -->
+      <view wx:if="{{!loading && searched && departments.length === 0}}" class="card empty-card">
+        <view class="empty-icon">🔍</view>
+        <view class="empty-title">没有匹配的科室</view>
+        <view class="text-muted empty-desc">换个关键词，或清空搜索条件看全部科室</view>
+        <button class="btn-outline dept-empty-btn" bindtap="onClearKeyword">清空搜索条件</button>
+      </view>
+
       <view
         wx:for="{{departments}}"
         wx:key="id"
-        class="dept-item {{selectedDept.id === item.id ? 'active' : ''}}"
-        data-dept="{{item}}"
+        class="card dept-card"
+        data-id="{{item.id}}"
         bindtap="onDeptTap"
       >
-        <text>{{item.name}}</text>
-      </view>
-    </view>
-    <view wx:if="{{departments.length === 0}}" class="empty-hint">
-      <text class="text-muted">科室数据将在 T10 任务卡中加载</text>
-    </view>
-  </view>
-
-  <view class="card" wx:if="{{selectedDept}}">
-    <view class="section-title">{{selectedDept.name}} - 医生列表</view>
-    <view class="doctor-list">
-      <view wx:for="{{doctors}}" wx:key="id" class="doctor-item">
-        <view class="doctor-avatar">
-          <text>👨‍⚕️</text>
+        <view class="flex-between">
+          <text class="dept-name">{{item.name}}</text>
+          <text class="menu-arrow">></text>
         </view>
-        <view class="doctor-info">
-          <view class="flex-row" style="gap: 12rpx;">
-            <text class="doctor-name">{{item.name}}</text>
-            <text class="doctor-title">{{item.titleName}}</text>
+        <view class="dept-lines">
+          <view class="flex-between">
+            <text class="text-muted">位置</text>
+            <text class="dept-value">{{item.location || '—'}}</text>
           </view>
-          <text class="text-muted">{{item.specialty}}</text>
+          <view class="dept-intro">{{item.intro || '暂无简介'}}</view>
         </view>
       </view>
-    </view>
+    </block>
   </view>
 </view>
