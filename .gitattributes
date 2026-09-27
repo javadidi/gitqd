@@ -1,0 +1,14 @@
+# 仓库同时在 Windows(开发) 与 Linux(CI/部署) 上被检出，
+# 行尾不统一会让 git status 凭空显示"整文件被改"，也会让 shell 脚本在 Linux 上因为 \r 报
+# "bad interpreter"。所以文本文件一律在库里存 LF，检出时也强制 LF（不跟随各机器的 core.autocrlf）。
+* text=auto eol=lf
+
+# 图片/压缩包等二进制一旦做了行尾转换就会损坏，显式声明不转换。
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.xlsx binary
+*.zip binary
+*.jar binary
