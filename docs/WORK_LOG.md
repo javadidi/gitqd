@@ -2225,6 +2225,7 @@ mock_user_count = 1                              ← 本轮验收只造了 1 条
   3. 「获取验证码」60 秒倒计时、倒计时中按钮 disabled 且文案变成 `Ns 后重发`（与后端 4006 限频对齐）；
   4. 绑定成功 → user-section 显示 `138****4347` 式打码号、绑定表单整块消失（`wx:if="{{!profile.hasPhone}}"`）。
   - 清 token 用开发者工具 Console 执行 `wx.clearStorageSync()`（本卡刻意未做退出登录按钮，见下）。
+- **2026-09-28 更新**：上述 4 项已由 skill-cli 自动化验收全部通过（含「稍后再说」落首页的取消分支补测），取证见文末《T07-M / T08-M · 小程序端自动化验收（2026-09-28）》。
 - **明确拒绝的取巧**：不在小程序里写死假 profile 让它"看起来通过"；不做 `hasPhone` 的本地兜底猜测，一切以后端响应为准。
 
 ### 遗留 TODO 及归属
@@ -2526,6 +2527,8 @@ OK  app.json                   OK  pages/patient/list.json      OK  pages/patien
 
 前置条件：后端要在 8080 上跑（已重启，PID 48980）、Redis 容器 `hospital-redis` 要 UP。清 token 用 `wx.clearStorageSync()`（患者端没有退出登录按钮，T07 有意未做）。
 
+> 2026-09-28 更新：本表 6 项与 T08-G 追加的 2 项已由 skill-cli 自动化验收全部通过，取证见文末《T07-M / T08-M · 小程序端自动化验收（2026-09-28）》。
+
 ### 遗留 TODO 及归属
 
 | TODO | 位置 | 归属 |
@@ -2814,6 +2817,87 @@ patient_deleted_rows=0   user_total=4   mock_users=0
 |---|---|---|
 | 7 | 列表页点某个就诊人的「删除」 | 弹二次确认框，标题「删除就诊人」，确认按钮红色且文字为「删除」；**卡片本身不应同时跳去编辑页** |
 | 8 | 确认删除 | toast「已删除」，列表刷新后该人消失；再点「添加就诊人」填同一张卡号提交 → 成功，且这是同一个人复活（不是提示卡号已存在） |
+
+> 2026-09-28 起本表 8 项（含上表 6 项与 T07 的 4 项）已由 skill-cli 自动化验收**全部通过**，逐项取证见文末《T07-M / T08-M · 小程序端自动化验收（2026-09-28）》。
+
+## T07-M / T08-M · 小程序端自动化验收（2026-09-28）
+
+**卡片范围**：不写任何产品代码。把 T07 挂起的 4 项与 T08/T08-G 挂起的 8 项「微信开发者工具人工验收」改成**机器驱动 + 逐项取证**，关闭 #47 / #54 / #58。
+
+### 为什么这次能自动跑（通道与工具）
+
+| 层 | 选型 | 说明 |
+|---|---|---|
+| 通道 | 微信开发者工具自带 **skill-cli**（wechatide-skill v0.3.9） | `wechatide -c qoder <tool> [flags]`；业务工具需 `wechatide auth -c qoder`，用户在 IDE 里点一次「授权」后 `check_wechatide_status` 返回 `loginExpired:false / tokenRequired:false / versionRelation:"equal"` |
+| 驱动代码位置 | **仓库外** `E:\qdspace\_mp-driver`（wx.js / ev.js / lib.sh / fn/*.js / args/*.json / shots/） | `miniprogram/` 零新增文件、零新增依赖，附录 B 第 4 条（不多装三方库）继续成立；`miniprogram-automator` 那条路已证死（Node≥18.20 对 `.bat` 无 `shell:true` 抛 EINVAL），仅留作历史 |
+| 页面状态 | `automation_evaluate` 在小程序运行时执行 JS | 读 `getCurrentPages()`、`page.data`、storage；也是装录制器的入口 |
+| 交互 | `automation_element_action`（tap / text / style / property） | **选择器引擎只认单类名**：`.user-info`、`.login-btn`、`.delete-link` 可用；`.menu-group .menu-item`、`.bind-row:nth-child(2) .bind-input` 一律 `no such element` |
+| 弹窗 / Toast 取证 | 运行时 patch `wx.showModal` / `wx.showToast` 记参数 | `cfg.passthrough=true` 放行真弹窗（配 `simulator_screenshot` 截图取证）；否则按预设答案自动应答（`confirm` / `cancel` / `content`），因此「去绑定 / 稍后再说」「删除 / 取消」两个分支都能机械走到 |
+| 网络取证 | `get_simulator_network --command '"grep -n sms-code"'` | 直接读网络缓冲，拿到第一次 `code:200`、第二次 `code:4006` 的原始响应体 |
+| 路由取证 | `automation_runtime_info --action currentPage` | 拿 `title`（「就诊人管理」「编辑就诊人」）与 stack |
+
+三个 Windows/cmd 坑已固化进驱动，避免后人重踩：
+
+1. `wx.js` 用 `shell:true` 起 `.cmd`，Node 在 win32 下把参数**原样拼给 cmd.exe**：参数里的换行会在换行处截断（实测报 `Uncaught Unexpected token ')'`），双引号会被 cmd 重新切分。所以 JS 源码走 `--fn-source` 自套一层引号且源码内只用单引号，JSON 参数走 `--args-file`（UTF-8 文件，中文安全）。
+2. `--args-file` / `--project` 的相对路径按 **CLI 自身 cwd** 解析（报过 `file not found: E:\微信web开发者工具\args\...`），一律传绝对路径。
+3. `get_simulator_console|network --command 'grep -n .'` 里的 `-n` 会被当成 flag（`Unknown argument: n`），grep 串必须整体再套一层引号：`--command '"grep -n ."'`。
+
+### 环境前置（本轮拉起）
+
+| 项 | 动作 | 结果 |
+|---|---|---|
+| Docker Desktop 未启动（`captcha_http=500`） | 请示用户后 `cmd //c start "" "E:\docker_desktop\Docker Desktop.exe"`（安装目录非默认 C 盘） | 第 1 次轮询 engine 即就绪 `29.8.0`；`hospital-redis` healthy、`PING=PONG`、captcha 500→200 |
+| 后端 / MySQL | 沿用 PID 53444 / 8080 与原生 3306 | 基线 `user_rows=4`、`patient_rows=10`、`patient_deleted=0` |
+
+### 12 项结果总表
+
+| # | 项 | 期望 | 实际取证 | 判定 |
+|---|---|---|---|---|
+| T07-1 | 一键登录 → `hasPhone=false` 弹窗 | 标题「绑定手机号」、按钮「去绑定 / 稍后再说」；确认落**我的**、取消落**首页** | 弹窗参数录制 `{title:绑定手机号, content:登录成功。绑定手机号后才能接收预约与就诊提醒，是否现在绑定？, confirmText:去绑定, cancelText:稍后再说}`；passthrough 真弹窗截图 `t07-1-modal-bindphone.jpg` 逐字一致；确认分支 stack=`[pages/mine/mine]`；取消分支（VM 重置后补测）stack=`[pages/index/index]` | PASS |
+| T07-2 | 昵称弹窗改名 | 回显 + user-section 同步 | 弹窗 `{title:修改昵称, editable:true, content:当前昵称, placeholderText:请输入昵称（1-64 字）}`；自动回填「T07验收昵称」→ toast「昵称已更新」；`.user-name` 与 `.menu-value` 均回显；DB `user.nickname=T07验收昵称`。空昵称分支 toast「昵称需为 1-64 字」 | PASS |
+| T07-3 | 60s 倒计时 | 倒计时中按钮 disabled、文案 `Ns 后重发`，与后端 4006 对齐 | 真 input 手机号后点「获取验证码」→ toast「验证码已发送」、`countdown 56→55`、`.code-btn` 文案 `55s 后重发`、`disabled=true`；强制 `countdown=0` 再点 → 网络缓冲第二次 POST 响应体 `{"code":4006,"message":"短信发送过于频繁，请稍后再试"}`，UI toast 逐字一致，且失败**不重启**倒计时 | PASS |
+| T07-4 | 绑定成功 | 打码号回显、绑定表单整块消失 | toast「绑定成功」；`profile.phone=139****2601`、`hasPhone=true`；`.bind-input` → `no such element`（表单块消失）；`.user-detail` 显示 `T07验收昵称139****2601`；DB `phone` 52 字符密文、`is_plaintext=0` | PASS |
+| T08-1 | 我的 → 就诊人管理 | 跳 list、标题「就诊人管理」、不再 toast「即将开放」 | stack 顶 `pages/patient/list`；`currentPage.title=就诊人管理`；toast=`[]` | PASS |
+| T08-2 | 新用户空态 | 图标 + 两行文案 + 蓝色按钮 | `.empty-icon=👤`、`.empty-title=还没有添加就诊人`、`.empty-desc=添加后可以替本人和家属挂号、缴费、查报告`、`.empty-btn=添加就诊人`；截图 `t08-2-empty.jpg` 按钮为蓝底 | PASS |
+| T08-3 | 表单校验 | 姓名空/卡号空/身份证非 18 位/手机号非法 → 各自 toast，不发请求 | 六条 toast 全中：请填写姓名 → 请填写就诊卡号 → 请填写身份证号 → 请填写手机号 → 身份证号格式不正确 → 手机号格式不正确；期间 DB `patient WHERE user_id=127` 计数恒 0（零请求）。**注意校验顺序**：先查「是否为空」再查「格式」（edit.js:94-105），所以身份证填 3 位但手机号仍空时报的是「请填写手机号」，这是代码正确行为而非漏报 | PASS |
+| T08-4 | 关系 picker | 5 项、默认本人 | `relationNames=[本人,子女,父母,配偶,其他]`、`codes=[SELF,CHILD,PARENT,SPOUSE,OTHER]`、`relationIndex=0`、`.picker-value=本人▾` | PASS |
+| T08-5 | 重复卡号 | toast「就诊卡号已存在」，页面不重复 toast | 单条 toast「就诊卡号已存在」；停在 edit 页；DB 仍 1 行 | PASS |
+| T08-6 | 编辑态 | 标题变、姓名/卡号预填、证件与手机留空 + 「留空则不修改」+ 「当前：打码值」；只改姓名提交后打码值不变 | `currentPage.title=编辑就诊人`；`name=验收甲`、`cardNo=K-ACC-001` 预填，`idCard=''`、`phone=''`，`idCardMasked=1101**********775X`、`phoneMasked=139****2602`；截图 `t08-6-edit.jpg` 两处 placeholder 与「当前：」灰字可见；只改姓名提交 → toast「已保存」、列表回显「验收甲改」、**前后密文逐字节 diff 相同（CIPHER_UNCHANGED）** | PASS |
+| T08-7 | 删除二次确认 | 标题「删除就诊人」、确认按钮红色且文字「删除」；卡片不同时跳编辑页 | 弹窗 `{title:删除就诊人, confirmText:删除, confirmColor:#e11d48}`；tap 后 stack 顶仍 `pages/patient/list`；`.delete-link` 计算色 `rgb(225, 29, 72)`（= #e11d48，list.wxss:85）；**取消分支**：自动 cancel 后该人仍在、DB `deleted=0` | PASS |
+| T08-8 | 确认删除 + 同卡号复活 | toast「已删除」、列表消失；同卡号重添成功且是同一人复活 | toast「已删除」、列表空、DB `id=97 deleted=1`（行保留=软删）；同卡号重添 → toast「已添加」（**不是**「卡号已存在」）、DB 同 `id=97 deleted=0`、计数仍 1 | PASS |
+
+**12/12 PASS。**
+
+### 两处降级（如实记）
+
+| 位置 | 降级 | 原因与影响 |
+|---|---|---|
+| 验证码输入框、菜单入口 | 不走真 tap/input，改调页面 handler（`onCodeInput` / `onMenuTap`） | 选择器引擎只认单类名，第二个 `.bind-input` 与「就诊人管理」菜单项无法唯一定位。handler 与 `bindinput`/`bindtap` 绑的是同一个函数，事件绑定本身由手机号输入框的真 `input` 事件与 `.delete-link`/`.patient-card` 的真 tap 覆盖 |
+| 身份证/手机号输入（添加页） | 同上，走 `onIdCardInput` 等 handler | 同上；姓名输入未做真 input 覆盖，但 mine 页手机号输入已证 input 事件链路通 |
+
+### 过程发现（非产品 bug，记档防误判）
+
+1. **`simulator_refresh` 的重编译是异步的**：调用返回后 VM 可能还没换，紧接着装的录制器会被晚到的重编译冲掉（第一次跑 T07-1 确认分支时「绑定手机号」没进录制就是这个原因）。对策已固化：refresh 后 `sleep ≥14s`，且每次动作前用 `state` 里的 `recInstalled` 自检。
+2. devtools 控制台有一条 `[Page route 错误(system error)] routeDone with a webviewId 13 is not found`：`navigateTo` 与 `switchTab` 抢跑的已知竞态，功能不受影响。
+3. **未定论观察**：某次登录后 `getApp().globalData.token` 有值但 `wx.getStorageSync('token')` 为空（`clearToken` 只在 401 分支调用，故疑似有过一次 401）。不影响 12 项判定，未继续追；若以后做「杀进程后保持登录」类验收，先查这条。
+
+### 验收数据自净
+
+本轮共造 2 个 mock 用户（确认分支 1 个 + 取消分支补测 1 个）与 1 条 patient（id 97，经历 新建→改名→软删→复活→删除）。清理用双条件，碰不到 seed：
+
+```
+DELETE FROM patient WHERE id=97 AND user_id=127 AND card_no='K-ACC-001';   -- patient_deleted_rows=1
+DELETE FROM user    WHERE id > 4 AND wechat_openid LIKE 'MOCK_OPENID_%';   -- user_deleted_rows=1（第二条）
+```
+
+收尾基线：`user_rows=4`、`patient_rows=10`、`patient_deleted_flag=0`、`leftover_mock=0`；模拟器 storage `keys=[]`（未登录态交还）。
+
+截图存仓库外 `E:\qdspace\_mp-driver\shots\`：`01-initial.jpg`、`t07-1-modal-bindphone.jpg`、`t08-2-empty.jpg`、`t08-6-edit.jpg`。
+
+### 结论
+
+- T07 的 4 项与 T08/T08-G 的 8 项**全部由机器实测通过**，#47 / #54 / #58 关闭；「待人工验收」清单清零。
+- 本节不改动任何产品代码，故不触发后端门禁与 admin 门禁；提交仅含本文件与三处指引行。
 
 
 
