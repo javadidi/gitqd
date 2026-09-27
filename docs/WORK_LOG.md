@@ -2244,7 +2244,7 @@ mock_user_count = 1                              ← 本轮验收只造了 1 条
 - 安全：患者 token 与管理端**双向隔离**，匿名 401；顺手关掉了 T03 遗留的越权口子。
 - 小程序：登录页去掉假手机号登录，个人中心接真数据（昵称 + 手机号绑定 + 60 秒倒计时），语法检查通过，交互待开发者工具人工验收。
 - admin：0 文件改动，故本卡未跑 `typecheck`/`lint`/`build`（`git status` 可证）。
-- 写这段时**尚未提交**；后端仍以 PID 34408 在 8080 上运行（方便用户在开发者工具里直接联调），停止后再复跑一次 `mvn -q clean test` 作为提交前门禁（`clean` 会删 `target/`，不能在运行中执行）。
+- 写这段时**尚未提交**；后端仍以 PID 34408 在 8080 上运行（方便用户在开发者工具里直接联调），停止后再复跑一次 `mvn clean test` 作为提交前门禁（`clean` 会删 `target/`，不能在运行中执行）。→ **已按此执行，见下一节。**
 
 ### 本卡有意未做
 
@@ -2255,6 +2255,64 @@ mock_user_count = 1                              ← 本轮验收只造了 1 条
 5. 退出登录按钮、头像上传、微信昵称授权——卡片未要求。
 6. admin 管理后台的任何改动——本卡与它无交集。
 7. `HttpMessageNotReadableException → 400` 的修正——跨卡契约变更，单列小卡。
+
+### T07 收尾 · 提交前门禁 + 默认密钥告警 + 首次推送功能提交（2026-09-27）
+
+上一节写完时的三件事都做了，按顺序记：
+
+#### 1. `CryptoService` 内置默认密钥的启动告警
+
+远端仓库 `github.com/javadidi/gitqd` 是**公开**的（用户 2026-09-27 明确选择「公开推，我接受风险」）。这意味着 `application.yml` 里 `crypto.key: ${CRYPTO_KEY:change-me-hospital-crypto-key-32bytes!}` 的默认串等于公开：任何人 clone 仓库后，都能用它派生出同一把 AES 密钥，解开用默认配置写进库的手机号/身份证。本地开发与自动化测试用它无害（数据是假的），真部署必须换。
+
+代码改不了这个事实，能做的是**让它每次启动都喊一声**，于是 `CryptoService` 构造函数加了两条分支告警：
+
+| 条件 | 日志 |
+|---|---|
+| `crypto.key` 为空/空白 | `crypto.key 为空：正在用空字符串派生 AES 密钥，任何人都能解密这些字段。请设置环境变量 CRYPTO_KEY（至少 32 字节随机串）后重启。` |
+| `crypto.key` 等于内置默认串 | `crypto.key 仍是 application.yml 里的内置默认值：该仓库公开，默认密钥等于公开，用它加密的手机号/身份证可被任何克隆仓库的人解密。本地开发可忽略；部署前必须设置环境变量 CRYPTO_KEY。` |
+
+**为什么用常量比对而不是"猜"**：`INSECURE_DEFAULT_KEY` 这个常量必须与 `application.yml` 的默认值**逐字一致**，javadoc 里写明了"改一处就要改另一处，否则告警静默失效"。选常量而不是读第二遍配置，是因为 `@Value` 注入进来的已经是解析后的值，没有别的地方能拿到"默认值原文"。
+
+顺带修了一个真实 NPE 隐患：原代码 `configuredKey.getBytes(...)` 在配置为空时直接抛 NPE，现在走 `configuredKey == null ? "" : configuredKey`，行为与告警语义一致（空串照样能派生密钥，只是要喊）。
+
+**告警确认真的会响**：`mvn clean test` 的日志里 `grep -c` 到该 WARN **2 次**（Spring 上下文起了两次：一次业务测试上下文、一次 web 上下文），不是"写了但没人调用"的死代码。
+
+#### 2. 提交前门禁（Redis 一度掉线，先修环境再跑）
+
+| 步骤 | 命令 | 真实输出 |
+|---|---|---|
+| 环境体检 | `docker ps -a` | `hospital-redis … Exited (0) 14 hours ago`；后端日志尾部 `Cannot reconnect to [localhost/<unresolved>:6379]: Connection refused` |
+| 起因 | `docker info` | 守护进程管道不存在（Docker Desktop 未运行）。**我没有替用户启动 Docker Desktop**（该操作被用户拒绝），由用户自行更新 Docker 后引擎 29.8.0 起来 |
+| 恢复 | `docker start hospital-redis` | 6379 `UP`，端口映射 `0.0.0.0:6379->6379/tcp` |
+| 门禁 | `mvn clean test`（**不带 `-q`**，`-q` 会吞掉 Surefire 汇总行） | `MVN_EXIT=0`、`Tests run: 70, Failures: 0, Errors: 0, Skipped: 0`、`BUILD SUCCESS`，13 个测试类累加 = 70 |
+
+后端进程先停再跑：`clean` 会删 `target/`，运行中的 JVM 持有那里的 class/jar，边跑边 clean 必然出诡异错误。
+
+#### 3. 验收残留数据清理
+
+curl 验收在 `user` 表里留了一行 mock openid 的测试用户。删除用**双条件**，保证碰不到 seed 数据：
+
+```sql
+DELETE FROM user WHERE openid LIKE 'mock_%' AND nickname = 'T07验收用户';
+```
+
+结果：`before_total 5 → deleted_rows 1 → after_total 4`，复查 `remaining_mock 0`。
+
+#### 4. 提交与推送
+
+| 动作 | 命令 | 真实输出 |
+|---|---|---|
+| 暂存 | `git add backend/src docs miniprogram/pages` | 显式目录清单，**不用 `git add -A`**，那个 0 字节未跟踪文件 `admin/curl` 因此进不来 |
+| 功能提交 | `git commit` | `[main 0a93c00] T07：微信登录 + 用户管理（后端 70 测试全绿）`，`31 files changed, 1639 insertions(+), 108 deletions(-)` |
+| 行尾策略提交 | `git add .gitattributes && git commit` | `[main a5467ce] chore: 补 .gitattributes 统一行尾为 LF`，`1 file changed, 14 insertions(+)` |
+| 推送 | `git push origin main` | `95bddb5..a5467ce  main -> main` |
+| 远端核对 | `git ls-remote --heads origin` + `git rev-parse HEAD` | 两边同为 `a5467cecb0b6677a021c087a11655f223118b530` |
+
+**为什么 `.gitattributes` 单独一提交**：它是仓库级基建，和 T07 的业务语义无关。混在一起，将来要回退行尾策略就得连带回退功能提交。提交后立刻 `git status --short` 检查过：新加的 `eol=lf` 规则**没有**引发任何 renormalize 噪音（工作区只剩 `?? admin/curl`），说明库里本来就是 LF，这个文件只是把既成事实写成规则、防止后来者用 CRLF 检出。
+
+**为什么推送后要问远端 SHA**：`git push` 的回显是本地视角的成功，`ls-remote` 是 GitHub 视角的事实。两边逐字比对才算推上去了。
+
+**⚠️ 公开仓的既成风险（已提交进公开历史，前向修复无法消除）**：`JWT_SECRET` 默认串、seed 里 `admin123` 的 BCrypt 哈希、MySQL root 默认口令、`crypto.key` 默认串。这四处都是**开发占位值**、不对应任何真实系统，但既然已进公开历史，就只有 `git filter-repo` + force-push 能抹掉，代价是 WORK_LOG/记忆里引用的所有哈希（`95bddb5`、`7239cb6`、`47df29b`、`0a93c00`）全部失效。用户已知悉并选择保留。真部署时四个值必须全部换环境变量，且 seed 出来的 `admin123` 账号要改密。
 
 
 
