@@ -9,28 +9,8 @@
     <button class="btn-primary login-btn" bindtap="onWechatLogin" loading="{{verifying}}">
       微信一键登录
     </button>
-
-    <view class="divider">
-      <view class="divider-line"></view>
-      <text class="divider-text">或</text>
-      <view class="divider-line"></view>
-    </view>
-
-    <view class="phone-login">
-      <view class="input-wrap">
-        <text class="input-prefix">+86</text>
-        <input
-          class="phone-input"
-          type="number"
-          maxlength="11"
-          placeholder="请输入手机号"
-          value="{{phoneNumber}}"
-          bindinput="onPhoneInput"
-        />
-      </view>
-      <button class="btn-outline login-btn" bindtap="onPhoneLogin">
-        手机号登录
-      </button>
+    <view class="login-tip">
+      <text class="text-muted">首次登录后，请在「我的 - 手机号绑定」中绑定手机号</text>
     </view>
   </view>
 

@@ -30,6 +30,9 @@ public enum ErrorCode {
     PERMISSION_DENIED(4001, "权限不足"),
     ROLE_NOT_FOUND(4002, "角色不存在"),
     CAPTCHA_INVALID(4003, "验证码错误或已失效"),
+    WECHAT_LOGIN_FAILED(4004, "微信登录失败，请重试"),
+    SMS_CODE_INVALID(4005, "短信验证码错误或已失效"),
+    SMS_SEND_TOO_FREQUENT(4006, "短信发送过于频繁，请稍后再试"),
 
     DATA_NOT_FOUND(5001, "数据不存在"),
     DATA_ALREADY_EXISTS(5002, "数据已存在"),

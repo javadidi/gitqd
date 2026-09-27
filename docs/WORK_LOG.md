@@ -2054,5 +2054,207 @@ bundle hash 由 `index-0gJx26oI.js` 变为 `index-CtduJzb4.js`，证明修复真
 
 **仍存在的覆盖限制（如实记）**：受控浏览器到不了 `lg`，所以「断点切换」本身永远只有用户肉眼 + jsdom 单测（jsdom 不计算媒体查询）两层覆盖，没有自动化断言能证明 `min-width:1024px` 这条媒体查询自身的行为 —— 那是浏览器引擎的职责，不是本卡的。
 
+---
+
+## T07 · 微信登录 + 用户管理（2026-09-27）
+
+### 任务卡要求 → 实现对照
+
+| 卡片行 | 要求 | 实现落点 | 证据 |
+|---|---|---|---|
+| 352 | 微信授权登录 → 获取 openid → 绑定/创建 user → 签发小程序 token | `WechatService.code2openid` + `UserService.loginByWechat` + `JwtUtil.generateUserToken` + `POST /auth/wechat-login` | J14/J15；curl 步 1、2 |
+| 353 | 添加其他号码：绑定手机号（短信验证码） | `SmsCodeService`（Redis 一次性码 + 60s 限频）+ `POST /user/sms-code`、`POST /user/phone` | J16；curl 步 5′/6′/7′ |
+| 354 | 个人中心：展示用户信息、修改昵称 | `GET /user/profile`、`PUT /user/profile` + `pages/mine/mine` 账号设置卡 | curl 步 3/4′/8′ |
+| 356 红线 | 不做就诊人管理（T08）、不做住院人管理（T09） | 本卡未新建任何 `patient`/`inpatient` 相关文件 | 文件清单 |
+| 361 J14 | 微信授权登录 → user 创建 / openid 绑定 / token 签发 | `j14_wechatLogin_createsUserBindsOpenidAndIssuesToken` | surefire 9/9 |
+| 362 J15 | 同一 openid 重复登录 → 不重复创建 user | `j15_sameOpenidRepeatLogin_doesNotCreateSecondUser` + `j15_differentOpenid_createsSeparateUsers` | surefire |
+| 363 J16 | 绑定手机号 → user.phone 更新 | `j16_bindPhone_updatesUserPhoneAsCiphertext` + `j16_smsCodeIsOneShot_wrongOrReusedCodeRejected` + `j16_sendSmsCodeTwiceWithin60s_isRateLimited` | surefire + 库查密文 |
+| 365 DoD | 小程序登录流程通；user 表数据正确 | 见「curl 级人工验收」「库里密文取证」 | — |
+
+### 红线遵守情况
+
+**卡片红线（第 356 行）**：✅ 未做就诊人/住院人管理。`patient.id_card`、`patient.phone` 的加密写入属 T08，本卡只把可复用的 `CryptoService` 放到位，没有替 T08 写任何 CRUD。
+
+**附录 B 全局红线检查表（14 条逐条）**：
+
+| # | 条目 | 结论 | 依据/证据 |
+|---|---|---|---|
+| 1 | 金额有没有 FLOAT/DOUBLE | N/A | 本卡零金额字段；V3 只动 `user.phone` 一列的可空性 |
+| 2 | 护士视角新接口会不会吐金额 | N/A | 未新增任何管理端/护士端接口 |
+| 3 | 新写操作有没有写 audit_log | 刻意不写 | 需求文档 485 行「**管理后台**操作需记录审计日志」；T07 三个写操作（建 user、改昵称、绑手机号）全在患者端，不在该口径内 |
+| 4 | 跨表写入是否一个 `@Transactional`；外部调用是否 afterCommit | 单表，无需 | 三个写操作都只写 `user` 一张表；`loginByWechat` **刻意不加事务**（见「难点」第 6 条）；短信当前是本地日志实现，无网络外呼，真实通道接入时才需要挪到 afterCommit（已留 TODO） |
+| 5 | 指标口径有没有在别处重算 | N/A | 未涉及指标 |
+| 6 | 权限判断是否只写在 UI | 否，service/过滤器双层 | `SecurityConfig`：`/user/**` → `hasRole("patient")`，其余 → 四个员工角色之一；`SecurityUtils.currentUserId()` 只认 token 里的 `LoginPatient`；curl 步 10（患者 token 打管理端 → HTTP 403 + `code=4001`）、步 11（匿名 → HTTP 401）双向取证 |
+| 7 | 自动派发的任务是否幂等 | N/A（登录幂等已覆盖） | 无派发任务；登录侧靠 `uk_openid` 唯一索引 + `DuplicateKeyException` 重查保证不建第二个 user |
+| 8 | 小程序端新接口是否强制注入 userId 归属校验 | 是 | 4 个端点全部 `SecurityUtils.currentUserId()` 取 userId；`SendSmsCodeRequest`/`BindPhoneRequest`/`UpdateNicknameRequest` 三个 DTO **没有 userId 字段**，前端无法指定操作对象 |
+| 9 | 金额/列表/状态是否用 `<Money>`/`<DataTable>`/`<StatusBadge>` | N/A | 本卡未改 admin 一行（`git status` 中 `admin/` 无 M 项） |
+| 10 | 列表筛选/搜索/分页是否进 URL | N/A | 无列表页 |
+| 11 | 有没有多装 T01 清单外的三方库 | 没有 | `git diff --stat -- backend/pom.xml` **输出为空**（pom 未改动）；真实 `jscode2session` 用 T01 已有的 hutool `HttpUtil`/`JSONUtil`，AES 用 JDK `javax.crypto` |
+| 12 | 有没有实现附录 A「首版不做」的东西 | 没有 | 真实微信支付、多院区、医生课酬、消息推送（企微/公众号）、教材库存、对账、单据票据均未触碰；短信只落地为 `LoggingSmsSender` + TODO |
+| 13 | J 编号是否逐条真实通过 | 是 | `backend/target/surefire-reports` 13 个类，`awk` 累加 `TOTAL=70`，`UserAuthIntegrationTest` `Tests run: 9, Failures: 0, Errors: 0` |
+| 14 | 身份证/手机号是否加密存储 | 手机号已加密 | AES-256-GCM；库里 id=21 行 `phone = rsrzWLa4NcFiZaSdDTTf2PG2jPbDOyscyHs8f6+3flcvukFMNcA2`（52 字符）、`phone = '13802164347' AS is_plaintext → 0`；身份证本卡不涉及（T08） |
+
+### 四处偏离卡片字面的决定（每条附依据）
+
+| # | 卡片/现状 | 决定 | 依据 | 影响面 |
+|---|---|---|---|---|
+| 1 | V1 里 `user.phone` 是 `NOT NULL`，卡片没提要改 | 新增 `V3__user_phone_nullable.sql` 把它改成可空 | 需求文档 49-51 行：微信一键登录只拿得到 openid，此时用户根本没有手机号；若维持 NOT NULL，J14 的第一次 insert 就必然失败 | 只改可空性，类型仍是 `VARCHAR(256)`（装 `Base64(12B IV + 密文 + 16B tag)`）；`SeedCheckService` 不校验 phone，故 T06 自检不受影响；`FlywayMigrationTest` 只断言"无待执行迁移"，加 V3 安全 |
+| 2 | 卡片 358 行「⚠️ 易混淆：一个 user 可有多个手机号」 | `user` 只存**本人联系号一个**，"多个号码"落在就诊人身上 | 需求文档 53-55 行原文是「用户可绑定其他手机号码 / **支持一个账号关联多个就诊人**」——多号是跟着就诊人走的；V1 `patient.phone` 每个就诊人一份、`user` 表只有一个 phone 列 | T08 加就诊人时每人带自己的手机号，无需再改 user 表；本卡不提供"多手机号列表"接口 |
+| 3 | 卡片要求真实微信登录 + 真实短信 | 微信走配置驱动的 mock（`MOCK_OPENID_<sha256(code)前32位>`），短信走 `LoggingSmsSender` 打日志 | 仓库里没有 appid/appsecret，也没有任何短信通道商凭据（签名与模板都需报备）；凭空写死一个假 openid 生成规则又不标注，等于埋雷 | `WechatService.isMock()` 由 appid/appsecret 是否为空**自动切换**，真实分支的 `jscode2session` 调用已写好（hutool，5s 超时，日志只打 errcode/errmsg 不打 secret）；短信换真实通道只需另写一个 `SmsSender` 实现加 `@Primary` |
+| 4 | 改前 `SecurityConfig` 是 `anyRequest().authenticated()` | 收紧为「`/user/**` → patient 角色，其余 → system/admin/doctor/nurse 之一」 | 这不是新功能，是引入第二种 principal 后**必须**补的隔离：改前患者 token 可以打所有管理端接口（T03 遗留的越权口子，当时只有员工 token 所以没暴露） | 三条回归测试钉死：`patientTokenCannotReachAdminEndpoints`、`adminTokenCannotReachMiniProgramEndpoints`、`anonymousCannotReachEitherSide`；`AuthIntegrationTest` 7 例仍全绿（它用的 doctor/nurse/admin 都在白名单里，且无 token 时期望 401 的行为未变） |
+
+### 文件清单
+
+**新建 · 后端主代码（15）**
+
+| # | 文件 | 职责 |
+|---|---|---|
+| 1 | `db/migration/V3__user_phone_nullable.sql` | `user.phone` 改为可空，NULL = 尚未绑定 |
+| 2 | `service/CryptoService.java` | AES/GCM/NoPadding，IV 12B、tag 128bit，密钥 `SHA-256(crypto.key)`，输出 `Base64(IV‖密文)`；`SEED_ENC:` 前缀与 null/空串都返回 null；坏数据抛 `INTERNAL_ERROR`「敏感字段解密失败」 |
+| 3 | `service/WechatService.java` | `code2openid`：有凭据走真实 `jscode2session`，无凭据走确定性 mock 并打 WARN |
+| 4 | `service/SmsSender.java` | 短信发送接口（换通道只改实现） |
+| 5 | `service/LoggingSmsSender.java` | 默认实现：打码手机号 + 验证码进日志，带 `TODO(待通道商凭据)` 与"上线前必须替换"告警 |
+| 6 | `service/SmsCodeService.java` | Redis 一次性码：键 `sms:sha256(phone)`、TTL 5 分钟、限频键 `sms:limit:sha256(phone)` 60 秒；`verifyAndConsume` **取值即删**（无条件） |
+| 7 | `service/UserService.java` | 登录建号 + 个人中心四个方法；userId 一律由 controller 传入 |
+| 8 | `security/LoginPatient.java` | 患者主体，`ROLE_patient`，`getUsername()` = openid |
+| 9 | `security/SecurityUtils.java` | `currentUserId()`：非患者主体直接抛 `UNAUTHORIZED` |
+| 10 | `controller/UserController.java` | `/user/profile`(GET/PUT)、`/user/sms-code`、`/user/phone` |
+| 11-15 | `dto/WechatLoginRequest`、`WechatLoginResponse`、`UserProfileResponse`、`SendSmsCodeRequest`、`BindPhoneRequest`、`UpdateNicknameRequest` | 请求/响应契约；手机号 `@Pattern("^1[3-9]\\d{9}$")`，昵称 `@NotBlank @Size(max=64)` |
+
+**新建 · 测试（1）**：`test/.../service/UserAuthIntegrationTest.java` —— 放在 `com.hospital.service` 包是为了能用 `SmsCodeService.redisKey`；9 例；`@AfterEach` 用 JdbcTemplate **硬删**（`@TableLogic` 的软删会让垃圾行继续占着 `uk_openid`）。
+
+**修改 · 后端（6）**
+
+| 文件 | 改动 |
+|---|---|
+| `application.yml` | 新增 `crypto.key`、`wechat.appid/appsecret`（全部走环境变量默认空） |
+| `common/ErrorCode.java` | `WECHAT_LOGIN_FAILED(4004)`、`SMS_CODE_INVALID(4005)`、`SMS_SEND_TOO_FREQUENT(4006)` |
+| `util/JwtUtil.java` | 新增 `principal` 声明（`admin`/`user`）；管理端 token 补 `principal=admin`；新增 `generateUserToken(userId, openid)` |
+| `filter/JwtAuthenticationFilter.java` | 按 `principal` 分流成 `LoginPatient` 或 `LoginUser`；**缺该声明按 admin 处理**，保证 T03 签发的旧 token 不被废 |
+| `config/SecurityConfig.java` | `/auth/wechat-login` 加白名单；`/user/**` → `hasRole("patient")`；`anyRequest()` → 四个员工角色 |
+| `controller/AuthController.java` | 新增 `POST /auth/wechat-login` |
+
+**修改 · 小程序（6）**
+
+| 文件 | 改动 |
+|---|---|
+| `pages/login/login.js` | 删掉自环的 `onPhoneLogin`（它 `navigateTo` 到自己，永远登不进去）；`wx.login` 失败与后端失败**分开处理**（`utils/request.js` 已经统一 toast 后端消息，页面再 toast 就是双弹）；`hasPhone=false` 时 `showModal`「去绑定 / 稍后再说」分别 `switchTab` 到 我的 / 首页 |
+| `pages/login/login.wxml` | 删掉分隔线与整个手机号登录块，换成一行提示"首次登录后请在「我的 - 手机号绑定」中绑定" |
+| `pages/login/login.wxss` | 删掉随之失效的 `.divider*`/`.phone-login`/`.input-wrap`/`.input-prefix`/`.phone-input`，新增 `.login-tip` |
+| `pages/mine/mine.js` | `onShow` 拉 `GET /user/profile`；昵称弹窗改 `PUT /user/profile`；发码/绑定/60 秒倒计时（`RESEND_INTERVAL = 60`，注释写明与后端 `SmsCodeService` 对齐）；`onHide`/`onUnload` 清定时器 |
+| `pages/mine/mine.wxml` | user-section 改为真数据（昵称 + 打码手机号 / 未绑定）；新增「账号设置」「手机号绑定」两组；未绑定时才显示绑定表单 |
+| `pages/mine/mine.wxss` | 把原来的行内 `style` 提成 `.account-card`/`.menu-left`/`.menu-right`/`.menu-value`，新增 `.bind-row`/`.bind-input`/`.code-btn`/`.bind-btn`/`.bind-tip` |
+
+小程序侧**没有新增页面、没有改 `app.json`**：`pages/mine/mine.json` 的 `navigationBarTitleText` 本来就是「个人中心」，卡片说的个人中心就落在这个 tabBar 页上。
+
+### 测试证据（`backend/target/surefire-reports`，13 个类累加 = 70）
+
+```
+Tests run: 9, Failures: 0, Errors: 0, Skipped: 0 -- in com.hospital.service.UserAuthIntegrationTest   ← 本卡新增
+Tests run: 7, Failures: 0, Errors: 0, Skipped: 0 -- in com.hospital.AuthIntegrationTest                ← 权限收紧后回归
+Tests run: 8, ... CaptchaIntegrationTest | 9, ... PermissionServiceTest | 7, ... MoneyMaskingTest
+Tests run: 7, ... TaskKernelTest | 5, ... CaptchaServiceTest | 4, ... SeedConstraintTest
+Tests run: 4, ... SeedCheckTest | 3, ... AuditLogTest | 3, ... AuditFieldFillTest
+Tests run: 3, ... SerialNumberServiceTest | 1, ... FlywayMigrationTest
+TOTAL=70（0 失败 / 0 错误 / 0 跳过）
+```
+
+Java 代码在 T07-F 之后未再改动（`git status` 里的 6 个 `M` + 15 个新增全部是 T07-A~F 的产物，T07-G 只碰 `miniprogram/`，不进 Maven 构建），所以这份报告对应当前代码。
+
+### curl 级人工验收（打真实后端 + 真实 MySQL + 真实 Redis）
+
+前置：`netstat` 查到 8080 上是 T06 遗留的旧 `java.exe`（PID 24640），匿名 `POST /auth/wechat-login` 返回 `{"code":401,"message":"未认证"}` —— 旧 `SecurityConfig` 里这条路径不在白名单，据此判定必须重启；`taskkill //PID 24640 //F` 后用新代码重启（新 PID 34408，日志 `Tomcat started on port 8080 (http) with context path '/api'`、`Current version of schema hospital: 3`、`Started HospitalApplication in 3.513 seconds`）。
+
+| 步 | 请求 | 期望 | 实测（原文） | 结论 |
+|---|---|---|---|---|
+| 1 | `POST /auth/wechat-login {"code":"T07ACC1790446509"}` | 建号 + 发 token + `hasPhone=false` | `{"code":200,...,"userId":21,"hasPhone":false,"newUser":true}`，token 解出的 payload 含 `"principal":"user"`、`"openid":"MOCK_OPENID_a9f0e97d..."` | ✅ J14 |
+| 2 | 同一 code 再登一次 | 同一 userId、`newUser=false` | `"userId":21,...,"newUser":false` | ✅ J15 |
+| 3 | `GET /user/profile`（患者 token） | 200 + 自己的资料 | `{"code":200,"data":{"userId":21,"hasPhone":false}}` | ✅ |
+| 4 | `PUT /user/profile` 昵称（**Bash 中文字面量**） | 200 | `{"code":500,"message":"服务器内部错误"}` | ❌ 我的命令编码问题，见下 |
+| 4′ | 同上，改用 UTF-8 文件 + `--data-binary @file` | 200 + 回显中文昵称 | `{"code":200,"data":{"userId":21,"nickname":"T07验收用户","hasPhone":false}}` | ✅ 中文往返正常 |
+| 5 | `POST /user/sms-code {"phone":"13902150946"}` | 200 | `{"code":200,"message":"success"}` | ✅ |
+| 6 | 立刻对同一号再发 | 限频 4006 | `{"code":4006,"message":"短信发送过于频繁，请稍后再试"}` | ✅ |
+| 7 | `POST /user/phone` 用错码 `000000` | 4005 | `{"code":4005,"message":"短信验证码错误或已失效"}` | ✅ |
+| 8 | 紧接着用**正确码** `157492` | 期望绑定成功 | `{"code":4005,...}` | ❌ 我的验收顺序错，见下 |
+| 5′ | 换号 `13802164347` 重新发码 | 200 | `{"code":200,"message":"success"}`，日志 `[短信未接通道] 向 138****4347 发送验证码 315454` | ✅ |
+| 6′ | 用正确码 `315454` 绑定 | `hasPhone=true` + 打码号 | `{"code":200,"data":{"userId":21,"nickname":"T07验收用户","phone":"138****4347","hasPhone":true}}` | ✅ J16 |
+| 7′ | 同一个码重放 | 一次性失效 4005 | `{"code":4005,...}` | ✅ 一次性 |
+| 8′ | 复读 `GET /user/profile` | 仍只回打码号 | `{"code":200,"data":{...,"phone":"138****4347","hasPhone":true}}` | ✅ 明文不出接口 |
+| 9 | 患者 token 打管理端 `GET /demo/dashboard` | 403 + `code=4001` | `{"code":4001,"message":"权限不足"}` / `HTTP=403` | ✅ 越权被拦 |
+| 10 | 匿名打 `GET /user/profile` | 401 | `{"code":401,"message":"未认证"}` / `HTTP=401` | ✅ 小程序 401 跳登录的前提成立 |
+
+**库里密文取证**（`/e/Mysql/Server/bin/mysql.exe --batch`，口令走 `MYSQL_PWD` 环境变量）：
+
+```
+id  wechat_openid                              nickname    phone                                              phone_len  is_plaintext
+21  MOCK_OPENID_a9f0e97d7eb39938bc1704cc2e592dda  T07验收用户  rsrzWLa4NcFiZaSdDTTf2PG2jPbDOyscyHs8f6+3flcvukFMNcA2   52         0
+
+COLUMN_NAME  IS_NULLABLE  COLUMN_TYPE
+phone        YES          varchar(256)          ← V3 生效
+
+mock_user_count = 1                              ← 本轮验收只造了 1 条数据
+```
+
+明文是 `13802164347`，库里是 52 字符 Base64，`is_plaintext = 0`：加密存储坐实。清理这条验收数据：`DELETE FROM user WHERE id = 21;`（或直接 `bash scripts/db-reset.sh` 全量重置）。
+
+### T07 遇到的难点
+
+| # | 难点 | 定位证据 | 处理 |
+|---|---|---|---|
+| 1 | 8080 被上一轮会话的孤儿后端占着，跑的是旧代码 | 匿名 POST 新端点返回 `401 未认证`（旧 `SecurityConfig` 无白名单）；`netstat -ano` → PID 24640 → `tasklist` → `java.exe` | 请示后 `taskkill //PID 24640 //F`，重启新代码。**教训**：验收前先用"新端点的匿名响应"探一下进程新旧，别默认端口上跑的就是当前代码 |
+| 2 | Bash 命令里写中文字面量 → 后端 500 | `t07-run.log:135` `HttpMessageNotReadableException: JSON parse error: Invalid UTF-8 middle byte 0xe9`（`0xe9` 是 GBK 引导字节） | 改用 Write 工具落一个 UTF-8 JSON 文件，`curl --data-binary @file` 原样按字节发。与记忆里那条「Windows 中文编码陷阱」同族，这次受害的是 curl 请求体 |
+| 3 | 验收顺序踩到"一次性码" | 步 7 用错码后再用正确码仍 `4005` | `verifyAndConsume` 是**取值即无条件删键**（与 `CaptchaService` 同构，防暴力猜码）：任何一次校验尝试都会烧掉码。验收顺序改成"发码 → 立刻正确码 → 再重放"，并把这条行为写进 J16 |
+| 4 | 同一手机号 60 秒内复跑必被限频 | 步 6 `code=4006` | 验收脚本用 `date +%H%M%S` 拼时间戳号码；集成测试里 `randomPhone()` 同理 |
+| 5 | `mysql` 不在 Git Bash 的 PATH 上 | `mysql: command not found` | 用 WORK_LOG:1425 记录的绝对路径 `/e/Mysql/Server/bin/mysql.exe` |
+| 6 | `loginByWechat` 为什么不能加 `@Transactional` | 设计期推演 | 方法体只有一次 insert；一旦包进事务，下面 `catch` 住的 `DuplicateKeyException` 会把事务标成 rollback-only，重查出来的用户在提交时照样回滚，最后表现成一个查不出原因的 500。已在 javadoc 里写明理由 |
+| 7 | 软删用户会永久占着 `uk_openid` | `User` 继承 `@TableLogic deleted`，`deleteById` 是软删 | 测试 `@AfterEach` 用 JdbcTemplate 硬删；生产语义上"注销用户后同一微信不能再注册"是可接受的，未改唯一索引 |
+
+### 本卡发现但**未修**的问题（不属 T07 范围）
+
+`GlobalExceptionHandler` 把 `HttpMessageNotReadableException`（请求体不是合法 JSON）兜成了 **500「服务器内部错误」**，合理应是 400 参数错误。证据：`t07-run.log:135` 的堆栈 + 响应原文 `{"code":500,"message":"服务器内部错误"}`。
+
+不在本卡顺手改的理由：它是 T03 就存在的异常映射表缺口，改动会波及**所有**既有接口的错误契约，可能改动现有测试期望；按「一张卡一件事」的口径应单列一张小卡处理。
+
+### 小程序端验收状态（如实记：部分挂起）
+
+- **已做的自动化**：`node --check pages/login/login.js pages/mine/mine.js` → `SYNTAX OK`。
+- **覆盖限制**：`miniprogram/` 目录下没有 `package.json`、没有任何测试框架（T01 只给了骨架），所以 login/mine 的交互**没有单测**；本轮的验证方式是「curl 打后端真实契约 + 代码走查 + 语法检查」，不是"小程序端测过了"。
+- **挂起的人工项**（需微信开发者工具，等用户执行）：
+  1. 一键登录 → `hasPhone=false` 弹「绑定手机号 / 去绑定 / 稍后再说」，确认后落 我的、取消后落 首页；
+  2. 个人中心昵称弹窗改名 → 回显 + user-section 同步；
+  3. 「获取验证码」60 秒倒计时、倒计时中按钮 disabled 且文案变成 `Ns 后重发`（与后端 4006 限频对齐）；
+  4. 绑定成功 → user-section 显示 `138****4347` 式打码号、绑定表单整块消失（`wx:if="{{!profile.hasPhone}}"`）。
+  - 清 token 用开发者工具 Console 执行 `wx.clearStorageSync()`（本卡刻意未做退出登录按钮，见下）。
+- **明确拒绝的取巧**：不在小程序里写死假 profile 让它"看起来通过"；不做 `hasPhone` 的本地兜底猜测，一切以后端响应为准。
+
+### 遗留 TODO 及归属
+
+| TODO | 位置 | 归属 |
+|---|---|---|
+| 真实短信通道（阿里云/腾讯云） | `LoggingSmsSender.java:11` `TODO(待通道商凭据)` | 凭据到位后替换；**上线前必须换**（日志里印验证码等于把登录凭据写进日志文件）；接入后发送动作需挪到 afterCommit（附录 B 第 4 条） |
+| 真实微信 appid/appsecret | `application.yml` `wechat.*` | 部署/二期；配好即自动脱离 mock |
+| `CRYPTO_KEY` 环境变量 | `application.yml` `crypto.key` 默认值是占位串 | 部署前必须替换；换密钥会让既有密文解不开（`CryptoService` 会抛「敏感字段解密失败」），需要配套的重加密方案 |
+| 患者端退出登录 | 未做 | 卡片 354 只要求"展示用户信息、修改昵称"，按「宁少勿假」不加 |
+| 头像/昵称微信授权（`getUserProfile`） | `avatarUrl` 字段有、无写入路径 | 卡片未要求；后续小程序卡 |
+| JSON 解析失败映射 400 | `GlobalExceptionHandler` | 单列小卡（见上节） |
+
+### T07 当前状态
+
+- 后端：`/auth/wechat-login` + `/user/**` 四端点契约经 10 步 curl 实测通过；`mvn clean test` 70 例全绿；库里手机号密文、`phone` 可空（V3）。
+- 安全：患者 token 与管理端**双向隔离**，匿名 401；顺手关掉了 T03 遗留的越权口子。
+- 小程序：登录页去掉假手机号登录，个人中心接真数据（昵称 + 手机号绑定 + 60 秒倒计时），语法检查通过，交互待开发者工具人工验收。
+- admin：0 文件改动，故本卡未跑 `typecheck`/`lint`/`build`（`git status` 可证）。
+- 写这段时**尚未提交**；后端仍以 PID 34408 在 8080 上运行（方便用户在开发者工具里直接联调），停止后再复跑一次 `mvn -q clean test` 作为提交前门禁（`clean` 会删 `target/`，不能在运行中执行）。
+
+### 本卡有意未做
+
+1. 就诊人管理（T08）、住院人管理（T09）——卡片红线。
+2. 一个 user 挂多个手机号——按 PRD 53-55 行归到就诊人（T08），本卡 `user.phone` 只存本人联系号。
+3. 真实微信支付 / 消息推送 / 多院区 / 对账等附录 A 二期项——一律未触碰。
+4. 患者端操作审计——PRD 485 行只要求管理后台。
+5. 退出登录按钮、头像上传、微信昵称授权——卡片未要求。
+6. admin 管理后台的任何改动——本卡与它无交集。
+7. `HttpMessageNotReadableException → 400` 的修正——跨卡契约变更，单列小卡。
+
 
 

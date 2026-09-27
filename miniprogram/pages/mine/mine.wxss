@@ -84,3 +84,57 @@
   font-size: 24rpx;
   color: #ccc;
 }
+
+.account-card {
+  margin-bottom: 0;
+}
+
+.menu-left {
+  gap: 20rpx;
+}
+
+.menu-right {
+  gap: 12rpx;
+}
+
+.menu-value {
+  font-size: 26rpx;
+  color: #999;
+}
+
+.bind-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 20rpx;
+}
+
+.bind-input {
+  flex: 1;
+  height: 80rpx;
+  padding: 0 24rpx;
+  font-size: 28rpx;
+  border: 2rpx solid #e5e5e5;
+  border-radius: 12rpx;
+  background: #fff;
+}
+
+.code-btn {
+  height: 80rpx;
+  line-height: 76rpx;
+  padding: 0 24rpx;
+  font-size: 26rpx;
+  white-space: nowrap;
+}
+
+.bind-btn {
+  width: 100%;
+  height: 84rpx;
+  line-height: 84rpx;
+  font-size: 30rpx;
+}
+
+.bind-tip {
+  margin-top: 16rpx;
+  line-height: 1.6;
+}

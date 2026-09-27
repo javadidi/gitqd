@@ -3,6 +3,8 @@ package com.hospital.controller;
 import com.hospital.common.ErrorCode;
 import com.hospital.dto.LoginRequest;
 import com.hospital.dto.LoginResponse;
+import com.hospital.dto.WechatLoginRequest;
+import com.hospital.dto.WechatLoginResponse;
 import com.hospital.common.Result;
 import com.hospital.entity.Admin;
 import com.hospital.entity.Role;
@@ -12,6 +14,7 @@ import com.hospital.mapper.RoleMapper;
 import com.hospital.security.LoginUser;
 import com.hospital.service.CaptchaService;
 import com.hospital.service.PermissionService;
+import com.hospital.service.UserService;
 import com.hospital.util.JwtUtil;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import jakarta.validation.Valid;
@@ -35,24 +38,37 @@ public class AuthController {
     private final JwtUtil jwtUtil;
     private final PermissionService permissionService;
     private final CaptchaService captchaService;
+    private final UserService userService;
 
     public AuthController(AdminMapper adminMapper,
                           RoleMapper roleMapper,
                           PasswordEncoder passwordEncoder,
                           JwtUtil jwtUtil,
                           PermissionService permissionService,
-                          CaptchaService captchaService) {
+                          CaptchaService captchaService,
+                          UserService userService) {
         this.adminMapper = adminMapper;
         this.roleMapper = roleMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
         this.permissionService = permissionService;
         this.captchaService = captchaService;
+        this.userService = userService;
     }
 
     @GetMapping("/captcha")
     public Result<CaptchaService.Captcha> captcha() {
         return Result.success(captchaService.generate());
+    }
+
+    /**
+     * 小程序微信授权登录（T07 / J14、J15）。
+     * 与上面的 /auth/login 是两套主体：这里签发的是患者 token（principal=user），
+     * 打不进任何管理后台接口。
+     */
+    @PostMapping("/wechat-login")
+    public Result<WechatLoginResponse> wechatLogin(@Valid @RequestBody WechatLoginRequest request) {
+        return Result.success(userService.loginByWechat(request.getCode()));
     }
 
     @PostMapping("/login")

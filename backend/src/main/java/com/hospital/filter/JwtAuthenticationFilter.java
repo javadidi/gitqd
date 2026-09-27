@@ -1,5 +1,6 @@
 package com.hospital.filter;
 
+import com.hospital.security.LoginPatient;
 import com.hospital.security.LoginUser;
 import com.hospital.util.JwtUtil;
 import io.jsonwebtoken.Claims;
@@ -9,6 +10,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.web.authentication.WebAuthenticationDetailsSource;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
@@ -35,16 +37,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         if (token != null && jwtUtil.validateToken(token)) {
             Claims claims = jwtUtil.parseToken(token);
 
-            Long adminId = Long.valueOf(claims.getSubject());
-            String username = claims.get("username", String.class);
-            String roleName = claims.get("role", String.class);
-            List<String> modules = claims.get("modules", List.class);
-            List<String> caps = claims.get("caps", List.class);
-
-            LoginUser loginUser = new LoginUser(adminId, username, roleName, modules, caps);
+            UserDetails principal = JwtUtil.PRINCIPAL_USER.equals(claims.get(JwtUtil.CLAIM_PRINCIPAL, String.class))
+                    ? new LoginPatient(Long.valueOf(claims.getSubject()), claims.get("openid", String.class))
+                    : new LoginUser(Long.valueOf(claims.getSubject()),
+                            claims.get("username", String.class),
+                            claims.get("role", String.class),
+                            claims.get("modules", List.class),
+                            claims.get("caps", List.class));
 
             UsernamePasswordAuthenticationToken authentication =
-                    new UsernamePasswordAuthenticationToken(loginUser, null, loginUser.getAuthorities());
+                    new UsernamePasswordAuthenticationToken(principal, null, principal.getAuthorities());
             authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
             SecurityContextHolder.getContext().setAuthentication(authentication);
