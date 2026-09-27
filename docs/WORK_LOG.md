@@ -3460,7 +3460,99 @@ patient_id=316 staff_token_len=428 patient_token_len=249
 - 后端 **117 例 / 16 类全绿**（+19 例 / +1 类，既有 98 例零回归）；真 HTTP **35/35 PASS**；库已回基线（`schedule` 150 一行未写）；附录 B 14 条扫完。
 - 跨卡修复一处：`AuditFieldFillTest` 的 `title` 逻辑删泄漏，并重跑 T06 + 全套测试验证（附录 C 825 行）。
 - 后端进程**在后台运行**（PID 65164，8080，context-path `/api`，日志 `E:/qdspace/_mp-driver/t10-backend.log`），T10-M 小程序 UI 验收要用；下次跑 `mvn clean test` 前必须先停它。
-- UI 验收结果见下一节「T10-M」。提交按显式清单，**不推送**（下个推送点 T12 / 🚩M1）。
+- UI 验收结果见下一节「T10-M」。提交按显式清单，**不推送**（下个推送点 T12 / 🚩M1）。提交号 `048f649`（24 文件，+2110/−77）。
+
+---
+
+## T10-M · 科室/医生三页 UI 自动化验收（2026-09-28）
+
+**卡片范围**：不写任何产品代码。把 T10 的小程序三页改成机器驱动 + 逐项取证（通道与 T07-M/T08-M/T09-M 同一套：skill-cli `wechatide -c qoder`，驱动在仓库外 `E:\qdspace\_mp-driver`，`miniprogram/` 零改动）。关闭 #72。
+
+### 环境前置
+
+| 项 | 实测 |
+|---|---|
+| 后端 | 沿用 T10-F 起的后台进程（PID 65164，8080，context-path `/api`） |
+| skill-cli 授权 | `check_wechatide_status` → `success:true / loginExpired:false / tokenRequired:false`，`skillVersion 0.3.9`，`versionRelation:"skip_check"`（未传 agent skill 版本时的固定告警，不影响调用） |
+| 模拟器初始态 | `pages/index/index`，`token=""`、storage `keys=[]`（未登录起手） |
+| 弹窗录制器 | `install.js` 装上后 `cfg` 设 `{passthrough:false, answer:{confirm:false}}` → 「绑定手机号」弹窗自动答「稍后再说」，参数照记 |
+
+### 12 项逐条取证
+
+| # | 验收项 | 取证方式 | 实测 | 结果 |
+|---|---|---|---|---|
+| 1 | 未登录进「预约」tab **不被劫持到登录页** | `nav switchTab` + `fn/state.js` | 栈 = `[pages/appointment/appointment]`，`isLoggedIn:false`、`departments:[]`；`.dept-card` → `no such element`（确实没发请求） | ✅ |
+| 2 | 未登录空态三件文案 + 下一步动作 | `el text` | `.empty-title`=「登录后查看科室与医生」、`.empty-desc`=「科室、医生与排班信息仅对已登录的患者开放」、`.login-empty-btn`=「去登录」 | ✅ |
+| 3 | 点「去登录」→ **压栈**登录页（不是 redirect，返回还能回 tab） | `el tap .login-empty-btn` + state | 栈 = `[appointment, pages/login/login]` | ✅ |
+| 4 | mock 微信登录拿 token +「绑定手机号」弹窗按「稍后再说」回首页 | `el tap .login-btn` + state | token 解出 `sub=317`、`openid=MOCK_OPENID_48f8…`；`modal[0]` = `{title:绑定手机号, confirmText:去绑定, cancelText:稍后再说}`；栈回 `[pages/index/index]` | ✅ |
+| 5 | 登录后科室列表 3 条，名称/位置/简介都渲染出来 | state + `el text` | `departments` = 消化内科(sortOrder 1) / 普外科(2) / 儿科(3)；`.dept-name`=「消化内科」、`.dept-value`=「门诊楼 1 层 A 区」、`.dept-intro`=「从事食管、胃、肠、肝胆胰疾病的门诊与内镜诊治。」 | ✅ |
+| 6 | **中文关键词搜索**（PRD 77 行「支持搜索」） | handler `onKeywordInput('消')` → `onSearch()` | `keyword="消"`、`departments` 只剩 1 条「消化内科」、`searched:true` | ✅ |
+| 7 | 搜不到 → 空数组 + 带下一步动作的空态 | handler + `el text` | `departments=[]`；`.empty-title`=「没有匹配的科室」、`.empty-desc`=「换个关键词，或清空搜索条件看全部科室」、`.dept-empty-btn`=「清空搜索条件」 | ✅ |
+| 8 | 点「清空搜索条件」真的清空并重拉 | `el tap .dept-empty-btn` | `keyword=""`、3 条全回来 | ✅ |
+| 9 | 点科室卡 → 科室详情页：标题动态、医生列表带职称/擅长/可约数 | `el tap .dept-card` + `automation_runtime_info` + `el text` | `topQuery.id="1"`；导航栏 `title`=「消化内科」（`wx.setNavigationBarTitle` 生效）；`.dept-detail-name/.dept-detail-value/.dept-detail-intro` 三件文案对；`.section-title`=「科室医生」；`.doctor-name`=「张伟」、`.doctor-title`=「主任医师」、`.doctor-specialty`=「胃炎、胃食管反流、消化道息肉」、`.doctor-available-yes`=「近两周可约 12 个时段」 | ✅ |
+| 10 | 点医生 → 医生详情页：简介 + 出诊时间表（日期/周几/时段中文/号源） | `el tap .doctor-row` + `fn/t10-sched.js` + `el text` | `topQuery.id="1"`；导航栏 `title`=「张伟 医生」；`.doctor-field-value`=「胃炎、胃食管反流、消化道息肉」（标签 `.text-muted`=「擅长领域」）；排班 **12 条**，`minDate=2026-09-28 / maxDate=2026-10-03`、`allFuture=true`、`slotCodesOk=true`（全在 上午/下午/晚上 里）、`weekdayOk=true`；前 4 行 = `2026-09-28 周一 上午 left=20/20`、`…周一下午 left=15/15`、`2026-09-29 周二 上午 left=20/20`、`…周二下午 left=15/15`（**日期升序 + 同日 上午<下午**） | ✅ |
+| 11 | 约满分支：**行不隐藏**、文案「已约满」、整行灰掉；且可约数随之减少 | 临时改库（见下）+ `el style --name opacity` + 重拉详情 | 改后 `n` 仍是 **12**（行没被藏）、`bookedCount=1`、首行 `2026-09-28 周一 上午 BOOKED`；`.schedule-slots-booked`=「已约满」、`.schedule-row-booked` `opacity=0.45`；**对照组**李慧敏页 `.schedule-row` `opacity=1` 且 `.schedule-slots-booked` → `no such element`；重拉科室详情后张伟 `availableCount` **12 → 11**、李慧敏仍 12 | ✅ |
+| 12 | **红线 417 行负例**：医生详情页没有任何预约入口 | 四个选择器逐一探 | `.book-btn` / `.appointment-btn` / `.doctor-book-btn` / `.btn-primary` 全部 `no such element`——整页没有一个按钮（只有只读的排班行） | ✅ |
+
+### 第 11 项的临时改库（原样还原，全程记账）
+
+seed 里 **150 条排班没有一条 `remaining_slots=0`**（`SELECT doctor_id, SUM(remaining_slots=0) FROM schedule WHERE date>=CURDATE() GROUP BY doctor_id` → 5 位医生各 12 条、booked 全 0），所以「已约满」这个分支用真实数据点不出来。取舍：临时改**一行**、取证、立刻还原——比为了造数据往 `department` 表插行更轻，也不违反红线（红线约束的是**产品代码**不写 `schedule`；测试层的只读断言另由 `cleanupAndAssertReadOnly` 机械守着）。
+
+```sql
+-- 取证前读原值
+SELECT id, doctor_id, date, time_slot, total_slots, remaining_slots
+  FROM schedule WHERE doctor_id=1 AND date=CURDATE() AND time_slot='MORNING';
+--   id=20  doctor_id=1  date=2026-09-28  time_slot=MORNING  total=20  remaining=20
+
+UPDATE schedule SET remaining_slots=0 WHERE id=20;      -- updated_rows=1
+
+-- 取证后原样还原
+UPDATE schedule SET remaining_slots=20 WHERE id=20;     -- restored_rows=1
+SELECT id, remaining_slots FROM schedule WHERE id=20;   -- 20 / 20（回到原值）
+SELECT COUNT(*) FROM schedule;                          -- 150（总数未变）
+SELECT COUNT(*) FROM schedule WHERE remaining_slots=0 AND date>=CURDATE();  -- 0（回到基线）
+```
+
+### 收尾（库 + 模拟器都交还基线）
+
+```sql
+DELETE FROM user WHERE id > 4 AND wechat_openid LIKE 'MOCK_OPENID_%';   -- user_deleted_rows=1（id=317）
+```
+
+| 项 | 收尾值 | 与 T10-F 验收前对照 |
+|---|---|---|
+| `user` / `mock_users` | 4 / 0 | 一致 |
+| `department` / `doctor` / `title` / `schedule` | 3 / 5 / 3 / 150 | 一致（**一行未写**） |
+| `audit_log` / `task` | 12 / 0 | 一致 |
+| `patient` / `inpatient` | 10 / 5 | 一致 |
+| 模拟器 storage | `keys=[]`、`token=""` | 未登录态交还 |
+| 弹窗录制器 | `cfg` 回 `{passthrough:true}` | 默认态交还 |
+| 页面 | `reLaunch` 回 `pages/index/index` | 首页交还 |
+
+截图存仓库外 `E:\qdspace\_mp-driver\shots\`：`t10-01-appointment-locked.jpg`、`t10-02-dept-list.jpg`、`t10-03-search-hit.jpg`、`t10-04-search-empty.jpg`、`t10-05-dept-detail.jpg`、`t10-06-doctor-detail-booked.jpg`、`t10-07-available-11.jpg`、`t10-08-doctor-detail-restored.jpg`。
+
+### 如实记账：降级与未取证项
+
+| 项 | 说明 |
+|---|---|
+| 共用类名只取首个匹配 | `.dept-card`（3 个）、`.doctor-row`（2 个）、`.schedule-row`（12 个）都是同类多行，选择器引擎不支持 `:nth-child`。第 9/10 步是「点第一个」，靠 `topQuery.id` 反证点到了谁；第 11 步的对照组改用 **handler 调用**（`onDoctorTap({currentTarget:{dataset:{id:2}}})`，`fn/t10-call.js`）而不是选择器——这是降级，不是等价于用户手指点第二行 |
+| 详情页 `onLoad` 只拉一次 | `navigateBack` 回科室详情**不会**自动刷新，所以第 11 步的 `availableCount 12→11` 必须显式调一次 `loadDetail` 才看得见（`fn/t10-reload2.js`）。这是**有意**的：科室/医生是全院公共目录，不像就诊人列表那样「用户刚写了一条、返回必须看到」（后者用 `onShow`）。记在这里，免得以后误判成 bug |
+| 「该科室暂无医生」空态**未在 UI 层取证** | seed 三个科室分别有 2 / 2 / 1 位医生（`LEFT JOIN` 实数），没有空科室；要造就得往 `department` 插一行，那正是本卡红线要守的表。故该分支只由 MockMvc `j23_departmentDetail_departmentWithoutDoctors_returnsEmptyArray` 覆盖 |
+| 「近期暂无出诊安排」空态**未在 UI 层取证** | 同上：5 位医生各有 12 条未来排班。由 `j23_doctorDetail_withoutSchedules_returnsEmptyArray` 覆盖 |
+| 医生头像是占位表情 | seed 的 `doctor.avatar` 全为空串，所以走的是 `wx:else` 的 👨‍⚕️ 分支；`<image>` 那条分支（`.doctor-avatar-img` / `.doctor-head-img`）没有真实图片可证，头像上传属后台 T27 |
+
+### 本轮新增的两个驱动陷阱（补进「九个陷阱」清单）
+
+| # | 陷阱 | 症状 | 解法 |
+|---|---|---|---|
+| 10 | `lib.sh` 的 `evalfn` 第二个参数**只给 basename** | 写 `evalfn fn/x.js args/a.json` → `file not found for args: E:\qdspace\_mp-driver\args\args\a.json`（路径被拼了两遍） | `evalfn fn/x.js a.json`；`lib.sh` 已经拼了 `args/` 前缀 |
+| 11 | `automation_element_action --action style` 的参数名是 `--name` | 写 `--style opacity` → `未知参数 --style 已忽略` + `name is required` | `el style .xxx --name opacity`（返回的是数值 `0.45` / `1`，不是字符串） |
+
+### 结论
+
+- T10 的 12 项 UI 验收**全部由机器实测通过**，#72 关闭；「待人工验收」清单继续为零。
+- 本节不改动任何产品代码（新增的 `fn/t10-call.js`、`fn/t10-sched.js`、`fn/t10-reload.js`、`fn/t10-reload2.js` 与 6 个参数文件都在仓库外），故不触发后端门禁与 admin 门禁。
+- T10 至此**全卡收口**：后端 117 例 + 真 HTTP 35 步 + UI 12 项，三层证据齐；库回基线，验收账号已删。下一张卡 T11（排班管理）。
 
 
 
