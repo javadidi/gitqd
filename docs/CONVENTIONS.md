@@ -62,3 +62,12 @@ DO→VO       → converter 转换；金额脱敏在 VO 序列化层
 - **登记与清理不能只挂在助手函数里**。T08 的真实事故：`createdCardNos.add(...)` 只写在 `createPatient()` 助手里，而某个用例为了断言响应体内联发了 POST、绕过助手，于是每跑一次就往开发库漏一行，且测试全绿没人发现。要么让登记无法被绕过（助手返回响应体供断言），要么清理规则不依赖登记（按测试专用前缀 `LIKE 'T08%'` 批量删）
 - 测试专用数据要有**可识别前缀**（卡号 `T08…`、code `j17-…`），seed 数据用另一种形态（卡号 `10000000xx`）。这样清理条件天然碰不到种子，也方便事后 `LIKE` 排查残留
 - 期望值不要用生产代码算：断言打码值时在测试类里**独立实现**一遍 `maskIdCard`，否则 `MaskUtil` 写错了测试也跟着错，等于自己给自己判卷
+
+## 提交与推送约定
+
+- **暂存一律显式清单**（`git add backend/src docs miniprogram` 这种），**永不 `git add -A` / `git add .`**：仓库里有个 0 字节未跟踪文件 `admin/curl`，`-A` 会把它带进提交。每次提交后 `git status --short` 应只剩它一行
+- **提交按卡片，推送按大章节**。卡片收口只 `git commit`，不 `git push`。推送点是任务卡流程文档里的三个 🚩 里程碑：**M0 = T06**、**M1 = T12（预约挂号 + 支付）**、**M2 = T28（系统设置 + 数据看板）**。M0 那批已推完，下一个推送点是 T12 收口
+- 远端 `origin = git@github.com:javadidi/gitqd.git` 是**公开仓**（用户已知悉并接受风险）。因此**每次推送前先扫一遍待推提交有没有新凭据**：`git show <sha> | grep -inE "(password|secret|api[_-]?key|appsecret|PRIVATE KEY|jdbc:mysql)"`。命中要人工判读——T08 那次唯一命中是本文件/WORK_LOG 里*描述既有风险的那段文字*，不是新密钥
+- 既成事实、前向修复无法消除的暴露：`JWT_SECRET` 默认串、seed 里 `admin123` 的 BCrypt 哈希、MySQL root 默认口令、`crypto.key` 默认串。要抹掉只有 `git filter-repo` + force-push，代价是所有被 WORK_LOG 引用的哈希失效，**动手前必须先备份并征得同意**
+- 推完必须核对远端真相：`git ls-remote --heads origin` 与 `git rev-parse HEAD` **逐字符比对**，再看 `git rev-list --left-right --count origin/main...HEAD` 是否为 `0	0`。`git push` 的回显只是本地视角
+- **禁止 force push 到 main**，禁止 `--no-verify`。改写公开历史属于不可逆操作，任何情况下都要先问
