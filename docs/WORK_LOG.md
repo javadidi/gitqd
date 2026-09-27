@@ -3136,8 +3136,72 @@ DELETE FROM user      WHERE id IN (171,172) AND wechat_openid LIKE 't09-acc-%'; 
 
 - 后端 98 例全绿；真 HTTP 20/20；库已回基线；附录 B 14 条扫完。
 - 后端进程**仍在后台运行**（T09-M 小程序 UI 验收要用），因此现在**不能跑 `mvn clean test`**——跑之前必须先停它。
-- 本地领先 `origin/main` **3 条**（`8d4ecfa` + `5a293a1` + `7328759`），本卡提交后变 4 条。**按「一个里程碑推一次」的约定不推送**，下个推送点是 T12 / 🚩M1。
-- 待验收：小程序三页（列表 / 绑定 / 详情）的 UI 实测，走 T09-M。
+- 本地领先 `origin/main` **4 条**（`8d4ecfa` + `5a293a1` + `7328759` + `2d7f773`）。**按「一个里程碑推一次」的约定不推送**，下个推送点是 T12 / 🚩M1。
+- UI 验收结果见下一节「T09-M」。
+
+---
+
+## T09-M · 住院人三页 UI 自动化验收（2026-09-28）
+
+**卡片范围**：不写任何产品代码。把 T09 挂起的「微信开发者工具人工验收」改成机器驱动 + 逐项取证（通道与 T07-M/T08-M 同一套：skill-cli `wechatide -c qoder`，驱动在仓库外 `E:\qdspace\_mp-driver`，`miniprogram/` 零改动）。关闭 #65。
+
+### 环境前置
+
+| 项 | 实测 |
+|---|---|
+| 后端 | 沿用 T09-F 的后台进程，`captcha_http=200`、前缀 `/api` 正确 |
+| skill-cli | `check_wechatide_status` → `loginExpired:false / tokenRequired:false`、skill v0.3.9（`versionRelation:"skip_check"`：没传 agent 版本号所以跳过对比，无害） |
+| 登录 | 真 tap `.login-btn` 走 `wx.login` → `/auth/wechat-login`，造出 mock 用户 **id=173**（`MOCK_OPENID_897f219d…`）；`hasPhone=false` 的「绑定手机号」弹窗由录制器自动应答「稍后再说」 |
+| 录制器 | `installrec` 后 `recInstalled:true`；每轮前 `clearlog` 清累积 |
+
+### 9 项结果总表
+
+| # | 项 | 期望 | 实际取证 | 判定 |
+|---|---|---|---|---|
+| T09-1 | 我的 → 住院人管理入口 | 跳 list、标题「住院人管理」、不再 toast「即将开放」 | `currentPage.path=pages/inpatient/list`、`title=住院人管理`；stack=`[mine, inpatient/list]`；`toast=[]` | PASS |
+| T09-2 | 新用户空态 | 🏥 + 两行文案 + 蓝底按钮 | `.empty-icon=🏥`、`.empty-title=还没有绑定住院人`、`.empty-desc=绑定住院号后可以查看住院人的科室与床位信息`、`.empty-btn=绑定住院号`；截图 `t09-02-empty.jpg` 蓝底白字按钮真实渲染 | PASS |
+| T09-3 | 空态按钮 → 绑定页 | 真 tap 进 bind、标题「绑定住院号」 | `el tap .empty-btn` → `success:true` → `path=pages/inpatient/bind`、`title=绑定住院号`；`topData` 四字段全空、`submitting:false` | PASS |
+| T09-4 | 表单校验零请求 | 空姓名 / 空住院号各自 toast，不落库 | `toast=[请填写姓名, 请填写住院号]`、`modal=[]`；DB `inpatient` 计数 **5**（seed 一条没多） | PASS |
+| T09-5 | 二次确认弹窗 | 标题 / 四行内容 / 「确认绑定」 | 录制 `{title:确认住院人信息, content:姓名：验收甲\n住院号：ZY-M-001\n科室：未填写\n床号：未填写, confirmText:确认绑定}`；passthrough 真弹窗截图 `t09-05-modal.jpg` 逐字一致（左「取消」右蓝字「确认绑定」） | PASS |
+| T09-6 | 取消分支 | 不落库、停在 bind、无成功 toast | 自动 cancel 后 `toast` 仍只有那两条校验提示；stack 顶仍 bind；DB 计数仍 **5** | PASS |
+| T09-7 | 确认绑定 + `—` 兜底 | 成功 toast → 自动回列表；科室/床号留空显示 `—` | 甲（带科室床号）：toast「绑定成功」→ 回列表，`topData.inpatients[0]={id:30, 验收甲, ZY-M-001, 消化内科, 03 层 12 床}`；乙（留空）：响应里**两个键整个不存在**，截图 `t09-07-list2.jpg` 里乙行科室/床号渲染成 `—`；DB 计数 **7** | PASS |
+| T09-8 | 详情页 | 标题「住院人信息」、四行、时间格式 | 真 tap `.inpatient-card` → `route=/pages/inpatient/detail?id=30`、`title=住院人信息`；`topData.boundAtText="2026-09-28 03:12"`（`YYYY-MM-DD HH:mm`）；截图 `t09-08-detail.jpg` | PASS |
+| T09-9 | 重复住院号 | 单条「住院号已存在」，不重复 toast，不落库 | 自动确认后 `toast` 尾部只多一条 `{title:住院号已存在, icon:none}`；停在 bind 页；DB 计数仍 **7** | PASS |
+
+**9/9 PASS。**
+
+### 两处降级（如实记，与 T08-M 同性质）
+
+| 位置 | 降级 | 原因 |
+|---|---|---|
+| 「住院人管理」菜单入口 | 调 `onMenuTap` handler 而非真 tap | 菜单项类名不唯一，选择器引擎只认单类名（陷阱 1）。handler 与 `bindtap` 绑的是同一个函数 |
+| 绑定页四个输入框、列表/详情多行值 | 输入走 handler（新写的 `fn/fill-inp.js`）、取值走 `page.data` | **类名唯一但被兄弟节点共用**：四个输入框都是 `.form-input`、每行值都是 `.inpatient-value`/`.detail-value`，单类名只命中第一个。真 tap 留给类名确实唯一的 `.empty-btn` / `.add-btn` / `.inpatient-card`，事件链路仍有真实证据 |
+
+### 过程发现（非产品 bug，记档防误判）
+
+1. **`cfg` 传裸对象会报 `expected array, received object`**：`lib.sh` 的 `cfgjson` 用 `printf '%s'` 原样落盘，而 CLI 的 `--args` 必须是**数组**。对照 `args/` 里跑通过的 `cfg-cancel.json`/`nav.json`/`menutap.json` 全都带方括号。本轮一律传 `[{…}]` 或复用现成文件解决。
+2. **`el style --name backgroundColor` 返回空串**：该探针拿不到背景色；`--name color` 返回 `rgb(255,255,255)`（按钮文字白）。按钮底色改以截图为证据。
+3. **真弹窗关不掉只能换页销毁**：原生 modal 不是页面 WXML 节点，选择器打不到它的按钮；`reLaunch` 回列表页即销毁（`reLaunch` 不重置登录态，只有 refresh 会）。
+4. 登录弹窗在 `passthrough=true` 下真显示并挡住了屏幕——先截图取证、再 `switchTab` 切走，顺序反了就会漏证据。
+
+### 验收数据自净
+
+本轮造 1 个 mock 用户（id 173）与 2 条 inpatient（id 30/31）。清理用双条件，碰不到 seed：
+
+```
+DELETE FROM inpatient WHERE inpatient_no IN ('ZY-M-001','ZY-M-002');      -- 2 行
+DELETE FROM user      WHERE id=173 AND wechat_openid LIKE 'MOCK_OPENID_%'; -- 1 行
+```
+
+收尾基线：`inpatient_total=5 / inpatient_deleted=0 / user_total=4 / mock_users=0 / patient_total=10`（与 T08-G 收尾一致）；模拟器 storage `keys=[]`、`token=""`（未登录态交还）。
+
+截图存仓库外 `E:\qdspace\_mp-driver\shots\`：`t09-00-login-modal.jpg`、`t09-01-mine.jpg`、`t09-02-empty.jpg`、`t09-05-modal.jpg`、`t09-07-list2.jpg`、`t09-08-detail.jpg`。
+
+### 结论
+
+- T09 的 9 项 UI 验收**全部由机器实测通过**，#65 关闭；「待人工验收」清单清零。
+- 本节不改动任何产品代码（新增的 `fn/fill-inp.js` 与 7 个参数文件都在仓库外），故不触发后端门禁与 admin 门禁。
+- T09 至此**全卡收口**：后端 98 例 + 真 HTTP 20 步 + UI 9 项，三层证据齐。下一张卡 T10，未获明确指示不开工。
 
 
 
