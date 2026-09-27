@@ -1,0 +1,57 @@
+<view class="page-inpatient-bind">
+  <view class="container">
+    <view class="card">
+      <view class="form-row">
+        <text class="form-label">姓名</text>
+        <input
+          class="form-input"
+          placeholder="请输入住院人姓名"
+          maxlength="64"
+          value="{{name}}"
+          bindinput="onNameInput"
+        />
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">住院号</text>
+        <input
+          class="form-input"
+          placeholder="请输入医院给的住院号"
+          maxlength="64"
+          value="{{inpatientNo}}"
+          bindinput="onInpatientNoInput"
+        />
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">科室</text>
+        <input
+          class="form-input"
+          placeholder="选填，如 消化内科"
+          maxlength="128"
+          value="{{department}}"
+          bindinput="onDepartmentInput"
+        />
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">床号</text>
+        <input
+          class="form-input"
+          placeholder="选填，如 03 层 12 床"
+          maxlength="32"
+          value="{{bedNo}}"
+          bindinput="onBedNoInput"
+        />
+      </view>
+    </view>
+
+    <button class="btn-primary submit-btn" loading="{{submitting}}" bindtap="onSubmit">
+      确认住院人信息
+    </button>
+
+    <view class="form-tip">
+      <text class="text-muted">住院号全局唯一，绑定后不支持在本页修改</text>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,32 @@
+<view class="page-inpatient-detail">
+  <view class="container">
+    <view wx:if="{{inpatient}}" class="card">
+      <view class="detail-head">
+        <text class="detail-name">{{inpatient.name}}</text>
+      </view>
+
+      <view class="detail-lines">
+        <view class="flex-between">
+          <text class="text-muted">住院号</text>
+          <text class="detail-value">{{inpatient.inpatientNo}}</text>
+        </view>
+        <view class="flex-between">
+          <text class="text-muted">科室</text>
+          <text class="detail-value">{{inpatient.department || '—'}}</text>
+        </view>
+        <view class="flex-between">
+          <text class="text-muted">床号</text>
+          <text class="detail-value">{{inpatient.bedNo || '—'}}</text>
+        </view>
+        <view class="flex-between">
+          <text class="text-muted">绑定时间</text>
+          <text class="detail-value">{{boundAtText}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="form-tip">
+      <text class="text-muted">本页仅供查看，住院号绑定后不支持修改</text>
+    </view>
+  </view>
+</view>

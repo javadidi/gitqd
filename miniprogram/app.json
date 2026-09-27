@@ -6,7 +6,10 @@
     "pages/login/login",
     "pages/home/home",
     "pages/patient/list",
-    "pages/patient/edit"
+    "pages/patient/edit",
+    "pages/inpatient/list",
+    "pages/inpatient/bind",
+    "pages/inpatient/detail"
   ],
   "window": {
     "navigationBarBackgroundColor": "#ffffff",

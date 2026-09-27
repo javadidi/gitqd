@@ -1,0 +1,36 @@
+.page-inpatient-bind {
+  padding-bottom: 40rpx;
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  padding: 24rpx 0;
+  border-bottom: 2rpx solid #f0f0f0;
+}
+
+.form-row:last-child {
+  border-bottom: none;
+}
+
+.form-label {
+  width: 180rpx;
+  font-size: 28rpx;
+  color: #333;
+}
+
+.form-input {
+  flex: 1;
+  font-size: 28rpx;
+}
+
+.submit-btn {
+  width: 100%;
+  margin-top: 8rpx;
+}
+
+.form-tip {
+  margin-top: 24rpx;
+  text-align: center;
+  line-height: 1.6;
+}

@@ -2899,6 +2899,246 @@ DELETE FROM user    WHERE id > 4 AND wechat_openid LIKE 'MOCK_OPENID_%';   -- us
 - T07 的 4 项与 T08/T08-G 的 8 项**全部由机器实测通过**，#47 / #54 / #58 关闭；「待人工验收」清单清零。
 - 本节不改动任何产品代码，故不触发后端门禁与 admin 门禁；提交仅含本文件与三处指引行。
 
+---
+
+## T09 · 住院人管理（2026-09-28）
+
+### 任务卡原文 → 实现对照
+
+任务卡（《…任务卡开发流程-Java版.md》390–403 行）逐条对：
+
+| 卡片原文 | 实现 | 落点 |
+|---|---|---|
+| 住院人列表：展示已绑定的住院人 | `GET /user/inpatients` → 本人全部住院人，按 id 升序 | `InpatientController:44` / `InpatientService.list` |
+| 绑定住院号：输入住院号 → **验证** → 绑定 | `POST /user/inpatients` → 参数校验（Bean Validation）+ 住院号全局唯一（预检 → 1006，并发由唯一索引兜底）→ 建行 | `InpatientController:54` / `InpatientService.bind` |
+| 住院人信息：查看详细信息 | `GET /user/inpatients/{id}` → 仅本人可查，越权与不存在同回 1005 | `InpatientController:49` / `InpatientService.detail:69` |
+| **红线**：不做住院服务（T23） | `inpatient_bill` / `inpatient_deposit` 一行未碰；无缴费、无充值、无账单相关代码 | `git diff --stat` 可证 |
+| J20 绑定住院号 → 验证通过/失败 | 7 个测试：建行归属、列表隔离、详情、选填留空、参数拒绝、越权 1005、匿名/员工进不来 | `InpatientIntegrationTest` |
+| J21 重复住院号 → 被拒 | 4 个测试：预检层拒、跨用户也拒、被软删行占号也拒且不复活、唯一索引真存在 | `InpatientIntegrationTest` |
+| **DoD**：住院人绑定通 | 真 HTTP 20 步验收 20/20 PASS，绑定 → 列表 → 详情全链路通 | 见「真 HTTP 验收」 |
+
+### 范围判定：四个来源一致，编辑/删除是**有意没有**
+
+T08-G 的教训是「只看动词清单会漏范围」，所以本卡开写前把四个来源全摆出来对齐：
+
+| 来源 | 原文 | 含编辑？ | 含删除/解绑？ |
+|---|---|---|---|
+| 任务卡「要做什么」 | 列表 / 绑定住院号 / 住院人信息 | 无 | 无 |
+| 任务卡 DoD 行 | 「住院人绑定通」 | 无 | 无 |
+| PRD §9.1 接口概览表（608 行） | 「住院人管理 \| **绑定住院号、查询住院人信息**」 | 无 | 无 |
+| PRD §6.1 页面清单（527 行） | 「住院人管理、绑定住院号、确认住院人信息、绑定成功、住院人信息」 | 无 | 无 |
+
+**关键对照证据**：同一张 §9.1 表里，就诊人那一行写的是「添加/编辑/**删除**/查询就诊人」——PRD 在需要删除的地方是明写的。住院人这一行只有「绑定 + 查询」，所以缺失是**规格本身的取舍**，不是我没看见。故本卡只出 3 个端点，**不做 PUT、不做 DELETE**，`SecurityConfig` 也因此一行未改（新路径自动继承 `/user/**` → `hasRole('patient')`）。
+
+页面清单里的「确认住院人信息」和「绑定成功」两个名字，实现为绑定页内的**二次确认弹窗**（按钮文案就叫「确认住院人信息」）与**成功 toast**（文案「绑定成功」，600ms 后 `navigateBack`），不拆独立页面——与 T08 的添加就诊人同构。
+
+### 语义分叉：绑定 = 「自己建一行」还是「认领 HIS 里已有的一行」？
+
+卡片那句「输入住院号 → 验证 → 绑定」有两种读法，选错会做出完全不同的东西：
+
+| | A：自报建行（**选定**） | B：认领既有记录（**否决**） |
+|---|---|---|
+| 「验证」的含义 | 参数合法 + 住院号全局唯一 | 住院号 + 姓名 与 HIS 里那条匹配 |
+| 需要的前置 | 无 | 库里得先有「无主住院人池」→ 要加 V4 迁移把 `user_id` 改成可空，还要造 seed 池 |
+| 与现有 schema 的关系 | 完全吻合 | 冲突 |
+| 安全性 | 住院号唯一即止，无冒领路径 | 谁只要知道「住院号 + 姓名」就能把别人的住院记录挂到自己账号下 |
+
+**判据是 schema，不是我的偏好**：
+
+1. `V1` 里 `inpatient.user_id BIGINT NOT NULL`——结构上就**不存在**「无主住院人」这种状态，B 读法无法在不改表的前提下实现。
+2. `inpatient` 表**没有 id_card / phone 列**（对比 `patient` 表两列都有且 AES 加密）——没有任何可核对身份的字段，B 的「验证」只能退化成「住院号 + 姓名」比对，正是上表那行安全风险。
+
+真实 HIS 对接属二期性质（附录 A 未列本项），所以按 A 实现。这条决策写进了 `InpatientService` 的类注释，后来的人不必再猜一遍。
+
+### 实现要点与有意取舍
+
+| 取舍 | 做法 | 理由 |
+|---|---|---|
+| 不做住院号格式正则 | 只有 `@NotBlank @Size(max=64)` | seed 里是 `ZY20260001`，但**没有任何规格定义过格式**；自造 `^ZY\d{8}$` 属凭空发明，违反「宁少勿假」。64 来自 `V1` 的 `VARCHAR(64) NOT NULL` |
+| 科室/床号选填 | `@Size(max=128)` / `@Size(max=32)`，空串 trim 成 NULL | `V1` 两列可空，且 seed 第 4、5 行本身就是 NULL |
+| **不做复活分支**（与 T08 明确不同） | 撞上被软删行占用的住院号 → 直接 1006 | T08 的 `create` 会复活本人软删行，是因为 T08 **有删除入口**、程序自己会造软删行；T09 无删除入口，程序永远造不出软删行，任何撞号都是异常输入。有测试专门钉住这点（插一条 `deleted=1` 的裸行，验 1006 且 `deleted` 仍是 1） |
+| 归属校验写在 service | `selectOne(id, user_id)` 双条件，查不到 → **1005 而非 403** | 403 等于告诉调用方「这条记录确实存在，只是不是你的」，可被枚举；1005 与「id 根本不存在」同码，不可枚举 |
+| `bind` **不加 `@Transactional`** | 单条写入，且要捕 `DuplicateKeyException` | 事务里捕到 DB 异常会把事务标记为 rollback-only，再抛业务异常就变成说不清的 500。与 T07 `loginByWechat`、T08 `create/update` 同一处理 |
+| 不写 audit_log | — | PRD 485 行把审计范围限定在**管理后台操作**；患者端自己的绑定不入库审计（T07/T08 一致） |
+| 错误码零新增 | 复用 `INPATIENT_NOT_FOUND`(1005) / `INPATIENT_NO_EXISTS`(1006) | 这两个码 T07 时就已存在，本卡一行未改 `ErrorCode` |
+| 响应字段不脱敏 | `InpatientResponse` 五个字段原样返回 | 住院人表**没有任何 AES 加密列**，附录 B「身份证/手机号是否加密存储」对本卡为 N/A |
+
+### 文件清单（新增 14 个 / 修改 2 个）
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `backend/.../dto/InpatientBindRequest.java` | 46 | 新增。无 userId 字段（归属只从 token 取，客户端不能自报） |
+| `backend/.../dto/InpatientResponse.java` | 45 | 新增。`boundAt` = 表的 `created_at` |
+| `backend/.../service/InpatientService.java` | 140 | 新增。bind / list / detail + 唯一性预检 + 归属校验 |
+| `backend/.../controller/InpatientController.java` | 58 | 新增。`@RequestMapping("/user/inpatients")`，3 端点 |
+| `backend/src/test/.../InpatientIntegrationTest.java` | 423 | 新增。11 个测试 |
+| `miniprogram/pages/inpatient/list.{js,wxml,wxss}` | 40/42/58 | 新增。列表 + 空态 |
+| `miniprogram/pages/inpatient/bind.{js,wxml,wxss}` | 77/57/36 | 新增。四字段表单 + 二次确认弹窗 |
+| `miniprogram/pages/inpatient/detail.{js,wxml,wxss}` | 34/32/31 | 新增。只读详情 |
+| `miniprogram/pages/inpatient/*.json` | ×3 | 新增。标题：住院人管理 / 绑定住院号 / 住院人信息 |
+| `miniprogram/app.json` | 改 | `pages` 数组追加三条路径 |
+| `miniprogram/pages/mine/mine.js` | 改 | 「住院人管理」的 `url` 从 `''`（点了 toast「即将开放」）改成 `/pages/inpatient/list` |
+
+后端新增 4 个源文件 + 1 个测试文件，小程序新增 3 页共 12 个文件。**未新建任何迁移**（`inpatient` 表 T01 的 `V1` 就有了），**未改 `SecurityConfig` / `ErrorCode` / 任何既有 service**。
+
+### 门禁证据：`mvn clean test` 全绿 98 例
+
+命令与为什么这么跑：
+
+```
+mvn -f backend/pom.xml clean test
+```
+- `clean`：必须带。后端此前在 8080 上跑着，`target/classes` 里有热态产物；不 clean 就可能测到旧字节码，绿得没有意义。（也因此跑之前先停了后台进程。）
+- `test`：Surefire 全量跑，`*Test.java` 一个不落。
+
+结果：
+
+| 指标 | 值 |
+|---|---|
+| `MVN_EXIT` | **0** |
+| 汇总行 | `Tests run: 98, Failures: 0, Errors: 0, Skipped: 0` |
+| 构建 | `BUILD SUCCESS` |
+| `[ERROR]` 行数 | **0** |
+| 警告 | 仅 netty / `sun.misc.Unsafe` 的 JDK 弃用提示，与本卡无关 |
+
+15 个测试类逐个点数（相加 = 98，与汇总行对齐，防止「某些类根本没被跑到」）：
+
+| 测试类 | 例数 | | 测试类 | 例数 |
+|---|---|---|---|---|
+| AuditFieldFillTest | 3 | | CaptchaServiceTest | 5 |
+| AuditLogTest | 3 | | **InpatientIntegrationTest** | **11**（本卡新增） |
+| AuthIntegrationTest | 7 | | PatientIntegrationTest | 17 |
+| FlywayMigrationTest | 1 | | PermissionServiceTest | 9 |
+| MoneyMaskingTest | 7 | | SerialNumberServiceTest | 3 |
+| SeedCheckServiceTest | 4 | | UserAuthIntegrationTest | 9 |
+| SeedConstraintTest | 4 | | TaskKernelTest | 7 |
+| CaptchaIntegrationTest | 8 | | | |
+
+基线对比：T08-G 收尾是 87 例，本卡 +11 = **98**，既有用例一例未红（说明没有回归）。
+
+J20 / J21 两条测试场景的 11 个用例分派：
+
+| 编号 | 用例 | 钉住什么 |
+|---|---|---|
+| J20 | `bindInpatient_storesRowOwnedByCaller` | 200 + 四字段回显 + `boundAt` 是 ISO 字符串（hamcrest `matchesRegex`，不靠假设）+ 库里那行的 `user_id` 等于 token 里的人 |
+| J20 | `listReturnsOwnInpatientsOnly` | 两个用户各绑一条，互不出现在对方列表里 |
+| J20 | `detailReturnsOwnInpatient` | 详情可查 |
+| J20 | `blankDepartmentAndBedNo_storedAsNullAndOmittedFromJson` | 库里两列真 NULL + JSON 里两个**键整个消失**（`doesNotExist()`），钉住 `non_null` 序列化行为 |
+| J20 | `blankNameOrInpatientNo_rejectedWith400` | 「验证失败」分支：空姓名 / 空住院号 → 400 |
+| J20 | `otherUsersInpatient_detailReturns1005Not403` | 越权 → 1005 而非 403 |
+| J20 | `anonymousAndStaffTokenCannotReachInpatientEndpoints` | 匿名 → 401；员工 token → 403 + 4001。GET/POST/GET{id} 三条路径都打 |
+| J21 | `duplicateInpatientNo_rejectedByPreCheck` | 同一人重复绑 → 1006 |
+| J21 | `duplicateInpatientNoAcrossUsers_alsoRejected` | 换个人绑同一号 → 还是 1006（唯一性是**全局**的，不是按用户） |
+| J21 | `inpatientNoHeldBySoftDeletedRow_rejectedWithoutReviving` | 裸插一条 `deleted=1` 的占号行 → 1006，且该行 `deleted` 仍是 1（**没有复活**） |
+| J21 | `uniqueIndexReallyExists` | `assertThrows(DuplicateKeyException.class, …)` 直插重复号，证明 `uk_inpatient_no` 真在库里，预检不是唯一防线 |
+
+数据自净：`@AfterEach cleanup()` 先按本用例登记的 `inpatient_no` 物理删，再按用户 id 兜底删。**所有会走到建行的用例——包括预期被 400/401/403 拒掉的探针——都把号码登记进 `createdInpatientNos`**，万一哪天校验坏了、行真的建出来了，收尾也能扫掉（T08 踩过的坑，这次开写就防住）。
+
+### 真 HTTP 验收：20 步 20/20 PASS
+
+MockMvc 绿不等于真 HTTP 通——**这次就当场翻车了一次**：脚本第一版 `BASE='http://127.0.0.1:8080'`，探 `/auth/captcha` 直接 `404`。根因是 `server.servlet.context-path=/api`（启动日志那行 `Tomcat started on port 8080 (http) with context path '/api'` 就是证据），而 MockMvc 不套 context path，所以测试里写 `/user/inpatients` 是绿的。改成 `BASE='http://127.0.0.1:8080/api'` 后重探得 200。**这条已固化为规矩：真 HTTP 验收前先打一个 permitAll 端点确认前缀。**
+
+脚本 `backend/target/t09-accept.py`（放 `target/` 下：被 `.gitignore` 覆盖且 `mvn clean` 会带走，永远进不了提交）。用 Python 而非 bash + curl，因为 shell 里的中文字面量会以 GBK 到达原生程序 → curl 的 body 变非法 UTF-8 → 后端读不出来 → **假 500**（T08-G 踩过）；脚本全程 `json.dumps(...).encode('utf-8')` 自己掌握编码。员工 token 的验证码答案是 `docker exec hospital-redis redis-cli GET captcha:<key>` **真读**出来的，不猜不硬编码。
+
+`ACCEPT_EXIT=0`，`SUMMARY PASS=20 FAIL=0 TOTAL=20`，`ACCEPTANCE_IDS id_a=28 id_b=29 uid_a=171 uid_b=172`：
+
+| # | 验什么 | 实测 |
+|---|---|---|
+| 1 | 患者 A 微信登录 | `http=200 code=200 userId=171` |
+| 2 | 新用户列表初始为空 | `data=[]` |
+| 3 | 绑定「验收甲」（J20 验证通过） | `http=200 id=28`，姓名/住院号/科室「消化内科」/床号「03 层 12 床」四字段原样回显 |
+| 4 | `boundAt` 是 ISO 字符串不是 Jackson 数组 | `2026-09-28T02:42:24.343994` |
+| 5 | 列表出现甲 | `len=1`，id 与绑定响应一致 |
+| 6 | 详情与列表同一份数据 | 四字段全等 |
+| 7 | 同人重复住院号（J21） | `http=200 code=1006` |
+| 8 | 1006 文案 | `住院号已存在` |
+| 9 | 被拒那次没改到已有行 | 姓名仍「验收甲」、科室仍「消化内科」 |
+| 10 | 空姓名 | `http=400`，`姓名不能为空`（入库前拦下） |
+| 11 | 空住院号 | `http=400`，`住院号不能为空` |
+| 12 | 科室/床号传空串（绑「验收乙」） | `http=200 id=29`，响应里 `department`/`bedNo` **两个键都不存在** |
+| 13 | 患者 B 查 A 的住院人 | `http=200 code=1005`（不是 403） |
+| 14 | 不存在的 id `999999999` | 同样 `code=1005` → 不可枚举 |
+| 15 | 匿名 GET 列表 | `http=401 code=401` |
+| 16 | 匿名 POST 绑定 | `http=401 code=401` |
+| 17 | 员工真登录（验证码答案读 Redis） | `http=200 code=200 role=admin` |
+| 18 | 员工 GET 住院人列表 | `http=403 code=4001` |
+| 19 | 员工 POST 绑定 | `http=403 code=4001` |
+| 20 | 收尾：A 的列表恰好 2 行 | `len=2`，住院号集合 = {甲, 乙} → 所有被拒尝试都没建行 |
+
+### 库内取证与清理
+
+取证（用 `--default-character-set=utf8mb4` 才看得懂中文，见踩坑 #3）：id 29 的 `department`、`bed_no` 在库里是**真 NULL**，不是空串——第 12 步的「键消失」是 `trimToNull` + `non_null` 两段行为叠加的结果，两头都对上了。
+
+清理用双条件，碰不到 seed：
+
+```
+DELETE FROM inpatient WHERE inpatient_no IN ('ZY-ACC-T09-01','ZY-ACC-T09-02');  -- inpatient_deleted=2
+DELETE FROM user      WHERE id IN (171,172) AND wechat_openid LIKE 't09-acc-%'; -- user_deleted=2
+```
+
+收尾基线：`inpatient_total=5`、`inpatient_deleted_rows=0`、`inpatient_leftover_ACC=0`、`inpatient_seed_intact=5`、`user_total=4`、`mock_users=0`、`patient_total=10`、`patient_deleted_rows=0`——与 T08-G 收尾时一致，seed 5 条住院人一条没动。
+
+### 踩坑记录
+
+1. **`server.servlet.context-path=/api` 与 MockMvc 不一致**：真 HTTP 必须带 `/api`，MockMvc 不带。第一次探验证码 404 就是这个。小程序侧本来就是对的（`miniprogram/app.js` 的 `baseUrl: 'http://localhost:8080/api'`），`utils/request.js` 直接拼 `baseUrl + url`，所以三个新页面不用改任何配置。
+2. **`boundAt` 精度两处不同**：POST 响应 `2026-09-28T02:42:24.343994`（JVM 内存里的 `LocalDateTime`，微秒级），GET 响应 `…T02:42:24.344`（MySQL `datetime(3)` 只存毫秒，回读被截断）。不是 bug，但断言若写死字符串会偶发红，所以测试只用正则匹配到秒。另外 `spring.jackson.date-format` **对 `LocalDateTime` 不生效**（它只管 `java.util.Date`），ISO 形态是 JavaTimeModule 的默认行为——这点是靠断言钉住的，不是靠猜。
+3. **mysql 客户端中文变 `???`**：`验收甲` 打出来是问号，一度以为数据写坏了。实际是控制台/管道编码问题，HTTP 的 JSON 已证明往返正确；加 `--default-character-set=utf8mb4` 后 `验收甲 / 验收乙 / 消化内科` 全部正常显示。**看到 `???` 先怀疑终端，再怀疑数据。**
+4. **探针号码漏登记**（本卡自查修掉）：400 校验用例和 401/403 用例里 `randomInpatientNo()` 是内联调用的，没进 `createdInpatientNos`。正常情况下这些请求建不出行，但**万一校验坏了行就会漏在库里**。已补登记；中途还留过一个没用上的 `String blankNo`，一并删了。
+5. **详情页住院号显示两遍**：头部蓝色副标题一行、下面「住院号」标签行又一行。删掉头部副标题与随之无用的 `.detail-no` 样式。
+
+### 附录 B · 全局红线检查表（14 条逐条扫）
+
+| # | 条目 | 结论 | 证据 |
+|---|---|---|---|
+| 799 | 金额有没有 FLOAT/DOUBLE？ | N/A | 本卡不涉及金额，`inpatient` 表无金额列 |
+| 800 | 护士视角新接口会不会吐金额？ | N/A | 3 个端点都在 `/user/**`，员工 token 一律 403/4001（验收 18、19） |
+| 801 | 新写操作有没有写 audit_log？同一事务内吗？ | 有意不写 | PRD 485 行把审计限定在管理后台；患者端自身绑定不入审计，T07/T08 一致 |
+| 802 | 跨表写入是否一个 `@Transactional`？外部调用放 afterCommit？ | N/A | 单表单条写入，无跨表；`bind` 故意不加事务（捕 `DuplicateKeyException` 会撞 rollback-only） |
+| 803 | 指标口径有没有在别处重算？ | N/A | 本卡无指标 |
+| 804 | 权限判断是否只写在 UI？ | **否，service 层也拦** | 归属校验在 `InpatientService.requireOwned`，不在 wxml；越权 → 1005（验收 13） |
+| 805 | 自动派发的任务是否幂等？ | N/A | 本卡不派发任务 |
+| 806 | 小程序端新接口是否强制注入 userId 归属校验？ | **是** | `InpatientBindRequest` **没有 userId 字段**，归属只能从 `SecurityUtils.currentUserId()` 取；list/detail 全部按 `user_id` 过滤 |
+| 807 | 金额用 `<Money>`、列表用 `<DataTable>`、状态用 `<StatusBadge>`？ | N/A | 那三个是 admin（React）组件；本卡只动小程序原生页面，admin 零改动 |
+| 808 | 列表筛选/搜索/分页是否进 URL？ | N/A | 小程序端无筛选/分页；admin 未动 |
+| 809 | 有没有多装 T01 清单外的三方库？ | **没有** | `backend/pom.xml` 未修改；小程序侧零 npm 依赖，只用 `wx.*` 原生 API |
+| 810 | 有没有实现附录 A「首版不做」的东西？ | **没有** | 未碰住院服务/缴费/充值/病案；未做真实 HIS 对接 |
+| 811 | J 编号测试是否逐条真实通过？ | **是** | J20 七例 + J21 四例，`mvn clean test` 98/98 绿，另有 20 步真 HTTP 复验 |
+| 812 | 身份证/手机号是否加密存储？ | N/A | `inpatient` 表**没有** id_card / phone 列，无敏感字段可加密（这正是语义分叉里否决 B 的第二个判据） |
+
+### 偏离表（与本卡相关的每一处「不按字面来」）
+
+| 偏离 | 字面可能期待 | 实际做法 | 依据 |
+|---|---|---|---|
+| 没有 PUT / DELETE | 「管理」二字听起来含增删改 | 只做 列表 + 绑定 + 详情 | 四路来源一致（见范围判定表），且 §9.1 就诊人行明写「删除」而住院人行没写 |
+| 没有复活分支 | T08 的 create 会复活本人软删行 | 撞软删行占号 → 1006 | T09 无删除入口，程序造不出软删行；有测试钉住不复活 |
+| 没有住院号格式校验 | seed 是 `ZY20260001` | 只 `@NotBlank` + `@Size(max=64)` | 无规格定义格式，自造正则属发明需求 |
+| 「确认住院人信息」「绑定成功」不是独立页面 | §6.1 页面清单把它们列为页名 | 弹窗 + toast + 600ms 返回 | 与 T08 添加就诊人同构，属同一表单流的瞬时状态 |
+| 不写 audit_log | 「新写操作要不要审计」 | 不写 | PRD 485 行限定管理后台 |
+| 越权回 1005 不是 403 | 直觉上 403 更「正确」 | 1005，与不存在同码 | 403 会确认记录存在 → 可枚举 |
+
+### 本卡有意未做清单
+
+1. **住院服务（T23）**——卡片 397 行红线：住院缴费、住院充值、账单、病案一律未碰。
+2. **住院号的编辑与解绑**——四路来源均无，见范围判定表。
+3. **真实 HIS 对接 / 认领既有住院记录**——二期性质（语义分叉的 B 方案），需 V4 迁移 + 无主池 seed + 身份核对字段，本卡 schema 不支持。
+4. **住院号格式校验**——无规格来源。
+5. **audit_log**——非管理后台操作。
+6. **admin 端任何改动**——本卡纯患者侧。
+
+### 遗留 TODO（非本卡范围，记账不忘）
+
+- 公开仓库历史里的默认凭据（`JWT_SECRET`、seed `admin123` 的 BCrypt 值、`MYSQL_PASSWORD:-123456`、`crypto.key` 默认值）——用户已知悉并选择「公开推，我接受风险」，上线前必须轮换。
+- `HttpMessageNotReadableException` 目前落到通用处理，宜单独一张小卡改成 400 + 友好文案。
+- `admin/curl`（0 字节、未跟踪）仍在工作区，提交时按显式清单绕开，不要 `git add -A`。
+- 仓库外 `E:\qdspace\_mp-driver` 驱动脚本可视情况清理。
+
+### 当前状态
+
+- 后端 98 例全绿；真 HTTP 20/20；库已回基线；附录 B 14 条扫完。
+- 后端进程**仍在后台运行**（T09-M 小程序 UI 验收要用），因此现在**不能跑 `mvn clean test`**——跑之前必须先停它。
+- 本地领先 `origin/main` **3 条**（`8d4ecfa` + `5a293a1` + `7328759`），本卡提交后变 4 条。**按「一个里程碑推一次」的约定不推送**，下个推送点是 T12 / 🚩M1。
+- 待验收：小程序三页（列表 / 绑定 / 详情）的 UI 实测，走 T09-M。
+
 
 
 

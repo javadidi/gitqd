@@ -18,7 +18,7 @@ Page({
     menuItems: [
       { group: '就诊服务', items: [
         { label: '就诊人管理', icon: '👤', url: '/pages/patient/list' },
-        { label: '住院人管理', icon: '🏥', url: '' },
+        { label: '住院人管理', icon: '🏥', url: '/pages/inpatient/list' },
       ]},
       { group: '预约记录', items: [
         { label: '预约挂号记录', icon: '📋', url: '' },

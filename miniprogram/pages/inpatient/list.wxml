@@ -1,0 +1,42 @@
+<view class="page-inpatient">
+  <view class="container">
+    <!-- 空态：不能只写"暂无数据"，必须带下一步动作 -->
+    <view wx:if="{{!loading && inpatients.length === 0}}" class="card empty-card">
+      <view class="empty-icon">🏥</view>
+      <view class="empty-title">还没有绑定住院人</view>
+      <view class="text-muted empty-desc">绑定住院号后可以查看住院人的科室与床位信息</view>
+      <button class="btn-primary empty-btn" bindtap="onBind">绑定住院号</button>
+    </view>
+
+    <view
+      wx:for="{{inpatients}}"
+      wx:key="id"
+      class="card inpatient-card"
+      data-id="{{item.id}}"
+      bindtap="onItemTap"
+    >
+      <view class="flex-between">
+        <text class="inpatient-name">{{item.name}}</text>
+        <text class="menu-arrow">></text>
+      </view>
+      <view class="inpatient-lines">
+        <view class="flex-between">
+          <text class="text-muted">住院号</text>
+          <text class="inpatient-value">{{item.inpatientNo}}</text>
+        </view>
+        <view class="flex-between">
+          <text class="text-muted">科室</text>
+          <text class="inpatient-value">{{item.department || '—'}}</text>
+        </view>
+        <view class="flex-between">
+          <text class="text-muted">床号</text>
+          <text class="inpatient-value">{{item.bedNo || '—'}}</text>
+        </view>
+      </view>
+    </view>
+
+    <button wx:if="{{inpatients.length > 0}}" class="btn-outline add-btn" bindtap="onBind">
+      绑定住院号
+    </button>
+  </view>
+</view>

@@ -1,0 +1,31 @@
+.page-inpatient-detail {
+  padding-bottom: 40rpx;
+}
+
+.detail-head {
+  padding-bottom: 20rpx;
+  border-bottom: 2rpx solid #f0f0f0;
+}
+
+.detail-name {
+  font-size: 36rpx;
+  font-weight: 600;
+}
+
+.detail-lines {
+  margin-top: 20rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.detail-value {
+  font-size: 28rpx;
+  color: #555;
+}
+
+.form-tip {
+  margin-top: 24rpx;
+  text-align: center;
+  line-height: 1.6;
+}

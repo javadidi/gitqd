@@ -1,0 +1,58 @@
+.page-inpatient {
+  padding-bottom: 40rpx;
+}
+
+.empty-card {
+  padding: 80rpx 40rpx;
+  text-align: center;
+}
+
+.empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.empty-desc {
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.empty-btn {
+  width: 60%;
+}
+
+.inpatient-card {
+  padding: 28rpx 24rpx;
+}
+
+.inpatient-name {
+  font-size: 34rpx;
+  font-weight: 600;
+}
+
+.menu-arrow {
+  color: #ccc;
+  font-size: 28rpx;
+}
+
+.inpatient-lines {
+  margin-top: 20rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.inpatient-value {
+  font-size: 26rpx;
+  color: #555;
+}
+
+.add-btn {
+  width: 100%;
+}
