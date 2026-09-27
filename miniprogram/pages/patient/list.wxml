@@ -36,6 +36,15 @@
           <text class="patient-value">{{item.phone || '—'}}</text>
         </view>
       </view>
+      <!-- catchtap 而非 bindtap：点删除不能冒泡到卡片的 onItemTap，否则会同时跳去编辑页 -->
+      <view class="patient-actions">
+        <text
+          class="delete-link"
+          data-id="{{item.id}}"
+          data-name="{{item.name}}"
+          catchtap="onDelete"
+        >删除</text>
+      </view>
     </view>
 
     <button wx:if="{{patients.length > 0}}" class="btn-outline add-btn" bindtap="onAdd">

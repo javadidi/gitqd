@@ -1,5 +1,5 @@
 const app = getApp()
-const { get } = require('../../utils/request')
+const { get, del } = require('../../utils/request')
 const { relationLabel } = require('../../utils/format')
 
 Page({
@@ -37,6 +37,32 @@ Page({
   onItemTap(e) {
     const { id } = e.currentTarget.dataset
     wx.navigateTo({ url: `/pages/patient/edit?id=${id}` })
+  },
+
+  onDelete(e) {
+    const { id, name } = e.currentTarget.dataset
+    wx.showModal({
+      title: '删除就诊人',
+      // 文案要对得上后端语义：软删（历史单据不受影响）+ 卡号仍归本人（同号可重新添加）
+      content: `确定删除「${name}」吗？该就诊人的挂号与缴费记录会保留，卡号仍归你，重新添加同一卡号即可恢复。`,
+      confirmText: '删除',
+      confirmColor: '#e11d48',
+      success: (res) => {
+        if (res.confirm) {
+          this.doDelete(id)
+        }
+      },
+    })
+  },
+
+  async doDelete(id) {
+    try {
+      await del(`/user/patients/${id}`)
+      wx.showToast({ title: '已删除', icon: 'success' })
+      this.loadPatients()
+    } catch (err) {
+      // 后端消息已由 utils/request.js 统一 toast，这里不再重复提示
+    }
   },
 })
 

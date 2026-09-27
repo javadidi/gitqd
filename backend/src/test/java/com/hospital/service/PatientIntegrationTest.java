@@ -24,6 +24,7 @@ import java.util.Random;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -32,13 +33,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 /**
  * T08 就诊人管理的必做场景：J17（加密存储）/ J18（重复就诊卡号被拒）/ J19（编辑生效），
- * 外加附录 B 第 806 条要求的横向越权回归。
+ * 外加删除（DoD 的「CRUD 通」+ PRD §9.1，卡片没给 J 编号）与附录 B 第 806 条要求的横向越权回归。
  *
  * <p>需要本机 MySQL 与 Redis 都在跑（与 UserAuthIntegrationTest 同一前提）。
  * 用户用 mock 微信登录现建，不碰 seed 的 4 个 user 和 10 行 patient。
  *
  * <p>本类建的行在 {@link #cleanup()} 里**物理删除**：MyBatis-Plus 的 deleteById 是逻辑删除，
  * 只把 deleted 置 1，行还在，uk_card_no 还占着——那会让下次跑测试撞唯一索引（T07 的 uk_openid 同源教训）。
+ * 本类自己就会造出软删行（既用裸 SQL 插，也用 DELETE 端点删），所以清理必须走裸 SQL。
  */
 @SpringBootTest(classes = HospitalApplication.class)
 @AutoConfigureMockMvc
@@ -181,16 +183,15 @@ class PatientIntegrationTest {
     }
 
     /**
-     * 第二层：唯一索引兜底。
+     * 软删行占了卡号，但那是**本人**删掉的 → 复活原行，不是 1004。
      *
-     * <p>用裸 SQL 插一行 {@code deleted = 1} 的占位记录来**确定性地**绕过前置查——
+     * <p>用裸 SQL 插一行 {@code deleted = 1} 来**确定性地**造出这个前提：
      * MyBatis-Plus 的 {@code @TableLogic} 会自动给查询补 {@code deleted = 0}，
-     * 所以 service 看不见这行；但 {@code uk_card_no} 不认 deleted 列，insert 必然撞索引。
-     * 这一条同时证明了两件事：catch 分支真的会把 DuplicateKeyException 翻成 1004（而不是漏成 500），
-     * 以及 PatientService javadoc 里写的"软删卡号仍被占用"不是推演而是实测。
+     * 所以 service 的前置查看不见这行；而 {@code uk_card_no} 不认 deleted 列，索引仍被占着。
+     * 这正是"删错了想加回来"的真实处境，也是 PatientMapper 里那条手写 UPDATE 存在的理由。
      */
     @Test
-    void j18_cardNoHeldBySoftDeletedRow_fallsBackToUniqueIndex() throws Exception {
+    void j18_cardNoHeldByOwnSoftDeletedRow_isRevivedNotRejected() throws Exception {
         String token = newUserToken("j18c");
         Long userId = userIdOf(token);
         String cardNo = randomCardNo();
@@ -200,16 +201,61 @@ class PatientIntegrationTest {
                         + "VALUES (?, '软删占位', 'x', 'x', 'SELF', ?, 1)",
                 userId, cardNo);
         createdCardNos.add(cardNo);
+        Long placeholderId = jdbcTemplate.queryForObject(
+                "SELECT id FROM patient WHERE card_no = ?", Long.class, cardNo);
 
         assertEquals(0, countByCardNo(cardNo), "前置查看不见软删行，这正是本用例要的前提");
 
+        String idCard = randomIdCard();
+        String phone = randomPhone();
         mockMvc.perform(post("/user/patients")
                         .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(createPayload("孙七", cardNo, idCard, phone, "CHILD"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.name").value("孙七"))
+                .andExpect(jsonPath("$.data.relation").value("CHILD"))
+                // 复活的必须是原来那一行：id 变了就等于把历史单据的 patient_id 甩成了孤儿
+                .andExpect(jsonPath("$.data.id").value(placeholderId));
+
+        assertEquals(1, countByCardNo(cardNo), "复活后该行应重新可见");
+        assertEquals(0, deletedFlagOf(cardNo), "deleted 必须被置回 0");
+        Patient revived = selectByCardNo(cardNo);
+        assertEquals(idCard, cryptoService.decrypt(revived.getIdCard()), "复活时身份证应按新填的覆盖并加密");
+        assertEquals(phone, cryptoService.decrypt(revived.getPhone()), "复活时手机号应按新填的覆盖并加密");
+    }
+
+    /**
+     * 软删行占了卡号，且属于**别人** → 仍然 1004。
+     *
+     * <p>这一条同时证明了两件事：卡号不会因为原主人删掉就外放（就诊卡号是实体卡号，
+     * 放给别人用会让历史预约/缴费/报告的卡号归属错乱），以及 create 的 catch 分支
+     * 真的会把 DuplicateKeyException 翻成 1004 而不是漏成 500——因为前置查看不见软删行，
+     * 只能靠唯一索引兜住。
+     */
+    @Test
+    void j18_cardNoHeldByOthersSoftDeletedRow_fallsBackToUniqueIndex() throws Exception {
+        String tokenA = newUserToken("j18d-a");
+        String tokenB = newUserToken("j18d-b");
+        String cardNo = randomCardNo();
+
+        // 占位行归 B，且是 B 已删除的
+        jdbcTemplate.update(
+                "INSERT INTO patient (user_id, name, id_card, phone, relation, card_no, deleted) "
+                        + "VALUES (?, '别人的软删行', 'x', 'x', 'SELF', ?, 1)",
+                userIdOf(tokenB), cardNo);
+        createdCardNos.add(cardNo);
+
+        mockMvc.perform(post("/user/patients")
+                        .header("Authorization", "Bearer " + tokenA)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json(createPayload("孙七", cardNo, randomIdCard(), randomPhone(), "SELF"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(1004))
                 .andExpect(jsonPath("$.message").value("就诊卡号已存在"));
+
+        assertEquals(1, deletedFlagOf(cardNo), "被拒的那次不该把别人的软删行复活");
     }
 
     /** 兜底层的物理事实：同一卡号硬插两次，MySQL 必须拒绝 */
@@ -289,6 +335,140 @@ class PatientIntegrationTest {
     }
 
     // ============================================================
+    // 删除（卡片「测试场景」只列了 J17/J18/J19，删除来自 DoD 的「CRUD 通」+ PRD §9.1，
+    // 没有 J 编号可挂，所以用描述性方法名，不编一个 J20 出来）
+    // ============================================================
+
+    @Test
+    void deleteOwnPatient_hidesItFromListDetailAndUpdate() throws Exception {
+        String token = newUserToken("del-a");
+        String cardNo = randomCardNo();
+        Long patientId = createPatient(token, cardNo);
+
+        mockMvc.perform(delete("/user/patients/" + patientId).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        // 逻辑删：行必须还在库里（历史单据的 patient_id 仍指着它），但对接口彻底不可见
+        assertEquals(1, deletedFlagOf(cardNo), "应是逻辑删（deleted=1），不是物理删");
+        assertEquals(1, rawCountByCardNo(cardNo), "行必须还在，物理删会甩下一堆孤儿单据");
+        assertEquals(0, countByCardNo(cardNo), "但对 MyBatis-Plus 的查询已不可见");
+
+        mockMvc.perform(get("/user/patients").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.length()").value(0));
+
+        mockMvc.perform(get("/user/patients/" + patientId).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(1003));
+
+        // 删完还能改 = 删除是假的
+        mockMvc.perform(put("/user/patients/" + patientId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(updatePayload("改不动", "", "", "", "SELF"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(1003));
+    }
+
+    @Test
+    void deleteOthersPatient_returns1003_not403() throws Exception {
+        String tokenA = newUserToken("del-b-a");
+        String tokenB = newUserToken("del-b-b");
+        String cardNo = randomCardNo();
+        Long patientIdOfA = createPatient(tokenA, cardNo);
+
+        mockMvc.perform(delete("/user/patients/" + patientIdOfA).header("Authorization", "Bearer " + tokenB))
+                .andExpect(status().isOk())
+                // 不是 403：403 会确认"这个 id 存在"，等于帮攻击者枚举别人的就诊人
+                .andExpect(jsonPath("$.code").value(1003));
+
+        assertEquals(0, deletedFlagOf(cardNo), "越权删除必须没生效");
+    }
+
+    /** 删错了能加回来：本人用同一卡号重新添加 = 复活原行（id 不变），信息按新填的覆盖 */
+    @Test
+    void reAddSameCardNoAfterDelete_revivesTheSameRow() throws Exception {
+        String token = newUserToken("del-c");
+        String cardNo = randomCardNo();
+        Long originalId = createPatient(token, cardNo, "删除前", randomIdCard(), randomPhone(), "SELF");
+
+        mockMvc.perform(delete("/user/patients/" + originalId).header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        String newIdCard = randomIdCard();
+        String newPhone = randomPhone();
+        mockMvc.perform(post("/user/patients")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(createPayload("删除后", cardNo, newIdCard, newPhone, "PARENT"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.id").value(originalId))
+                .andExpect(jsonPath("$.data.name").value("删除后"))
+                .andExpect(jsonPath("$.data.relation").value("PARENT"))
+                .andExpect(jsonPath("$.data.idCard").value(maskIdCard(newIdCard)))
+                .andExpect(jsonPath("$.data.phone").value(maskPhone(newPhone)));
+
+        assertEquals(1, rawCountByCardNo(cardNo), "复活不等于新建，库里必须仍然只有一行");
+        assertEquals(0, deletedFlagOf(cardNo));
+    }
+
+    /** 卡号不外放：原主人删掉之后，别人仍然加不了这个卡号 */
+    @Test
+    void reAddSameCardNoByAnotherUser_afterOwnerDeleted_stillRejected() throws Exception {
+        String tokenA = newUserToken("del-d-a");
+        String tokenB = newUserToken("del-d-b");
+        String cardNo = randomCardNo();
+        Long patientIdOfA = createPatient(tokenA, cardNo);
+
+        mockMvc.perform(delete("/user/patients/" + patientIdOfA).header("Authorization", "Bearer " + tokenA))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200));
+
+        mockMvc.perform(post("/user/patients")
+                        .header("Authorization", "Bearer " + tokenB)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(createPayload("想捡卡号", cardNo, randomIdCard(), randomPhone(), "SELF"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(1004));
+
+        assertEquals(1, deletedFlagOf(cardNo), "别人的添加尝试不该把 A 删掉的行复活");
+    }
+
+    /**
+     * 编辑时撞上自己的软删行 → 1004，**不复活**。
+     *
+     * <p>复活只属于"新增"这一个动作。改一个活着的就诊人的卡号，没有理由让另一个已删除的
+     * 就诊人凭空回来——那会出现"删掉的人又回来了"，而且回来的行 id 与正在编辑的行不是同一条。
+     */
+    @Test
+    void updateCardNoToOwnSoftDeletedRow_rejectedWithoutReviving() throws Exception {
+        String token = newUserToken("del-e");
+        Long userId = userIdOf(token);
+        String liveCardNo = randomCardNo();
+        String deletedCardNo = randomCardNo();
+        Long liveId = createPatient(token, liveCardNo);
+
+        jdbcTemplate.update(
+                "INSERT INTO patient (user_id, name, id_card, phone, relation, card_no, deleted) "
+                        + "VALUES (?, '已删的那个', 'x', 'x', 'SELF', ?, 1)",
+                userId, deletedCardNo);
+        createdCardNos.add(deletedCardNo);
+
+        mockMvc.perform(put("/user/patients/" + liveId)
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json(updatePayload("换个卡号", deletedCardNo, "", "", "SELF"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(1004));
+
+        assertEquals(1, deletedFlagOf(deletedCardNo), "编辑不该复活已删行");
+        assertEquals(liveCardNo, patientMapper.selectById(liveId).getCardNo(), "被拒后原卡号必须没变");
+    }
+
+    // ============================================================
     // 横向越权（附录 B 第 806 条：小程序端新接口是否强制注入 userId 归属校验）
     // ============================================================
 
@@ -325,6 +505,15 @@ class PatientIntegrationTest {
         // 员工 token 403：/user/** 的角色隔离覆盖了本卡新增的路径，不需要为 T08 改 SecurityConfig
         String adminToken = newStaffToken();
         mockMvc.perform(get("/user/patients").header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value(4001));
+
+        // DELETE 也要覆盖到。用一个必然不存在的 id：万一角色隔离哪天被改坏，
+        // 这条用例会走到 service 的 1003 而不是真把 seed 的 1 号就诊人删掉。
+        mockMvc.perform(delete("/user/patients/999999999"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value(401));
+        mockMvc.perform(delete("/user/patients/999999999").header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value(4001));
     }
@@ -384,6 +573,22 @@ class PatientIntegrationTest {
         Long count = patientMapper.selectCount(
                 new LambdaQueryWrapper<Patient>().eq(Patient::getCardNo, cardNo));
         return count == null ? 0 : count.intValue();
+    }
+
+    /**
+     * 以下两个断言辅助走裸 SQL，因为 {@code @TableLogic} 让 MyBatis-Plus 看不见软删行，
+     * 而"删了之后行还在、只是 deleted=1"恰恰是必须证明的事。
+     */
+    private int rawCountByCardNo(String cardNo) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM patient WHERE card_no = ?", Integer.class, cardNo);
+        return count == null ? 0 : count;
+    }
+
+    private int deletedFlagOf(String cardNo) {
+        Integer flag = jdbcTemplate.queryForObject(
+                "SELECT deleted FROM patient WHERE card_no = ?", Integer.class, cardNo);
+        return flag == null ? -1 : flag;
     }
 
     /** 每次跑用新卡号：唯一索引是全局的，复用固定值会让重跑变成假失败 */

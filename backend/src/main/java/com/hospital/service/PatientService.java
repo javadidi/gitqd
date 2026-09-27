@@ -15,7 +15,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * 就诊人管理（T08）：列表 / 详情 / 新增 / 编辑。
+ * 就诊人管理（T08）：列表 / 详情 / 新增 / 编辑 / 删除。
  *
  * <p>三条不可让的规矩：
  * <ol>
@@ -27,6 +27,13 @@ import java.util.List;
  *       出库前过 {@link MaskUtil}，任何返回值都不带明文。</li>
  *   <li><b>R1 双层防护</b>：前置查给出友好提示，唯一索引兜住并发。</li>
  * </ol>
+ *
+ * <p><b>删除的语义（T08-G 补，与用户确认过的方案）</b>：软删，且<b>卡号不释放给他人</b>。
+ * 就诊卡号在医院是实体卡号，用户把自己小程序里的就诊人删掉 ≠ 医院注销了这张卡；
+ * 若放给别人重用，历史预约/缴费/报告（7 张表以 {@code patient_id NOT NULL} 引用本表，且无外键约束）
+ * 的卡号归属就会错乱。所以：删掉后<b>本人</b>用同一卡号重新添加 = 复活原来那一行（id 不变，
+ * 信息按新填的覆盖）；<b>他人</b>用同一卡号添加 = 仍然 1004。
+ * 物理删除不可行——硬删不会报错（没有外键），但会静默留下一堆指向不存在就诊人的单据。
  *
  * <p>{@code create} / {@code update} 刻意<b>不加 {@code @Transactional}</b>：两者各只有一次写，
  * 没有跨表原子性需求；而一旦包进事务，下面 catch 住的 {@link DuplicateKeyException}
@@ -59,7 +66,10 @@ public class PatientService {
     /** J17：加密落库；J18：重复就诊卡号被拒 */
     public PatientResponse create(Long userId, PatientCreateRequest request) {
         String cardNo = request.getCardNo().trim();
-        requireCardNoAvailable(cardNo, null);
+        // 活行占着这个卡号（不管是本人的还是别人的）→ 直接 1004，不给复活机会
+        if (isCardNoTakenByLiveRow(cardNo, null)) {
+            throw new BizException(ErrorCode.PATIENT_CARD_NO_EXISTS);
+        }
 
         Patient patient = new Patient();
         patient.setUserId(userId);
@@ -68,14 +78,39 @@ public class PatientService {
         patient.setIdCard(cryptoService.encrypt(request.getIdCard().trim()));
         patient.setPhone(cryptoService.encrypt(request.getPhone().trim()));
         patient.setRelation(request.getRelation());
+
+        // 走到这里说明活行里没有这个卡号，但 uk_card_no 可能还被一条软删行占着。
+        // 若那条软删行是本用户的，就复活它（保留原 id，历史单据的 patient_id 仍然有效）；
+        // 若是别人的，下面的 insert 会撞唯一索引 → 1004，卡号不外放。
+        if (patientMapper.reviveSoftDeletedByCardNo(patient) == 1) {
+            // 复活的就是这一行，必然查得到（同一连接、刚被置成 deleted=0）
+            Patient revived = patientMapper.selectOne(
+                    new LambdaQueryWrapper<Patient>()
+                            .eq(Patient::getUserId, userId)
+                            .eq(Patient::getCardNo, cardNo));
+            return toResponse(revived);
+        }
+
         try {
             patientMapper.insert(patient);
         } catch (DuplicateKeyException e) {
-            // 并发新增同一个卡号：前置查两边都没查到，uk_card_no 只放一个过。
-            // patient 表除主键外只有 uk_card_no 一个唯一索引，所以撞的必然是卡号。
+            // 两种情况都会撞：并发新增同一个卡号（前置查两边都没查到），
+            // 或卡号被**别人**的软删行占着。patient 表除主键外只有 uk_card_no 一个唯一索引，
+            // 所以撞的必然是卡号，一律回 1004。
             throw new BizException(ErrorCode.PATIENT_CARD_NO_EXISTS);
         }
         return toResponse(patient);
+    }
+
+    /**
+     * 删除 = 逻辑删（{@code deleted=1}），不是物理删。
+     *
+     * <p>先过 {@link #requireOwned}，所以删别人的、删已删的、删不存在的都是 1003，
+     * 攻击者无法用这个接口探测某个 id 是否存在。
+     */
+    public void delete(Long userId, Long patientId) {
+        requireOwned(userId, patientId);
+        patientMapper.deleteById(patientId);
     }
 
     /**
@@ -89,7 +124,9 @@ public class PatientService {
 
         String cardNo = trimToNull(request.getCardNo());
         if (cardNo != null && !cardNo.equals(patient.getCardNo())) {
-            requireCardNoAvailable(cardNo, patientId);
+            if (isCardNoTakenByLiveRow(cardNo, patientId)) {
+                throw new BizException(ErrorCode.PATIENT_CARD_NO_EXISTS);
+            }
             patient.setCardNo(cardNo);
         }
 
@@ -108,30 +145,34 @@ public class PatientService {
         try {
             patientMapper.updateById(patient);
         } catch (DuplicateKeyException e) {
+            // 前置查只看活行，所以撞索引的就是别人（或本人已删）那一行的卡号
             throw new BizException(ErrorCode.PATIENT_CARD_NO_EXISTS);
         }
         return toResponse(patient);
     }
 
     /**
-     * R1 第一层：前置查。命中就抛 1004，给用户看得懂的提示。
+     * R1 第一层：前置查活行。返回 true 表示这个卡号已被一条<b>未删除</b>的行占用。
      *
      * <p>查不出"谁占了这个卡号"，也不该查——那是别人的就诊信息。
      * {@code excludeId} 用于编辑时把自己排除掉，否则改自己其他字段也会被自己的卡号拦下。
      *
-     * <p>注意：{@code @TableLogic} 让 MyBatis-Plus 自动补 {@code deleted = 0}，
-     * 但 {@code uk_card_no} 不认 deleted 列——软删过的卡号仍被唯一索引占着，
-     * 于是前置查放过、insert 撞索引。T08 没有删除功能，这条路走不到；
-     * 将来真要做删除（PRD §9.1 提过），必须先决定这个语义，别只加个接口。
+     * <p><b>看不见软删行，这是 {@code @TableLogic} 的行为，也是这里唯一的信息缺口</b>：
+     * {@code uk_card_no} 建在 card_no 单列上、不认识 deleted 列，所以软删行仍占着索引。
+     * 缺口由两个调用方各自补：
+     * <ul>
+     *   <li>{@code create} 补法是「本人软删行 → 复活；他人软删行 → 让 insert 撞索引转 1004」；</li>
+     *   <li>{@code update} 刻意<b>不补</b>——改卡号撞上任何软删行都直接 1004。
+     *       编辑一个活着的就诊人没有理由把另一个已删除的就诊人复活，那会让用户莫名其妙地
+     *       "删掉的人又回来了"，而且复活的行 id 与正在编辑的行不是同一条。</li>
+     * </ul>
      */
-    private void requireCardNoAvailable(String cardNo, Long excludeId) {
+    private boolean isCardNoTakenByLiveRow(String cardNo, Long excludeId) {
         Long count = patientMapper.selectCount(
                 new LambdaQueryWrapper<Patient>()
                         .eq(Patient::getCardNo, cardNo)
                         .ne(excludeId != null, Patient::getId, excludeId));
-        if (count != null && count > 0) {
-            throw new BizException(ErrorCode.PATIENT_CARD_NO_EXISTS);
-        }
+        return count != null && count > 0;
     }
 
     /** 归属校验：双条件定位，查不到就是"不存在"，不区分"没这条"和"不是你这条" */

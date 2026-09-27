@@ -7,6 +7,7 @@ import com.hospital.dto.PatientUpdateRequest;
 import com.hospital.security.SecurityUtils;
 import com.hospital.service.PatientService;
 import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -28,8 +29,7 @@ import java.util.List;
  * 路径上只有就诊人 id，请求体里没有 userId（附录 B 第 806 条）。
  * 归属校验在 {@link PatientService} 里还做了一遍，不是只信这一层。
  *
- * <p>没有 DELETE：PRD §3.11.1 与卡片 372-374 行都只列了列表/添加/编辑三项，
- * 而软删与 uk_card_no 的语义冲突尚未决策（见 PatientService 里的说明）。
+ * <p>DELETE 是逻辑删（{@code deleted=1}），语义与被删后卡号能否重用见 {@link PatientService} 类注释。
  */
 @RestController
 @RequestMapping("/user/patients")
@@ -60,5 +60,11 @@ public class PatientController {
     public Result<PatientResponse> update(@PathVariable Long id,
                                           @Valid @RequestBody PatientUpdateRequest request) {
         return Result.success(patientService.update(SecurityUtils.currentUserId(), id, request));
+    }
+
+    @DeleteMapping("/{id}")
+    public Result<Void> delete(@PathVariable Long id) {
+        patientService.delete(SecurityUtils.currentUserId(), id);
+        return Result.success();
     }
 }

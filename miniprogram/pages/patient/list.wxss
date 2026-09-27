@@ -68,3 +68,19 @@
 .add-btn {
   width: 100%;
 }
+
+.patient-actions {
+  margin-top: 20rpx;
+  padding-top: 8rpx;
+  border-top: 1rpx solid #f5f5f5;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.delete-link {
+  /* 命中区靠 padding 撑开：24rpx 的文字裸着很难点中（T06-F 折叠按钮踩过的坑） */
+  padding: 16rpx 24rpx;
+  font-size: 24rpx;
+  /* danger = PRD §2.1 的 rose-600，与管理端 StatusBadge 同一个语义色 */
+  color: #e11d48;
+}

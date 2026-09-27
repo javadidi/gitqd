@@ -2530,13 +2530,15 @@ OK  app.json                   OK  pages/patient/list.json      OK  pages/patien
 
 | TODO | 位置 | 归属 |
 |---|---|---|
-| 删除就诊人 | 未实现 | 需先决策软删与 `uk_card_no` 的语义（见偏离决定 2）；PRD §9.1 提过，§3.11.1 没提 |
+| ~~删除就诊人~~ | **已在 T08-G 补做** | 见下方「T08-G 补做：删除就诊人」。原来记的「需先决策语义」已决策完毕（软删 + 本人可复活），当时判断「无规格来源」是错的 |
 | 身份证 GB11643 校验位验证 | 只做了 18 位格式正则 | 无任何规格要求；且校验位算法一旦写错，测试会变成"用错的规则验错的号"。真要做实名核验属二期（对接公安/三方实名接口） |
 | 就诊人选择器组件 | 未实现 | T12 预约挂号第一步「选择就诊人」（PRD 75 行）才需要；本卡只做管理，**不提前造** |
 | 真实短信通道 / 微信 appid / `CRYPTO_KEY` | 同 T07 | 部署前必须替换（`LoggingSmsSender` 把验证码打进日志，等于把登录凭据写进日志文件） |
 | `HttpMessageNotReadableException` → 400 | `GlobalExceptionHandler` | 单列小卡（T07 发现，仍未修）。本卡若收到畸形 JSON 仍会回 500 |
 
 ### T08 当前状态
+
+> ⚠️ 本节记录的是功能提交 `b1a8a0d` 当时的状态，其中「四端点 / 81 例 / 无 DELETE」三项**已被下方 T08-G 推翻**（现为五端点 / 87 例 / 有 DELETE）。保留原文是为了让 `b1a8a0d` 这个提交可追溯，不要按本节数字判断现状。
 
 - 后端：`/user/patients` 四端点契约经 18 步 curl 实测通过；`mvn clean test` → **81 例全绿**（14 类）、`BUILD SUCCESS`、`MVN_EXIT=0`；库里身份证/手机号密文取证到位，验收数据已清理，全量跑后 `leftover_T08=0`。
 - 安全：归属校验在 service 层（不只 controller）；跨用户读写一律 1003 而非 403；员工 token 403/4001，匿名 401；`SecurityConfig` **零改动**（沿用 T07 的 `/user/**` 规则）。
@@ -2549,7 +2551,7 @@ OK  app.json                   OK  pages/patient/list.json      OK  pages/patien
 ### 本卡有意未做
 
 1. 住院人管理（T09）、预约（T12）——卡片 377 行红线；`inpatient` 表与实体一行未碰。
-2. 删除就诊人接口——见偏离决定 2（软删与唯一索引的语义未决）。
+2. ~~删除就诊人接口~~ —— **已在 T08-G 补做**，见下一节。当时记的理由「无规格来源」是错的：DoD 的「CRUD 通」与 PRD §9.1 都是出处。
 3. 就诊人选择器组件——T12 才需要，提前造就是给未来加猜测。
 4. 列表分页/搜索/筛选——一个用户的就诊人是个位数量级，卡片也只要求"展示已添加的就诊人"。
 5. 身份证校验位验证、实名核验——无规格来源。
@@ -2557,6 +2559,262 @@ OK  app.json                   OK  pages/patient/list.json      OK  pages/patien
 7. admin 管理后台的就诊人管理页——卡片未要求，PRD §4 里属 T25–T28 范围。
 8. 就诊卡号的格式校验——V1 只有 `VARCHAR(64)`，没有任何规格给出卡号规则，**不编一个**。
 9. 批量导入 / 就诊人头像 / 与 `user.phone` 的联动同步——均无规格来源。
+
+---
+
+## T08-G · 补做删除就诊人（2026-09-27）
+
+### 为什么会有这一节：我在收口时漏核了 DoD
+
+T08 收口时我按卡片「要做什么」（372-374 行：列表 / 添加 / 编辑）判定删除不在范围内，并把它写进了「本卡有意未做」，理由记的是「无规格来源」。**这个理由是错的。** 用户问「T08 有没有完成」时我回头逐字核了 DoD，发现缺口：
+
+卡片 386 行原文：
+
+> **DoD**：就诊人 **CRUD** 通；加密存储验证。
+
+CRUD 的 D 就是删除。再把需求文档翻了一遍，出处对照如下（**五行里三行指向"要删"**，而"要删"的一方包含 DoD 本身）：
+
+| 出处 | 原文 | 指向 |
+|---|---|---|
+| 任务卡 DoD（行 386） | 「就诊人 **CRUD** 通」 | **要删** |
+| PRD §9.1 小程序端核心接口（行 607） | `\| 就诊人管理 \| 添加/编辑/`**`删除`**`/查询就诊人 \|` | **要删** |
+| PRD §3.11.1 就诊人管理（行 275-278） | 只有 1.就诊人列表 2.添加就诊人 3.编辑就诊人 | 不删 |
+| PRD §6.1 小程序端页面清单（行 527，约 90 页） | 就诊人管理、添加就诊人、编辑就诊人（**无删除页**） | 不删 |
+| 任务卡「要做什么」（行 372-374） | 列表 / 添加 / 编辑 | 不删 |
+
+「页面清单里没有删除页」不构成反证：删除本来就不需要独立页面，列表页一个按钮 + 二次确认弹窗即可。所以当时那条「无规格来源」的判断，是我**只读了卡片的一半**（要做什么 + 测试场景），没读 DoD 那一行。
+
+**教训（已够格写进约定）**：判定"某功能不在本卡范围"时，必须把卡片的 **DoD 行**和 PRD 的**接口概览表**一起读，不能只看「要做什么」的动词列表。DoD 是验收口径，动词列表只是实现提示。
+
+### 语义决策：软删 + 本人可复活（用户在四个选项里选定）
+
+不能简单加个 `delete` 接口，因为 `patient` 表（V1）的两个事实互相拉扯：
+
+```sql
+`card_no` VARCHAR(64) NOT NULL COMMENT '就诊卡号',
+`deleted` TINYINT(1) NOT NULL DEFAULT 0,
+UNIQUE KEY `uk_card_no` (`card_no`),
+```
+
+1. **物理删除不可行**：`patient_id BIGINT NOT NULL` 被至少 7 张表引用（appointment 行 121、recharge 行 143、payment 行 159，以及行 205/223/283/299/314 的报告、病历等），且 V1 **没有声明任何外键**——硬删不会报错，但会静默留下一堆指向不存在就诊人的预约与账单。
+2. **软删会让卡号永久占位**：`uk_card_no` 建在 `card_no` 单列上、不认识 `deleted` 列，所以删掉张三之后任何人都无法再添加同一卡号，**包括删错的本人**。这条在 T08 主体里已经写成确定性测试了。
+
+给用户摆的四个选项与取舍：
+
+| 选项 | 代价 |
+|---|---|
+| **软删 + 本人可复活（选定）** | 需要一条绕过 `@TableLogic` 的手写 SQL |
+| 软删，卡号永久占位 | 改动最小，但"删错了加不回来"是个真坑 |
+| 软删 + 卡号彻底释放 | 要 V4 迁移改唯一索引，且历史单据的卡号归属会错乱 |
+| 先跳过、开 T09 | DoD 达不成，只是把缺口往后挪 |
+
+**选定方案的完整语义矩阵**：
+
+| 卡号当前被谁占着 | 动作 | 结果 |
+|---|---|---|
+| 本人的**活**行 | 新增 | `1004` 就诊卡号已存在 |
+| 本人的**软删**行 | 新增 | **复活该行**：`deleted=0`，id 不变，姓名/关系/身份证/手机号按新填的覆盖 |
+| 他人的**活**行 | 新增 | `1004` |
+| 他人的**软删**行 | 新增 | `1004`（靠 `uk_card_no` 撞索引 → catch `DuplicateKeyException` 转译） |
+| 本人的软删行 | **编辑**另一个活人的卡号成它 | `1004`，**不复活** |
+| 任何行 | 删除 | `deleted=1`，行保留 |
+
+两条设计的理由，都写进了代码注释：
+
+- **卡号不释放给他人**：就诊卡号在医院是**实体卡号**，用户把自己小程序里的就诊人删掉 ≠ 医院注销了这张卡。放给别人重用，会让历史预约/缴费/报告（那 7 张表）的卡号归属错乱。
+- **复活只属于"新增"，不属于"编辑"**：改一个活着的就诊人的卡号，没有理由让另一个已删除的就诊人凭空回来——用户会看到"删掉的人又回来了"，而且回来的行 id 与正在编辑的行不是同一条。
+
+### 实现：7 个文件
+
+| 文件 | 改动 |
+|---|---|
+| `mapper/PatientMapper.java` | **本仓库第一条自定义 SQL**：`reviveSoftDeletedByCardNo(Patient)` |
+| `service/PatientService.java` | 类注释补删除语义段；`create` 加复活分支；`requireCardNoAvailable` → `isCardNoTakenByLiveRow`（改返回布尔）；新增 `delete` |
+| `controller/PatientController.java` | 加 `@DeleteMapping("/{id}")`；删掉原来那段「没有 DELETE」的注释 |
+| `test/service/PatientIntegrationTest.java` | 11 → **17 例**：1 例语义被推翻后拆成 2 例，另加 5 例 |
+| `pages/patient/list.js` | `onDelete`（二次确认弹窗）+ `doDelete` |
+| `pages/patient/list.wxml` | 卡片底部加删除链接，用 **`catchtap`** |
+| `pages/patient/list.wxss` | `.patient-actions` / `.delete-link`，danger 色 `#e11d48` |
+
+**为什么必须手写 SQL（这是本节最值得记的一条）**：`BaseEntity.deleted` 上有 `@TableLogic`，MyBatis-Plus 会给它自己生成的每条 SELECT/UPDATE 追加 `deleted = 0`，所以 `updateById` 永远碰不到软删行。而**逻辑删是 MP 的 SQL 注入器直接写进语句的，不是拦截器**，`@InterceptorIgnore` 那套开关管不到它——3.5.5（本仓版本）没有"本次查询忽略逻辑删"的口子。
+
+```java
+@Update("UPDATE patient SET deleted = 0, name = #{name}, relation = #{relation}, "
+        + "id_card = #{idCard}, phone = #{phone} "
+        + "WHERE card_no = #{cardNo} AND user_id = #{userId} AND deleted = 1")
+int reviveSoftDeletedByCardNo(Patient patient);
+```
+
+三个设计点：
+
+1. **单条 UPDATE 而不是"先查软删行再改"**：单语句天然原子，不存在"查的时候还没有、改的时候已被别人复活"的窗口。且 `uk_card_no` 保证同一卡号全库最多一行，所以最多影响 1 行，不会批量误伤。
+2. **返回 `int` 当分支开关**：`create` 里 `== 1` 走复活、`== 0` 走正常 insert，不需要先知道那行存不存在。
+3. **`updated_at` 不在 SET 里**：走自定义 SQL 时 MP 的 `MetaObjectHandler` 自动填充**不生效**，交给 DDL 的 `ON UPDATE CURRENT_TIMESTAMP(3)`。
+
+`create` 的新顺序（三步，顺序不能换）：
+
+```java
+if (isCardNoTakenByLiveRow(cardNo, null)) throw 1004;   // ① 活行占用 → 直接拒，不给复活机会
+...encrypt...
+if (patientMapper.reviveSoftDeletedByCardNo(patient) == 1) return toResponse(重查);  // ② 本人软删行 → 复活
+try { patientMapper.insert(patient); }                   // ③ 都不是 → 正常插入
+catch (DuplicateKeyException e) { throw 1004; }          //    撞到他人软删行 / 并发，兜底
+```
+
+`delete` 只有两行，但顺序是要紧的：先 `requireOwned`（他人记录、已删记录、不存在的 id 一律 `1003`，攻击者无法用它探测某个 id 是否存在），再 `deleteById`（MP 自动翻译成 `UPDATE ... SET deleted=1 WHERE id=? AND deleted=0`）。
+
+小程序端两个细节：
+
+- 删除链接用 **`catchtap` 而不是 `bindtap`**：卡片本身有 `bindtap="onItemTap"` 跳编辑页，用 `bindtap` 会让点删除时事件冒泡，变成"弹了确认框的同时跳去编辑页"。
+- 确认弹窗文案必须对得上后端语义，不能只写"确定删除吗"：`该就诊人的挂号与缴费记录会保留，卡号仍归你，重新添加同一卡号即可恢复。` 前半句是软删的事实，后半句是复活机制的事实。
+- danger 色取 `#e11d48`（PRD §2.1 五个语义色里的 rose-600，与管理端 `StatusBadge` 同源），**不是自己挑的颜色**——小程序现有调色板只有 `#2563eb/#333/#999/#f5f5f5/#fff`，没有危险色。
+
+### 测试：17 例（新增 6 例）
+
+被推翻的那一例必须点名：原 `j18_cardNoHeldBySoftDeletedRow_fallsBackToUniqueIndex` 用裸 SQL 插一行 `deleted=1` 且 `user_id` 属于**当前 token 的用户**，断言回 `1004`。改动之后这行会被**复活**，所以它必然失败——这不是新写的测试挂了，是旧测试的前提被新语义推翻。拆成两条：
+
+| # | 用例 | 断言要点 |
+|---|---|---|
+| 1-3 | `j17_*`（3 例） | 未改动 |
+| 4 | `j18_duplicateCardNo_rejectedByPreCheck` | 未改动 |
+| 5 | `j18_duplicateCardNoAcrossUsers_alsoRejected` | 未改动 |
+| 6 | **`j18_cardNoHeldByOwnSoftDeletedRow_isRevivedNotRejected`** | 回 200；`data.id` == 裸 SQL 插入那行的 id（**id 变了就等于把历史单据的 patient_id 甩成孤儿**）；`deleted` 置回 0；身份证/手机号按新值重新加密 |
+| 7 | **`j18_cardNoHeldByOthersSoftDeletedRow_fallsBackToUniqueIndex`** | 占位行归 B，A 添加 → 1004；且 B 那行的 `deleted` 仍是 1（**别人的尝试不该复活 A 删掉的行**） |
+| 8 | `j18_uniqueIndexReallyExists` | 未改动 |
+| 9-10 | `j19_*`（2 例） | 未改动 |
+| 11 | **`updateCardNoToOwnSoftDeletedRow_rejectedWithoutReviving`** | 编辑撞自己的软删行 → 1004，软删行 `deleted` 仍为 1，被编辑行卡号未变 |
+| 12 | **`deleteOwnPatient_hidesItFromListDetailAndUpdate`** | 删后 `deleted=1`、裸 SQL 仍能数到 1 行（**证明不是物理删**）、MP 查询数到 0 行；列表空、详情 1003、**编辑也 1003**（删完还能改 = 删除是假的） |
+| 13 | **`deleteOthersPatient_returns1003_not403`** | 1003 而非 403；且原行 `deleted` 仍为 0 |
+| 14 | **`reAddSameCardNoAfterDelete_revivesTheSameRow`** | 走真实 DELETE 端点的完整往返：id 不变、库里仍只 1 行 |
+| 15 | **`reAddSameCardNoByAnotherUser_afterOwnerDeleted_stillRejected`** | 1004 |
+| 16-17 | 越权 / 角色隔离（2 例） | 第 17 例扩到 DELETE |
+
+两个刻意的设计：
+
+- **不编 J20 这个编号**。卡片「测试场景」只列了 J17/J18/J19，删除来自 DoD 与 PRD §9.1，没有 J 编号可挂。用描述性方法名，并在测试类注释里写明原因——编一个 `j20_` 前缀会让人以为卡片里有这条。
+- 角色隔离那例的 DELETE 用 **`/user/patients/999999999`**（必然不存在的 id）而不是 seed 的 1 号。万一哪天 `/user/**` 的角色隔离被改坏，这条用例会走到 service 的 1003，**而不是真把种子就诊人删掉**。
+
+断言辅助 `rawCountByCardNo` / `deletedFlagOf` 走裸 SQL，因为 `@TableLogic` 让 MP 看不见软删行，而"删了之后行还在、只是 `deleted=1`"恰恰是必须证明的事。
+
+### 门禁证据
+
+先停后端（`netstat` 取 PID 48980 → `taskkill //PID 48980 //F` → `KILL_EXIT=0` → 复查 `8080 FREE`），因为 `mvn clean` 会删运行中 JVM 正持有的 `target/`。
+
+```
+MVN_EXIT=0
+[INFO] Tests run: 3,  ... in com.hospital.AuditFieldFillTest
+[INFO] Tests run: 3,  ... in com.hospital.AuditLogTest
+[INFO] Tests run: 7,  ... in com.hospital.AuthIntegrationTest
+[INFO] Tests run: 1,  ... in com.hospital.FlywayMigrationTest
+[INFO] Tests run: 7,  ... in com.hospital.MoneyMaskingTest
+[INFO] Tests run: 4,  ... in com.hospital.SeedCheckTest
+[INFO] Tests run: 4,  ... in com.hospital.SeedConstraintTest
+[INFO] Tests run: 8,  ... in com.hospital.service.CaptchaIntegrationTest
+[INFO] Tests run: 5,  ... in com.hospital.service.CaptchaServiceTest
+[INFO] Tests run: 17, ... in com.hospital.service.PatientIntegrationTest
+[INFO] Tests run: 9,  ... in com.hospital.service.PermissionServiceTest
+[INFO] Tests run: 3,  ... in com.hospital.service.SerialNumberServiceTest
+[INFO] Tests run: 9,  ... in com.hospital.service.UserAuthIntegrationTest
+[INFO] Tests run: 7,  ... in com.hospital.TaskKernelTest
+[INFO] Tests run: 87, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+逐类相加 `3+3+7+1+7+4+4+8+5+17+9+3+9+7 = 87`，与汇总行一致。T08 主体是 81 例 / 14 类，本次 +6 例 / 类数不变。
+
+### HTTP 验收：19 步全过（真实后端 + 真实 MySQL + 真实 Redis）
+
+用 MockMvc 之外再跑一遍真 HTTP，是因为 MockMvc 不走真实的 servlet 容器与过滤器链。这次改用 **python 脚本**而不是 bash+curl：请求体带中文，而 shell 命令行里的中文字面量会以 GBK 到达原生程序（curl 也是原生程序），后端会报 `Invalid UTF-8 middle byte`；python 脚本里的中文显式 `.encode('utf-8')`，编码链是确定的。管理员 token 走真登录，验证码答案从 Redis 读回（`docker exec hospital-redis redis-cli GET captcha:<key>`），不猜。
+
+```
+=== T08-G DELETE 验收 ===
+user_a=125 user_b=126 staff_token_len=428
+card_no=T08G191913
+
+1   POST /user/patients 新增                    expect=200                  actual=200                  PASS
+1b    身份证出库必须打码                          expect=1101**********1234   actual=1101**********1234   PASS
+1c    手机号出库必须打码                          expect=139****1111          actual=139****1111          PASS
+    patient_id=95
+2   GET 列表（删除前）                           expect=1                    actual=1                    PASS
+3   DELETE /user/patients/{id} 本人             expect=200                  actual=200                  PASS
+4   GET 列表（删除后）                           expect=0                    actual=0                    PASS
+5   GET 详情（删除后）→ 1003                     expect=1003                 actual=1003                 PASS
+6   PUT 编辑（删除后）→ 1003                     expect=1003                 actual=1003                 PASS
+7   POST 同卡号重新添加 → 200                    expect=200                  actual=200                  PASS
+7b    复活的必须是同一行（id 不变）                 expect=95                   actual=95                   PASS
+7c    信息按新填的覆盖                           expect=验收甲复活            actual=验收甲复活            PASS
+7d    新身份证同样打码出库                        expect=1101**********4321   actual=1101**********4321   PASS
+8   DELETE 再删一次                             expect=200                  actual=200                  PASS
+8b  他人 POST 同一卡号 → 1004                    expect=1004                 actual=1004                 PASS
+9   他人 DELETE → 1003（不是 403）               expect=1003                 actual=1003                 PASS
+10  员工 token DELETE → HTTP 403                expect=403                  actual=403                  PASS
+10b   业务码 4001                              expect=4001                 actual=4001                 PASS
+11  匿名 DELETE → HTTP 401                      expect=401                  actual=401                  PASS
+11b   业务码 401                               expect=401                  actual=401                  PASS
+
+=== 19/19 PASS ===
+ACCEPT_EXIT=0
+```
+
+第 7b 步是整套验收里最关键的一步：**id 仍是 95**。如果复活变成了新建一行，历史单据的 `patient_id` 就会指向一条永远 `deleted=1` 的行，而用户在列表里看到的是另一条——数据看着正常，关联已经断了。
+
+### 库内取证与清理
+
+```
+id  deleted  idc_len  ph_len  idc_head
+95  1        64       52      sDoxFv8XKl
+```
+
+- `deleted=1` 且行还在 → 确认是逻辑删，不是物理删。
+- `idc_len=64`：18 位身份证 → 12 字节 IV + 18 字节密文 + 16 字节 GCM tag = 46 字节 → Base64 后 `ceil(46/3)*4 = 64` 字符。
+- `ph_len=52`：11 位手机号 → 12 + 11 + 16 = 39 字节 → Base64 后 52 字符。
+- 两个长度都对得上 AES-256-GCM 的数学，说明密文没被截断、也没被二次编码；`idc_head=sDoxFv8XKl` 是 Base64 而非明文数字。
+
+清理与自净核查（SQL 里只用 ASCII 的 `T08G%` 前缀，不写中文字面量）：
+
+```
+patient_deleted = 1
+user_deleted    = 2
+leftover_T08G=0   leftover_T08=0   patient_total=10
+patient_deleted_rows=0   user_total=4   mock_users=0
+```
+
+全部回到种子基线（10 行 patient / 4 个 user），且**没有留下任何 `deleted=1` 的行**——这一项是本次新加的核查，因为本卡开始制造软删行，`leftover=0` 已经不足以证明干净了。
+
+### 踩坑记录
+
+| # | 坑 | 定位与修法 |
+|---|---|---|
+| 1 | `mvn clean test` 报 `BUILD FAILURE`，7 条 `[ERROR]`，看着像代码写崩了 | 真实原因：`The goal you specified requires a project to execute but there is no POM in this directory (E:\qdspace\qd1)`，`Total time: 0.092 s`——**0.092 秒就说明它连编译都没开始**。Bash 工具的工作目录**跨命令持续**，我之前 `cd backend` 又 `cd /e/qdspace/qd1`，mvn 就在仓库根跑了。修法：改用 `mvn -f backend/pom.xml clean test`，显式指定 POM，不再依赖 cwd |
+| 2 | `grep miniprogram/app.wxss` 报 No such file，一度以为文件被删 | 同一个 cwd 问题。`cd` 回根目录后文件在 |
+
+第 1 条值得单拎出来：**构建耗时是判断"到底跑没跑"的第一线索**。0.092 秒的 `BUILD FAILURE` 和 30 秒的 `BUILD FAILURE` 是完全不同的两件事，前者根本没进入编译，看到 `[ERROR]` 就去改代码是白费劲。
+
+### 本次有意未做
+
+1. **删除前不检查在途预约/欠费**：没有任何规格要求（PRD §3.11.1 与卡片都只说"修改信息"）。加了就是编规则——比如"有未完成预约不许删"这条阈值该是几天、什么状态算未完成，无一处有出处。若产品后续要，属 T13（预约管理 + 退号）的联动范围。
+2. **不做批量删除**：无规格来源。
+3. **不动 `uk_card_no`**：选定的方案不需要改表，因此没有 V4 迁移。
+4. **admin 后台仍无就诊人管理页**：属 T25–T28。
+5. **患者端删除不写 audit_log**：PRD 485 行把审计限定在管理后台，与 T07/T08 主体一致。
+
+### T08-G 当前状态
+
+- 后端 `/user/patients` **五**端点（GET 列表 / GET 详情 / POST / PUT / **DELETE**），DoD 的「CRUD 通」现已达成。
+- `mvn clean test` → **87 例全绿** / 14 类、`BUILD SUCCESS`、`MVN_EXIT=0`。
+- HTTP 验收 19/19 PASS；库内取证与清理完毕，回到种子基线。
+- `node --check` 过：`list.js` / `edit.js` / `request.js` 均 OK。
+- 后端已重启并监听 8080（**PID 53444**，`Started HospitalApplication in 3.536 seconds`），`hospital-redis` healthy。
+- admin 管理后台**仍是 0 文件改动**，故未跑前端门禁。
+- **本次不推送**：用户 2026-09-27 定的规矩是「一个大章节推送一次」，下一个推送点是 T12 收口（🚩 M1）。本节改动只提交到本地 `main`。
+
+### 待人工验收（微信开发者工具，在原 6 项之上加 2 项）
+
+| # | 操作 | 期望 |
+|---|---|---|
+| 7 | 列表页点某个就诊人的「删除」 | 弹二次确认框，标题「删除就诊人」，确认按钮红色且文字为「删除」；**卡片本身不应同时跳去编辑页** |
+| 8 | 确认删除 | toast「已删除」，列表刷新后该人消失；再点「添加就诊人」填同一张卡号提交 → 成功，且这是同一个人复活（不是提示卡号已存在） |
+
 
 
 
