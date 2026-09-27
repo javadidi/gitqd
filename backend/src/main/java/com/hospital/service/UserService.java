@@ -8,6 +8,7 @@ import com.hospital.entity.User;
 import com.hospital.exception.BizException;
 import com.hospital.mapper.UserMapper;
 import com.hospital.util.JwtUtil;
+import com.hospital.util.MaskUtil;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
@@ -123,15 +124,8 @@ public class UserService {
         response.setNickname(user.getNickname());
         response.setAvatarUrl(user.getAvatarUrl());
         response.setHasPhone(phone != null);
-        response.setPhone(maskPhone(phone));
+        // 手机号只回打码值：个人中心只需要展示，前端没有理由拿到完整号码
+        response.setPhone(MaskUtil.maskPhone(phone));
         return response;
-    }
-
-    /** 手机号只回打码值：个人中心只需要展示，前端没有理由拿到完整号码 */
-    private static String maskPhone(String phone) {
-        if (phone == null || phone.length() != 11) {
-            return null;
-        }
-        return phone.substring(0, 3) + "****" + phone.substring(7);
     }
 }

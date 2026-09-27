@@ -1,0 +1,79 @@
+<view class="page-patient-edit">
+  <view class="container">
+    <view class="card">
+      <view class="form-row">
+        <text class="form-label">姓名</text>
+        <input
+          class="form-input"
+          placeholder="请输入就诊人姓名"
+          maxlength="64"
+          value="{{name}}"
+          bindinput="onNameInput"
+        />
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">就诊卡号</text>
+        <input
+          class="form-input"
+          placeholder="请输入医院发的就诊卡号"
+          maxlength="64"
+          value="{{cardNo}}"
+          bindinput="onCardNoInput"
+        />
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">身份证号</text>
+        <input
+          class="form-input"
+          placeholder="{{isEdit ? (idCardMasked ? '留空则不修改' : '请输入身份证号') : '请输入身份证号'}}"
+          maxlength="18"
+          value="{{idCard}}"
+          bindinput="onIdCardInput"
+        />
+      </view>
+      <view wx:if="{{isEdit && idCardMasked}}" class="form-hint">
+        <text class="text-muted">当前：{{idCardMasked}}</text>
+      </view>
+
+      <view class="form-row">
+        <text class="form-label">手机号</text>
+        <input
+          class="form-input"
+          type="number"
+          placeholder="{{isEdit ? (phoneMasked ? '留空则不修改' : '请输入手机号') : '请输入手机号'}}"
+          maxlength="11"
+          value="{{phone}}"
+          bindinput="onPhoneInput"
+        />
+      </view>
+      <view wx:if="{{isEdit && phoneMasked}}" class="form-hint">
+        <text class="text-muted">当前：{{phoneMasked}}</text>
+      </view>
+
+      <picker
+        mode="selector"
+        range="{{relationNames}}"
+        value="{{relationIndex}}"
+        bindchange="onRelationChange"
+      >
+        <view class="form-row">
+          <text class="form-label">与本人关系</text>
+          <view class="flex-row picker-value">
+            <text>{{relationNames[relationIndex]}}</text>
+            <text class="picker-arrow">▾</text>
+          </view>
+        </view>
+      </picker>
+    </view>
+
+    <button class="btn-primary submit-btn" loading="{{submitting}}" bindtap="onSubmit">
+      {{isEdit ? '保存修改' : '确认添加'}}
+    </button>
+
+    <view class="form-tip">
+      <text class="text-muted">身份证号与手机号加密存储，页面只显示打码后的内容</text>
+    </view>
+  </view>
+</view>

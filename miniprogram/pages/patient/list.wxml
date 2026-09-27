@@ -1,0 +1,45 @@
+<view class="page-patient">
+  <view class="container">
+    <!-- 空态：不能只写"暂无数据"，必须带下一步动作 -->
+    <view wx:if="{{!loading && patients.length === 0}}" class="card empty-card">
+      <view class="empty-icon">👤</view>
+      <view class="empty-title">还没有添加就诊人</view>
+      <view class="text-muted empty-desc">添加后可以替本人和家属挂号、缴费、查报告</view>
+      <button class="btn-primary empty-btn" bindtap="onAdd">添加就诊人</button>
+    </view>
+
+    <view
+      wx:for="{{patients}}"
+      wx:key="id"
+      class="card patient-card"
+      data-id="{{item.id}}"
+      bindtap="onItemTap"
+    >
+      <view class="flex-between">
+        <view class="flex-row patient-name-row">
+          <text class="patient-name">{{item.name}}</text>
+          <text class="relation-tag">{{item.relationText}}</text>
+        </view>
+        <text class="menu-arrow">></text>
+      </view>
+      <view class="patient-lines">
+        <view class="flex-between">
+          <text class="text-muted">就诊卡号</text>
+          <text class="patient-value">{{item.cardNo}}</text>
+        </view>
+        <view class="flex-between">
+          <text class="text-muted">身份证号</text>
+          <text class="patient-value">{{item.idCard || '—'}}</text>
+        </view>
+        <view class="flex-between">
+          <text class="text-muted">手机号</text>
+          <text class="patient-value">{{item.phone || '—'}}</text>
+        </view>
+      </view>
+    </view>
+
+    <button wx:if="{{patients.length > 0}}" class="btn-outline add-btn" bindtap="onAdd">
+      添加就诊人
+    </button>
+  </view>
+</view>

@@ -29,4 +29,18 @@ function maskPhone(phone) {
   return phone.slice(0, 3) + '****' + phone.slice(-4)
 }
 
-module.exports = { formatMoney, formatDate, maskPhone }
+// 关系码 → 中文标签。码值来自后端 V1__init.sql 的 patient.relation 列注释，
+// 后端只回码不回中文（和管理后台 StatusBadge 回状态码同理：改文案不用动后端）。
+const RELATION_LABELS = {
+  SELF: '本人',
+  CHILD: '子女',
+  PARENT: '父母',
+  SPOUSE: '配偶',
+  OTHER: '其他',
+}
+
+function relationLabel(relation) {
+  return RELATION_LABELS[relation] || relation || '—'
+}
+
+module.exports = { formatMoney, formatDate, maskPhone, RELATION_LABELS, relationLabel }

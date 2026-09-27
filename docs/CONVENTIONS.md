@@ -49,3 +49,16 @@ DO→VO       → converter 转换；金额脱敏在 VO 序列化层
 - curl 请求体带中文时，必须用 Write 工具落一个 UTF-8 文件再 `curl --data-binary @file`；**禁止在 shell 命令里写中文字面量**（会被按 GBK 字节发出，后端报 `Invalid UTF-8 middle byte`）
 - MySQL 客户端不在 PATH 上，用绝对路径 `/e/Mysql/Server/bin/mysql.exe`，口令走 `MYSQL_PWD` 环境变量
 - 短信验证码从后端日志捞：`grep -a '短信未接通道' target/*.log | tail -1`
+- 图形验证码不猜：`GET /api/auth/captcha` 拿 `captchaKey`，再 `docker exec hospital-redis redis-cli GET "captcha:<key>"` 读回真实答案。猜一个等于测"我猜对了"而不是"校验通了"
+- SQL 里同样**禁止写中文字面量**（`mysql.exe` 是 Windows 程序，中文会按 GBK 到达，`WHERE name='张三'` 匹配不上，看起来像"数据没写进去"）。要验中文列就用 `CHAR_LENGTH(name)` 间接比对字符数
+- 停后端不能只信 `TaskStop` 的成功回执：`mvn spring-boot:run` 起的 JVM 是**子进程**，会活下来继续占 8080。停完必须 `netstat -ano | grep -E ':8080[[:space:]]' | grep LISTENING` 复查，没空就 `taskkill //PID <pid> //F`（Git Bash 里必须双斜杠）
+- Windows 原生程序（`node`、`mysql.exe`、`tasklist`）**不认 Git Bash 的 `/tmp`**，会按当前盘符翻译成 `E:\tmp` 并报 ENOENT。跨工具传文件要么放仓库内的相对路径，要么改用纯 bash 工具（`sed`/`grep`）处理
+- `mvn clean test` **不能在后端运行时跑**：`clean` 删 `target/`，而运行中的 JVM 正持有那里的 class 文件
+- 跑完测试要数一次库：`SELECT COUNT(*) FROM <表> WHERE <测试专用前缀>`。差值不为 0 就是有用例在漏数据，必须当场定位到具体用例（用 `CHAR_LENGTH(name)` 之类的特征反查是哪个用例建的），不能留给下一个开发者
+
+## 测试数据自净约定
+
+- 集成测试建的行必须在 `@AfterEach` 里**物理删除**：MyBatis-Plus 的 `deleteById` 是逻辑删（`deleted=1`），行还在、唯一索引还占着，下次跑必撞 `DuplicateKeyException`
+- **登记与清理不能只挂在助手函数里**。T08 的真实事故：`createdCardNos.add(...)` 只写在 `createPatient()` 助手里，而某个用例为了断言响应体内联发了 POST、绕过助手，于是每跑一次就往开发库漏一行，且测试全绿没人发现。要么让登记无法被绕过（助手返回响应体供断言），要么清理规则不依赖登记（按测试专用前缀 `LIKE 'T08%'` 批量删）
+- 测试专用数据要有**可识别前缀**（卡号 `T08…`、code `j17-…`），seed 数据用另一种形态（卡号 `10000000xx`）。这样清理条件天然碰不到种子，也方便事后 `LIKE` 排查残留
+- 期望值不要用生产代码算：断言打码值时在测试类里**独立实现**一遍 `maskIdCard`，否则 `MaskUtil` 写错了测试也跟着错，等于自己给自己判卷

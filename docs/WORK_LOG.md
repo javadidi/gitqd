@@ -2314,5 +2314,248 @@ DELETE FROM user WHERE openid LIKE 'mock_%' AND nickname = 'T07验收用户';
 
 **⚠️ 公开仓的既成风险（已提交进公开历史，前向修复无法消除）**：`JWT_SECRET` 默认串、seed 里 `admin123` 的 BCrypt 哈希、MySQL root 默认口令、`crypto.key` 默认串。这四处都是**开发占位值**、不对应任何真实系统，但既然已进公开历史，就只有 `git filter-repo` + force-push 能抹掉，代价是 WORK_LOG/记忆里引用的所有哈希（`95bddb5`、`7239cb6`、`47df29b`、`0a93c00`）全部失效。用户已知悉并选择保留。真部署时四个值必须全部换环境变量，且 seed 出来的 `admin123` 账号要改密。
 
+---
+
+## T08 · 就诊人管理（2026-09-27）
+
+规格来源：卡片 369–386 行、PRD §3.11.1（275–278 行）与 §9.1（607 行）、`V1__init.sql:23-38` 的 `patient` 表 DDL。
+
+### 任务卡要求 → 实现对照
+
+| 卡片要求 | 实现 | 位置 |
+|---|---|---|
+| 就诊人列表：展示姓名/就诊卡号/关系 | `GET /user/patients` → `List<PatientResponse>`，按 id 升序；小程序卡片式列表，姓名 + 关系标签 + 卡号 + 打码身份证/手机号 | `PatientService.list`、`pages/patient/list.wxml` |
+| 添加就诊人：姓名、身份证号（加密）、手机号（加密）、与本人关系 | `POST /user/patients`，5 个字段（多出「就诊卡号」，见偏离决定 1）；`id_card`/`phone` 过 `CryptoService.encrypt` 落库 | `PatientService.create`、`pages/patient/edit.*` |
+| 编辑就诊人：修改信息 | `PUT /user/patients/{id}`；姓名/关系直接改，身份证/手机号**留空即不改**（见偏离决定 3） | `PatientService.update` |
+| **R1 硬约束**：就诊卡号全局唯一，后端前置查 + 唯一索引兜底，命中返回友好提示 | 两层都实现了，且两层都有测试证明存在：前置查 `requireCardNoAvailable` 抛 `1004 就诊卡号已存在`；`catch DuplicateKeyException` 兜并发，翻成同一个 1004 | `PatientService:requireCardNoAvailable` / `create` / `update` |
+| **红线**：不做住院人管理（T09）；不做预约（T12） | `inpatient` 表、`Inpatient` 实体、`InpatientMapper` 一行未碰；`mine.js` 里「住院人管理」的 `url` 仍是 `''`（点了只 toast「即将开放」） | `git diff --stat` 可证 |
+| **⚠️ 易混淆**：身份证号/手机号必须加密存储，不能明文落库 | AES-256-GCM（T07 的 `CryptoService`，本卡零改动直接复用）；出库只给 `MaskUtil` 打码值，明文只在 service 方法栈里存在过 | 库里取证见下 |
+| J17 添加就诊人 → 数据加密存储 | `j17_createPatient_storesIdCardAndPhoneEncrypted`：断言库里 `id_card != 明文`、密文不含明文前 6 位片段、`decrypt` 能还原、响应只含打码值 | `PatientIntegrationTest` |
+| J18 重复就诊卡号 → 被拒 | 4 个用例：同一用户重复、**跨用户**重复、软删行占号走唯一索引兜底、裸 SQL 硬插两次证明索引真的存在 | 同上 |
+| J19 编辑就诊人 → 信息更新 | 2 个用例：改姓名/关系/手机号且**留空的身份证密文一字未变**；把卡号改成别人已占的 → 1004，改成自己当前值（值没变）→ 200 | 同上 |
+
+### 附录 B 红线检查表（14 条逐条扫）
+
+| # | 红线 | 本卡结论 | 依据 |
+|---|---|---|---|
+| 1 | 金额有没有出现 FLOAT/DOUBLE | 不适用 | 本卡无任何金额字段；`patient` 表 7 个业务列里没有金额（`V1:23-38`） |
+| 2 | 护士视角新接口会不会吐金额 | 不适用 | 同上；且 `/user/**` 只认 patient 角色，员工 token 一律 403（curl 第 17/18 步实测） |
+| 3 | 新写操作有没有写 audit_log？同事务吗 | **不写，按规格** | PRD 485 行把审计范围限定在「管理后台操作」；患者端自助维护就诊人不属于该范围。T07 已就同一条做过判定，本卡沿用 |
+| 4 | 跨表写入是否包在一个 `@Transactional`？外部调用放 afterCommit？ | 不适用 | 本卡每个方法都只写 `patient` 一张表、一次写。`create`/`update` **刻意不加** `@Transactional`，理由见难点 7 |
+| 5 | 指标口径有没有在别处重算 | 不适用 | 本卡不产出任何指标 |
+| 6 | 权限判断是否只写在 UI？（service 层必须也拦） | **service 层拦了** | `PatientService.requireOwned` 用 `(id, user_id)` 双条件定位，controller 之外再拦一道；`list` 也带 `eq(user_id)`。越权回归 `otherUsersPatient_isInvisibleAndUneditable` 实测读写都 1003 |
+| 7 | 自动派发的任务是否幂等 | 不适用 | 本卡不派任务（卡片 308 行「不做 /tasks 页」是 T05 红线，T28 才做） |
+| 8 | 小程序端新接口是否强制注入 userId 归属校验 | **是** | 4 个端点的 userId 全部来自 `SecurityUtils.currentUserId()`；`PatientCreateRequest`/`PatientUpdateRequest` **没有 userId 字段**，客户端无从传入 |
+| 9 | 金额用 `<Money>`、列表用 `<DataTable>`、状态用 `<StatusBadge>` | 不适用 | admin 前端 0 文件改动。这条约束的是 React 管理后台，小程序端没有这三个组件 |
+| 10 | 列表筛选/搜索/分页是否进 URL | 不适用 | 本卡列表无筛选、无搜索、无分页（一个用户的就诊人是个位数量级，卡片 372 行也只要求"展示已添加的就诊人"）。**没有为了凑这条红线而造一个分页器** |
+| 11 | 有没有多装 T01 清单外的三方库 | **没有** | `git diff --stat -- backend/pom.xml miniprogram` 输出为空——`pom.xml` 一行未改；小程序侧无 package.json，新页面只用 `wx.*` 原生 API |
+| 12 | 有没有实现附录 A「首版不做」的东西 | 没有 | 真实微信支付、多院区、医生课酬、消息推送、教材库存、对账、单据票据均未触碰 |
+| 13 | 本卡 J 编号是否逐条真实通过 | **是** | J17/J18/J19 共 11 个用例，`mvn clean test` → `Tests run: 81, Failures: 0, Errors: 0`；另有 18 步 curl 打真实后端 + 真实 MySQL + 真实 Redis |
+| 14 | 身份证/手机号是否加密存储 | **是，且已查库取证** | 见「库里密文取证」小节：`is_plain_id=0`、`is_plain_phone=0`，密文长度与 AES-GCM 格式反算一致 |
+
+### 三处偏离卡片字面的决定（每条附依据）
+
+| # | 卡片字面 | 实际做法 | 依据 |
+|---|---|---|---|
+| 1 | 373 行「添加就诊人：姓名、身份证号（加密）、手机号（加密）、与本人关系」——**四个字段，没有就诊卡号** | 添加表单是**五个**字段，就诊卡号必填 | `V1:32` 的 `card_no VARCHAR(64) NOT NULL` + `uk_card_no`：不传就插不进去。更关键的是 R1（375 行）要求「命中返回友好提示」——只有**用户手输**的值才谈得上友好提示，系统生成的值撞号那是服务端 bug，不该由用户看到提示。PRD 277 行的「…等」也留了余地。故判定卡片 373 行是漏列，不是"不许有" |
+| 2 | 卡片只列列表/添加/编辑三项 | **不做删除** | PRD §3.11.1（275–278 行）详列的正是这三项，与卡片一致；只有 §9.1 那张「接口需求（概要）」表在 607 行写了「添加/编辑/**删除**/查询」。详规格优先于概要表。另有技术理由：`BaseEntity` 的 `@TableLogic` 让 `deleteById` 变成软删，而 `uk_card_no` 不认 `deleted` 列——软删后卡号仍被唯一索引占着，重新添加同一个人会永久失败。要做删除必须先决定这个语义（真删？还是撞号时复活旧行？），不该在 T08 里顺手带一个接口。**这条已用测试固化**：`j18_cardNoHeldBySoftDeletedRow_fallsBackToUniqueIndex` 就是拿一行 `deleted=1` 的记录证明这个陷阱是真的 |
+| 3 | 卡片 374 行「编辑就诊人：修改信息」 | 编辑时 `idCard`/`phone` **留空 = 保持原值** | 响应里这两个字段只有打码值（附录 B 第 14 条 + T07 的先例），前端拿不到明文，无法把原值预填回输入框。若强制必填，用户改个姓名就得重打一遍身份证和手机号。留空即不改让"明文永不出后端"和"编辑可用"同时成立。姓名/关系不敏感、能预填，所以仍然必填 |
+
+### 文件清单（21 个：6 新建后端主代码 + 1 新建测试 + 8 新建小程序 + 4 修改代码 + 2 修改文档）
+
+`git diff --cached --stat` → `21 files changed, 1553 insertions(+), 12 deletions(-)`（这个数字含本节自身的 243 行）。两个修改的文档是本文件与 `docs/CONVENTIONS.md`（新增「测试数据自净约定」小节 + 6 条验收约定）。
+
+**新建 · 后端主代码**
+
+| 文件 | 作用 |
+|---|---|
+| `util/MaskUtil.java` | `maskPhone`（前 3 后 4）/ `maskIdCard`（前 4 后 10 星后 4）。抽成工具类而不是各 Service 自己写：脱敏是安全边界，两处实现必然有一天漂移，漂移的结果是某个接口开始吐明文。null / 长度不符一律返回 null，不猜不补位 |
+| `dto/PatientCreateRequest.java` | 5 字段全必填。三个正则常量（`RELATION_PATTERN` / `ID_CARD_PATTERN` / `PHONE_PATTERN`）定义在这里供 Update 复用，避免同一个正则写两遍 |
+| `dto/PatientUpdateRequest.java` | name/relation 必填；cardNo/idCard/phone 允许空串（= 不改），正则写成 `^$\|原正则` 让空串能通过校验 |
+| `dto/PatientResponse.java` | `cardNo` 明文（卡片 372 行要求列表展示，且 V1 只给 `id_card`/`phone` 标了「AES加密」）；`idCard`/`phone` 打码；`relation` 回码不回中文 |
+| `service/PatientService.java` | list/detail/create/update + `requireCardNoAvailable`（R1 第一层）+ `requireOwned`（归属校验） |
+| `controller/PatientController.java` | `@RequestMapping("/user/patients")` 四端点 |
+
+**新建 · 测试**：`test/service/PatientIntegrationTest.java`（11 例）
+
+**新建 · 小程序**（`pages/patient/` 8 个文件）
+
+| 文件 | 作用 |
+|---|---|
+| `list.js/.wxml/.wxss/.json` | 列表页。`onShow` 拉数据（不是 `onLoad`——从编辑页返回要看到刚改完的结果）；空态带「添加就诊人」按钮而不是一句"暂无数据"；点条目跳编辑 |
+| `edit.js/.wxml/.wxss/.json` | 新增/编辑**共用一个表单页**，靠 `options.id` 区分，标题用 `wx.setNavigationBarTitle` 动态改。关系用原生 `<picker mode="selector">`。编辑态在输入框下方显示「当前：打码值」，placeholder 变成「留空则不修改」 |
+
+**修改**
+
+| 文件 | 改了什么 |
+|---|---|
+| `service/UserService.java` | 删掉私有 `maskPhone`，改为委托 `MaskUtil`（−9/+3 行）。行为不变，`UserAuthIntegrationTest` 9 例仍全绿 |
+| `miniprogram/utils/format.js` | 新增 `RELATION_LABELS` 与 `relationLabel()`，列表页和表单页共用一份映射 |
+| `miniprogram/app.json` | `pages` 数组注册 `pages/patient/list`、`pages/patient/edit` |
+| `miniprogram/pages/mine/mine.js` | 「就诊人管理」的 `url` 从 `''` 改成 `/pages/patient/list`（`onMenuTap` 里 `!url` 会 toast「即将开放」，填了才真跳） |
+
+### 测试证据（`mvn clean test`，14 个类逐项相加 = 81）
+
+```
+Tests run: 3,  Failures: 0, Errors: 0 -- in com.hospital.AuditFieldFillTest
+Tests run: 3,  Failures: 0, Errors: 0 -- in com.hospital.AuditLogTest
+Tests run: 7,  Failures: 0, Errors: 0 -- in com.hospital.AuthIntegrationTest
+Tests run: 1,  Failures: 0, Errors: 0 -- in com.hospital.FlywayMigrationTest
+Tests run: 7,  Failures: 0, Errors: 0 -- in com.hospital.MoneyMaskingTest
+Tests run: 4,  Failures: 0, Errors: 0 -- in com.hospital.SeedCheckTest
+Tests run: 4,  Failures: 0, Errors: 0 -- in com.hospital.SeedConstraintTest
+Tests run: 8,  Failures: 0, Errors: 0 -- in com.hospital.service.CaptchaIntegrationTest
+Tests run: 5,  Failures: 0, Errors: 0 -- in com.hospital.service.CaptchaServiceTest
+Tests run: 11, Failures: 0, Errors: 0 -- in com.hospital.service.PatientIntegrationTest   ← 本卡新增
+Tests run: 9,  Failures: 0, Errors: 0 -- in com.hospital.service.PermissionServiceTest
+Tests run: 3,  Failures: 0, Errors: 0 -- in com.hospital.service.SerialNumberServiceTest
+Tests run: 9,  Failures: 0, Errors: 0 -- in com.hospital.service.UserAuthIntegrationTest
+Tests run: 7,  Failures: 0, Errors: 0 -- in com.hospital.TaskKernelTest
+------------------------------------------------------------------
+Tests run: 81, Failures: 0, Errors: 0, Skipped: 0
+BUILD SUCCESS      MVN_EXIT=0
+```
+
+T07 收口时是 70 例 / 13 类，本卡 +11 例 / +1 类 = **81 例 / 14 类**。
+
+`PatientIntegrationTest` 的 11 例逐条：
+
+| 用例 | 断言的实质 |
+|---|---|
+| `j17_createPatient_storesIdCardAndPhoneEncrypted` | 库里不等于明文、密文不含明文前 6 位、`decrypt` 能还原、响应只含打码值 |
+| `j17_listReturnsOwnPatientsOnly` | A/B 各建一个，A 的列表 `length()==1` 且是自己的——防止"列表永远返回全部"的假通过 |
+| `j17_invalidIdCardOrRelation_rejectedWith400` | 16 位身份证 → 400；关系填 `FRIEND`（不在 V1:31 的 5 个里）→ 400 |
+| `j18_duplicateCardNo_rejectedByPreCheck` | 1004 + 消息文案 + 库里仍只有 1 行 |
+| `j18_duplicateCardNoAcrossUsers_alsoRejected` | 卡号是**全局**唯一，不是"每人唯一" |
+| `j18_cardNoHeldBySoftDeletedRow_fallsBackToUniqueIndex` | 裸 SQL 插一行 `deleted=1` → 前置查看不见（`countByCardNo==0`）→ insert 撞索引 → catch 翻成 1004 而不是漏成 500 |
+| `j18_uniqueIndexReallyExists` | 裸 SQL 硬插同卡号两次，`assertThrows(DuplicateKeyException)`——证明兜底那层是数据库真在拦，不是我想象出来的 |
+| `j19_updatePatient_changesFieldsAndKeepsBlankOnesUntouched` | 姓名/关系/手机号都变了，而**留空的身份证连密文都一字未变**（AES-GCM 每次加密结果都不同，密文变了就说明服务把空串当新值重新加密了一遍） |
+| `j19_updateCardNoToAnExistingOne_rejected` | 改成已占用的卡号 → 1004；改成自己当前的卡号（值没变）→ 200，证明 `excludeId` 生效，不会被自己拦下 |
+| `otherUsersPatient_isInvisibleAndUneditable` | B 读/改 A 的就诊人都是 1003，且库里的姓名没被动过 |
+| `anonymousAndStaffTokenCannotReachPatientEndpoints` | 匿名 401（小程序 `request.js` 靠 401 跳登录页）；员工 token 403/4001 |
+
+**测试数据的自净**：本类建的 `patient` 行在 `@AfterEach` 里用裸 SQL **物理删除**（`deleteById` 是逻辑删，留着会占 `uk_card_no`，下次跑必撞索引）。这一条本卡真的漏过一次，见难点 1。
+
+### curl 级人工验收（18 步，打真实后端 + 真实 MySQL + 真实 Redis）
+
+后端 `mvn spring-boot:run`（PID 53892，3.401 秒启动），Redis 容器 `hospital-redis` `Up (healthy)`。**含中文的请求体一律写成 UTF-8 文件用 `--data-binary @file` 发**，不内联——内联的中文会以 GBK 字节到达 Spring，触发 `JSON parse error: Invalid UTF-8 middle byte`，表现成一个假的 500（T07 踩过）。
+
+| # | 请求 | 真实响应 |
+|---|---|---|
+| 1 | 匿名 `GET /api/user/patients` | `HTTP=401` `{"code":401,"message":"未认证"}` |
+| 2 | `POST /api/auth/wechat-login` `{"code":"t08-acc-A"}` | `HTTP=200` `userId=50` `newUser=true` `hasPhone=false`，token 长 248 |
+| 3 | 同上 `code=t08-acc-B` | `HTTP=200` `userId=51` `newUser=true` |
+| 4 | A `GET /user/patients` | `HTTP=200` `{"code":200,"message":"success","data":[]}` |
+| 5 | A `POST /user/patients`（张三丰 / T08ACC0001 / 11010119900307715X / 13900001111 / SELF） | `HTTP=200` `{"data":{"id":31,"name":"张三丰","relation":"SELF","cardNo":"T08ACC0001","idCard":"1101**********715X","phone":"139****1111"}}` |
+| 6 | A `POST` 同一卡号（冒名顶替 / T08ACC0001） | `HTTP=200` `{"code":1004,"message":"就诊卡号已存在"}` |
+| 7 | A `GET /user/patients` | 1 条，`id=31` |
+| 8 | A `GET /user/patients/31` | 与列表里那条逐字一致 |
+| 9 | A `PUT /31`（张三丰改 / 同卡号 / idCard `""` / phone `""` / SPOUSE） | `{"data":{"id":31,"name":"张三丰改","relation":"SPOUSE","cardNo":"T08ACC0001","idCard":"1101**********715X","phone":"139****1111"}}` ← **两个打码值一字未变** |
+| 10 | A `PUT /31`（phone 换成 13900002222） | `"phone":"139****2222"`，`idCard` 仍是 `1101**********715X` |
+| 11 | **B** `GET /user/patients/31` | `{"code":1003,"message":"就诊人不存在"}` ← 不是 403：403 会确认"这条记录存在" |
+| 12 | **B** `PUT /user/patients/31` | `{"code":1003,"message":"就诊人不存在"}` |
+| 13 | B `POST`（李四 / T08ACC0002 / 310101198805062244 / 13900004444 / PARENT） | `{"data":{"id":32,…,"idCard":"3101**********2244","phone":"139****4444"}}` |
+| 14 | B `GET /user/patients` | 只有 `id=32` 一条，看不见 A 的 |
+| 15 | `GET /api/auth/captcha` | `HTTP=200`，字段 `code/message/data{captchaKey,…}`，响应 4694 字节，`captchaKey=766abc65d6e745dcaff25c83f4b0f1e4` |
+| 16 | Redis 读回答案 `SYCD` → `POST /api/auth/login`（admin/admin123） | `HTTP=200`，员工 token 长 428 |
+| 17 | **员工 token** `GET /user/patients` | `HTTP=403` `{"code":4001,"message":"权限不足"}` |
+| 18 | **员工 token** `POST /user/patients` | `HTTP=403` `{"code":4001,"message":"权限不足"}` |
+
+第 15/16 步不是本卡功能，是为了拿到一个**真员工 token** 来做第 17/18 步——验证码答案从 Redis 读回来而不是猜一个，否则测的是"我猜对了"而不是"校验通了"。第 17/18 步验的是本卡最该验的一条：`/user/patients` 是新增路径，必须被 T07 那条 `/user/**` → `hasRole(patient)` 自动覆盖，**本卡没有为此改任何一行 SecurityConfig**。
+
+顺带一个活证据：启动日志里 `crypto.key 仍是 application.yml 里的内置默认值…` 这条 WARN **响了 1 次**（T07 加的告警在真实启动路径上确实会触发，不是死代码）。
+
+### 库里密文取证
+
+```
+id: 31   user_id: 50   relation: SPOUSE   card_no: T08ACC0001
+  id_card: Ti83wh/pY8xsvrrZA9/wGzEGaOI1aaNt4C/ggleZRqCOvu78k2LX6s8lCmE0uw==
+  phone:   ZamQz2YFms2uT8w+de8P6rOKe4q8Rytw2DYnAsceIOJhJaI8OXoJ
+  name_chars: 4   id_chars: 64   phone_chars: 52   is_plain_id: 0   is_plain_phone: 0   deleted: 0
+id: 32   user_id: 51   relation: PARENT   card_no: T08ACC0002
+  id_card: UDovV7s3TqWP97mejcMMr/4gqZsdd0w1Q9UEdbCMPlhxe7d94mHG8DQ7Ihr3Pg==
+  phone:   ZDeUracg7WUz30/umkBBdaKxEESLPVWcz+t0zIggfp9SwLuGb/9/
+  name_chars: 2   id_chars: 64   phone_chars: 52   is_plain_id: 0   is_plain_phone: 0   deleted: 0
+```
+
+`is_plain_id` / `is_plain_phone` 是**可证伪的断言**（`id_card='11010119900307715X'` / `phone IN (三个明文号码)`）：加密若没生效，它们会是 1。
+
+密文长度还能反算校验格式，确认不是截断或编码错乱——AES-GCM 落库是 `Base64(IV 12 字节 ‖ 密文 ‖ tag 16 字节)`：
+
+| 字段 | 明文长度 | 字节数 | Base64 长度 | 实测 |
+|---|---|---|---|---|
+| 身份证 | 18 | 12+18+16 = 46 | `ceil(46/3)*4 = 64` | 64 ✓ |
+| 手机号 | 11 | 12+11+16 = 39 | `ceil(39/3)*4 = 52` | 52 ✓ |
+
+姓名用 `CHAR_LENGTH(name)` 间接验（4 = `张三丰改`、2 = `李四`）而**不在 SQL 里写中文字面量**：`mysql.exe` 也是 Windows 程序，命令里的中文同样会变 GBK，`WHERE name='张三丰改'` 会匹配不上而给我一个假的"没查到"。
+
+**验收数据清理**（双条件，确保碰不到 seed）：`patient_before 13 → patient_deleted 2 → patient_after 11`，`user_before 6 → user_deleted 2 → user_after 4`，复查 `seed_patient_intact = 10`、`leftover_t08 = 0`。
+
+### 本卡遇到的难点
+
+| # | 难点 | 怎么定位 / 怎么解 |
+|---|---|---|
+| 1 | **我自己造的 bug**：每跑一次 `PatientIntegrationTest` 就往开发库留一行垃圾 patient | 清理后 `patient_after=11` 而 seed 只有 10 行 → 多出一行。不猜，先复现：单独跑该测试类，前后各数一次 → `11 → 12`，**恰好一行**，可复现。再查残留行特征：`deleted=0`、`card_no=T081549368332`（正是 `randomCardNo()` 的 `T08`+10 位格式）、`user_id=33` 已被删掉。决定性线索是 `CHAR_LENGTH(name)=3`——11 个用例里只有 `j17_createPatient_...` 建的是 3 字姓名「张三丰」。根因：该用例为了断言响应体而**内联发 POST，绕过了 `createPatient()` 助手**，而 `createdCardNos.add(...)` 只写在助手里。修法是补一行登记 + 注释说明为什么这里必须手动登记；重跑单类 `leftover_T08=0`，再跑全量门禁仍为 0、`patient_total=10`、`mock_users=0`。**教训**：清理逻辑挂在助手函数里，就等于要求所有用例都必须走助手——这个约束没有任何东西强制，绕过它的用例照样绿。要么让登记无法被绕过，要么清理规则不依赖登记 |
+| 2 | `node -e` 读不到 `/tmp/r2.json`，报 `ENOENT: E:\tmp\r2.json` | node.exe 是 Windows 程序，**不认 Git Bash 的 `/tmp` 挂载**，把路径按当前盘符翻译成了 `E:\tmp`。curl（Git Bash 自带）能懂 `/tmp`，所以三个请求都成功了、只有解析那步炸。改用纯 bash 的 `sed -n 's/.*"token":"\([^"]*\)".*/\1/p'` 抽 token，不引入第二个路径解释器。**规则**：Windows 原生程序（node/mysql/tasklist）与 Git Bash 混用时，路径要么用 Windows 形式，要么别跨 |
+| 3 | `TaskStop` 停了 `mvn spring-boot:run`，8080 却还在 LISTENING | Maven 插件起的 JVM 是**子进程**，`TaskStop` 只带走了 Maven 自己。`netstat -ano \| grep ':8080[[:space:]]' \| grep LISTENING` 查出 PID 53892 → `taskkill //PID 53892 //F`（Git Bash 里必须**双斜杠**，否则 `/PID` 被当 Unix 路径翻译）→ 复查 `8080 FREE`。**停完必须复查端口，不能信 TaskStop 的成功回执**——T07 就有一个陈旧进程占着 8080，把整轮验收打到了旧代码上 |
+| 4 | 软删 + 全局唯一索引互不相认 | `@TableLogic` 让 MyBatis-Plus 的查询自动补 `deleted=0`，但 `uk_card_no` 是数据库层的，不知道 `deleted` 这列。于是"前置查放过、insert 撞索引"。T08 没有删除功能，这条路走不到；但我把它做成了 `j18_cardNoHeldBySoftDeletedRow_...` 这个**确定性**用例，既覆盖 catch 分支，也把陷阱钉在测试里。将来谁要做删除（PRD §9.1 提过），这条测试会先提醒他 |
+| 5 | 前置查在编辑时会把自己拦下 | 改自己的姓名但不改卡号时，`card_no = ?` 会查到自己 → 误报 1004。解法是 `requireCardNoAvailable(cardNo, excludeId)` 带 `ne(excludeId != null, Patient::getId, excludeId)`；并在 `update` 里先判 `!cardNo.equals(patient.getCardNo())`，值没变就压根不查。两条都有用例（`j19_updateCardNoToAnExistingOne_rejected` 的后半段） |
+| 6 | 脱敏逻辑开始重复 | T07 的 `UserService` 里有个私有 `maskPhone`，T08 又要打码身份证。抽 `MaskUtil` 并把 `UserService` 改成委托——不是为了少写几行，是因为脱敏是安全边界，两处实现必然漂移，漂移的结果是某个接口开始吐明文。**测试里的期望值仍自己算**（`maskIdCard()` 在测试类里独立实现），用生产代码算期望值等于自己给自己判卷 |
+| 7 | `create`/`update` 为什么不能加 `@Transactional` | 两者各只有一次写，没有跨表原子性需求；而一旦包进事务，`catch` 住的 `DuplicateKeyException` 会把事务标成 **rollback-only**——异常虽然被翻成了友好的 1004，提交时照样炸成一个查不出原因的 500。T07 的 `loginByWechat` 已经踩过并验证过，本卡沿用同一条结论，两处 javadoc 互相指向 |
+
+### 小程序端验收状态（如实记：全部挂起，待用户在微信开发者工具里点）
+
+自动化关卡只有 `node --check`（`miniprogram/` 没有 package.json、没有任何测试框架），4 个 js + 3 个 json 全过：
+
+```
+OK  pages/patient/list.js      OK  pages/patient/edit.js
+OK  pages/mine/mine.js         OK  utils/format.js
+OK  app.json                   OK  pages/patient/list.json      OK  pages/patient/edit.json
+```
+
+**WXML/WXSS 无法用 node 校验**，只能靠开发者工具，所以下面 6 项如实记为待人工：
+
+| # | 待验项 | 期望 |
+|---|---|---|
+| 1 | 「我的 → 就诊人管理」 | 跳 `/pages/patient/list`，标题「就诊人管理」；不再 toast「即将开放」 |
+| 2 | 列表页（seed 用户登录时） | seed 的 10 行 patient 分属 user 1–4，微信登录建的是**新** user，所以列表应为**空态**：图标 + 「还没有添加就诊人」+ 「添加后可以替本人和家属挂号、缴费、查报告」+ 蓝色按钮 |
+| 3 | 添加表单校验 | 姓名空 / 卡号空 / 身份证非 18 位 / 手机号非 `1[3-9]` 开头 11 位 → 各自 toast，不发请求 |
+| 4 | 关系 picker | 5 项：本人 / 子女 / 父母 / 配偶 / 其他，默认「本人」 |
+| 5 | 重复卡号提交 | toast「就诊卡号已存在」（来自后端 1004，由 `utils/request.js` 统一弹出，页面**不重复 toast**） |
+| 6 | 编辑态 | 标题变「编辑就诊人」，姓名/卡号预填，身份证与手机号输入框为空、placeholder 是「留空则不修改」、下方灰字显示「当前：打码值」；只改姓名提交后回列表，身份证/手机号打码值不变 |
+
+前置条件：后端要在 8080 上跑（已重启，PID 48980）、Redis 容器 `hospital-redis` 要 UP。清 token 用 `wx.clearStorageSync()`（患者端没有退出登录按钮，T07 有意未做）。
+
+### 遗留 TODO 及归属
+
+| TODO | 位置 | 归属 |
+|---|---|---|
+| 删除就诊人 | 未实现 | 需先决策软删与 `uk_card_no` 的语义（见偏离决定 2）；PRD §9.1 提过，§3.11.1 没提 |
+| 身份证 GB11643 校验位验证 | 只做了 18 位格式正则 | 无任何规格要求；且校验位算法一旦写错，测试会变成"用错的规则验错的号"。真要做实名核验属二期（对接公安/三方实名接口） |
+| 就诊人选择器组件 | 未实现 | T12 预约挂号第一步「选择就诊人」（PRD 75 行）才需要；本卡只做管理，**不提前造** |
+| 真实短信通道 / 微信 appid / `CRYPTO_KEY` | 同 T07 | 部署前必须替换（`LoggingSmsSender` 把验证码打进日志，等于把登录凭据写进日志文件） |
+| `HttpMessageNotReadableException` → 400 | `GlobalExceptionHandler` | 单列小卡（T07 发现，仍未修）。本卡若收到畸形 JSON 仍会回 500 |
+
+### T08 当前状态
+
+- 后端：`/user/patients` 四端点契约经 18 步 curl 实测通过；`mvn clean test` → **81 例全绿**（14 类）、`BUILD SUCCESS`、`MVN_EXIT=0`；库里身份证/手机号密文取证到位，验收数据已清理，全量跑后 `leftover_T08=0`。
+- 安全：归属校验在 service 层（不只 controller）；跨用户读写一律 1003 而非 403；员工 token 403/4001，匿名 401；`SecurityConfig` **零改动**（沿用 T07 的 `/user/**` 规则）。
+- 加密：复用 T07 的 `CryptoService`（AES-256-GCM），本卡未改一行加密代码；新增 `MaskUtil` 统一打码，`UserService` 改为委托。
+- 小程序：新增 2 个页面 + 3 处改动，`node --check` 全过，交互待开发者工具人工验收（6 项）。
+- admin 管理后台：**0 文件改动**，故本卡未跑 `typecheck`/`lint`/`build`（`git status` 可证）。
+- 后端已重启并监听 8080（PID 48980），方便用户直接在开发者工具里联调 T07 挂起的 4 项 + 本卡 6 项。
+
+### 本卡有意未做
+
+1. 住院人管理（T09）、预约（T12）——卡片 377 行红线；`inpatient` 表与实体一行未碰。
+2. 删除就诊人接口——见偏离决定 2（软删与唯一索引的语义未决）。
+3. 就诊人选择器组件——T12 才需要，提前造就是给未来加猜测。
+4. 列表分页/搜索/筛选——一个用户的就诊人是个位数量级，卡片也只要求"展示已添加的就诊人"。
+5. 身份证校验位验证、实名核验——无规格来源。
+6. 患者端操作审计——PRD 485 行把审计限定在管理后台。
+7. admin 管理后台的就诊人管理页——卡片未要求，PRD §4 里属 T25–T28 范围。
+8. 就诊卡号的格式校验——V1 只有 `VARCHAR(64)`，没有任何规格给出卡号规则，**不编一个**。
+9. 批量导入 / 就诊人头像 / 与 `user.phone` 的联动同步——均无规格来源。
+
 
 

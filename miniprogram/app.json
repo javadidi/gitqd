@@ -4,7 +4,9 @@
     "pages/appointment/appointment",
     "pages/mine/mine",
     "pages/login/login",
-    "pages/home/home"
+    "pages/home/home",
+    "pages/patient/list",
+    "pages/patient/edit"
   ],
   "window": {
     "navigationBarBackgroundColor": "#ffffff",
