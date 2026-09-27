@@ -2544,6 +2544,7 @@ OK  app.json                   OK  pages/patient/list.json      OK  pages/patien
 - 小程序：新增 2 个页面 + 3 处改动，`node --check` 全过，交互待开发者工具人工验收（6 项）。
 - admin 管理后台：**0 文件改动**，故本卡未跑 `typecheck`/`lint`/`build`（`git status` 可证）。
 - 后端已重启并监听 8080（PID 48980），方便用户直接在开发者工具里联调 T07 挂起的 4 项 + 本卡 6 项。
+- 提交与推送：功能提交 `b1a8a0d`（21 文件 / +1553 / −12，`git status --short` 提交后只剩 `?? admin/curl`）。推送前对本次提交的 diff 做了一遍凭据扫描，唯一命中是本文件里*描述既有风险的那段文字*，无新增密钥。`git push origin main` → `44c186d..b1a8a0d`、`PUSH_EXIT=0`；远端核对 `git ls-remote --heads origin` → `b1a8a0d0428ea7f379cc6212762917590ed0a786`，与 `git rev-parse HEAD` **逐字符一致**，`git rev-list --left-right --count origin/main...HEAD` → `0	0`。
 
 ### 本卡有意未做
 
