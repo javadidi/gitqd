@@ -143,3 +143,28 @@
 .schedule-slots-booked {
   color: #999;
 }
+
+/* T12：挂号费一列 + 「去挂号」按钮一列。
+   固定宽度 + flex-shrink:0 是必要的：.schedule-slot 是 flex:1 的那一列，
+   不钉住宽度的话，医生姓名长的行会把费用挤到换行、按钮跟着错位。 */
+.schedule-fee {
+  width: 130rpx;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 26rpx;
+  color: #dc2626;
+}
+
+.schedule-action {
+  width: 150rpx;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.schedule-book-btn {
+  margin: 0;
+  font-size: 24rpx;
+  padding: 0 20rpx;
+  line-height: 56rpx;
+}

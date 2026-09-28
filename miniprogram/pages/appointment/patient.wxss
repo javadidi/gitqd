@@ -1,0 +1,84 @@
+.apt-slot-card {
+  padding: 24rpx;
+}
+
+.apt-slot-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.apt-slot-line {
+  margin-top: 8rpx;
+  font-size: 26rpx;
+  color: #2563eb;
+}
+
+.apt-empty {
+  padding: 48rpx 0;
+  text-align: center;
+}
+
+/* 空态三件套是每页各自定义的（wxss 是页面作用域，本仓库没有全局空态类），
+   取值与 pages/patient/list.wxss、pages/inpatient/list.wxss 完全一致，不另起一套视觉。 */
+.apt-empty .empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.apt-empty .empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.apt-empty .empty-desc {
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+  font-size: 24rpx;
+}
+
+.patient-row {
+  position: relative;
+  padding: 24rpx 48rpx 24rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.patient-row:last-child {
+  border-bottom: none;
+}
+
+.patient-row-main {
+  display: flex;
+  align-items: center;
+}
+
+.patient-row-name {
+  font-size: 30rpx;
+  color: #1f2937;
+  margin-right: 12rpx;
+}
+
+.patient-row-relation {
+  font-size: 22rpx;
+  color: #2563eb;
+  background: #eff6ff;
+  padding: 2rpx 12rpx;
+  border-radius: 6rpx;
+}
+
+.patient-row-sub {
+  margin-top: 8rpx;
+  display: flex;
+  gap: 24rpx;
+  font-size: 24rpx;
+}
+
+.patient-row-arrow {
+  position: absolute;
+  right: 12rpx;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #cbd5e1;
+  font-size: 36rpx;
+}

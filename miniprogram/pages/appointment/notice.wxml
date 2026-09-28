@@ -1,0 +1,23 @@
+<view class="page-apt-notice">
+  <view class="container">
+    <view class="card apt-slot-card">
+      <view class="apt-slot-title">{{doctorName || '—'}} · {{departmentName || '—'}}</view>
+      <view class="apt-slot-line">{{date}} {{slotLabel}}</view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">预约须知</view>
+      <view wx:for="{{rules}}" wx:key="title" class="notice-item">
+        <view class="notice-item-index">{{index + 1}}</view>
+        <view class="notice-item-body">
+          <view class="notice-item-title">{{item.title}}</view>
+          <view class="notice-item-desc">{{item.desc}}</view>
+        </view>
+      </view>
+      <!-- 文案全部来自需求文档 3.3.1 的业务规则，不额外发明条款；
+           后台「预约须知管理」页（T27）落地后本页改成读接口取文案。 -->
+    </view>
+
+    <button class="btn-primary apt-next" bindtap="onNext">已阅读，下一步</button>
+  </view>
+</view>

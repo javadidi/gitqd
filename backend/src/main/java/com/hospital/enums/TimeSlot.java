@@ -15,12 +15,56 @@ package com.hospital.enums;
  */
 public enum TimeSlot {
 
-    MORNING,
-    AFTERNOON,
-    EVENING;
+    MORNING(8, 30),
+    AFTERNOON(14, 0),
+    EVENING(18, 30);
+
+    private final int startHour;
+    private final int startMinute;
+
+    TimeSlot(int startHour, int startMinute) {
+        this.startHour = startHour;
+        this.startMinute = startMinute;
+    }
+
+    /**
+     * 该时段在排班日期上的开始时刻，用于算 {@code appointment.appointment_time}（V1:125「预约时间」）。
+     *
+     * <p><b>出处分两段，必须说清</b>：MORNING 08:30、AFTERNOON 14:00 是<b>抄的</b>——
+     * {@code seed.sql:140} 造那 13 笔预约时写的就是
+     * {@code TIMESTAMP(s.date, IF(s.time_slot = 'MORNING', '08:30:00', '14:00:00'))}，
+     * 这是本仓库里唯一有出处的一对时刻，沿用它们能让 T12 新建的预约和种子预约在同一个口径上
+     * （否则同一个时段，种子数据说 08:30、接口建出来的说 09:00，患者对照两条记录会看不出差别，
+     * 而 {@code SeedCheckService} 也照不出这种漂移）。
+     *
+     * <p>EVENING 18:30 <b>是扩展，不是规格</b>：种子里没有任何晚间排班，所以那条 SQL 根本没覆盖到它。
+     * 但 T11 已经让 EVENING 可排班、T12 就必须给它一个时刻，因为 {@code appointment_time NOT NULL}。
+     * 取 18:30 的理由只有"下午 14:00 之后、且仍属晚间门诊的常规时段"，
+     * <b>没有任何 PRD / 原型依据</b>。真按医院口径定这三段时刻属 T25「医生排班管理」页
+     * （卡片 701 行），届时以那里为准，本处只是首版能跑通的暂定值。
+     */
+    public java.time.LocalTime startTime() {
+        return java.time.LocalTime.of(startHour, startMinute);
+    }
 
     public static boolean isValid(String code) {
         return weight(code) < values().length;
+    }
+
+    /**
+     * 按码值取开始时刻，未知码值退到 14:00。
+     *
+     * <p>"未知退到 14:00"不是随手兜底，而是照抄 {@code seed.sql:140} 那条 SQL 的 ELSE 分支
+     * （{@code IF(s.time_slot = 'MORNING', '08:30:00', '14:00:00')}）——
+     * 种子里所有非 MORNING 的时段都算 14:00，所以这里遇到脏码值时的行为与种子完全一致。
+     */
+    public static java.time.LocalTime startTimeOf(String code) {
+        for (TimeSlot slot : values()) {
+            if (slot.name().equals(code)) {
+                return slot.startTime();
+            }
+        }
+        return AFTERNOON.startTime();
     }
 
     /** 未知码值返回 {@code values().length}，即排在所有已知时段之后 */

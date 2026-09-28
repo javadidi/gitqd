@@ -38,6 +38,11 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/auth/login", "/auth/captcha", "/auth/wechat-login").permitAll()
+                // T12 支付回调：调用方是微信服务器，不可能带我们的 JWT，所以必须放行。
+                // 只放这一个精确路径，不放整片 /payments/** ——那个前缀下面还有 T04 的靶接口和
+                // 退款审批，它们要求员工角色；写成 "/payments/**" 会顺手把那两个也变成无凭证可进。
+                // 这个接口自身唯一的防线是验签，见 WechatNotifyController 的类注释。
+                .requestMatchers("/payments/wechat/notify").permitAll()
                 // 小程序端接口：只认患者 token，userId 一律从 token 取（SecurityUtils）
                 .requestMatchers("/user/**").hasRole(LoginPatient.ROLE)
                 // 其余都是管理后台接口：只认员工角色。

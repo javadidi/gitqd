@@ -1,0 +1,31 @@
+<view class="page-apt-result">
+  <view class="container">
+    <view class="card res-head">
+      <view class="res-icon {{isConfirmed ? 'res-icon-ok' : 'res-icon-warn'}}">
+        {{isConfirmed ? '✓' : '!'}}
+      </view>
+      <view class="res-title">{{isConfirmed ? '预约成功' : '预约已创建'}}</view>
+      <view class="res-status">{{statusLabel}}</view>
+    </view>
+
+    <!-- PRD 81 行还要求这里放二维码。首版不做：小程序端没有可依赖的二维码能力
+         （无 package.json，装不了二维码库；附录 B 也不许新增 T01 清单外的依赖），
+         且没有任何规格说明码里要编码什么内容。真要做该由后端出图，
+         已记进 WORK_LOG 的"本卡有意未做"。这里把单号做大，患者报号可用。 -->
+    <view class="card">
+      <view class="res-label">预约单号</view>
+      <view class="res-order">{{orderNo || '—'}}</view>
+    </view>
+
+    <view class="card">
+      <view class="res-row"><text class="res-label">就诊人</text><text>{{patientName || '—'}}</text></view>
+      <view class="res-row"><text class="res-label">科室</text><text>{{departmentName || '—'}}</text></view>
+      <view class="res-row"><text class="res-label">医生</text><text>{{doctorName || '—'}}</text></view>
+      <view class="res-row"><text class="res-label">就诊时间</text><text>{{timeText}}</text></view>
+      <view class="res-row"><text class="res-label">挂号费</text><text class="res-fee">{{feeText}}</text></view>
+    </view>
+
+    <button class="btn-primary res-btn" bindtap="onBackHome">继续预约</button>
+    <button class="btn-outline res-btn" bindtap="onGoMine">去我的页面</button>
+  </view>
+</view>

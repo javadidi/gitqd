@@ -63,6 +63,15 @@ crypto:
 wechat:
   appid: ${WECHAT_APPID:}
   appsecret: ${WECHAT_APPSECRET:}
+  # 微信支付（T12）。真实商户对接属附录 A「首版不做」，所以这里只留占位：
+  # 两项为空 => MockWechatPayService 生效（启动会打一条 WARN 喊出来，理由见该类的注释）。
+  # 一旦填上真实 mchid 却没换实现类，MockWechatPayService 会直接抛 IllegalStateException——
+  # 宁可启动/调用即炸，也不要"以为在收钱、其实在发假预下单号"。
+  pay:
+    mchid: ${WECHAT_PAY_MCHID:}
+    apiv3key: ${WECHAT_PAY_APIV3KEY:}
+    # 只有测试会把它设成 failure，用来确定性触发 J27「支付抛异常 => 预约与号源一起回滚」。
+    mock-outcome: ${WECHAT_PAY_MOCK_OUTCOME:success}
 
 # 日志配置
 logging:

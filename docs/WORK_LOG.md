@@ -3866,6 +3866,326 @@ MYSQL_PWD=123456 mysql -uroot -N -B hospital -e "SELECT (SELECT COUNT(*) FROM sc
 - 后端进程**在后台运行**（PID **79244**，8080，context-path `/api`，日志 `E:/qdspace/_mp-driver/t11-backend.log`）；下次跑 `mvn clean test` 前必须先停它。
 - 提交按显式文件清单（10 个文件），**不推送**（下个推送点 T12 / 🚩M1）。下一张卡 T12 · 预约挂号 + 支付。
 
+---
+
+## T12 · 预约挂号 + 支付（★最高风险卡）（2026-09-28）
+
+### 任务卡原文 → 实现对照（448–468 行，**逐字**引用）
+
+| 卡片原文（逐字） | 实现 | 落点 |
+|---|---|---|
+| 452「A. 预约挂号，**一个 `@Transactional` 方法**」 | 确实是一个方法一个事务：`AppointmentService.create` | `AppointmentService.java` |
+| 453「①选择就诊人；②选择科室/医生；③查看排班/剩余号源；④确认预约信息；⑤创建预约记录（PENDING_PAYMENT）；⑥扣减剩余号源；⑦发起微信支付；⑧支付成功 → 预约状态 CONFIRMED；⑨审计」 | ①②③④ 是小程序四页 + 后端对它们的结果校验；⑤⑥⑦⑨ 在 `create` 一个事务里；**⑧ 不在**（那是 B 段独立接口） | `AppointmentService.create` / `AppointmentPaymentService` |
+| 455–456「B. 支付回调（**独立接口，幂等**）：①验证微信签名；②更新预约状态；③写支付记录；④审计」 | `POST /api/payments/wechat/notify`，四步齐全；幂等由 `confirmIfPending` 的**受影响行数**承载 | `WechatNotifyController` / `AppointmentPaymentService.handleNotify` |
+| **红线** 458「待支付超时自动取消（定时任务，二期做）」 | 没有任何 `@Scheduled`、没有超时字段、没有取消逻辑 | 见「本卡有意未做的事」 |
+| **红线** 458「支付金额禁篡改」 | `AppointmentCreateRequest` **只有 patientId + scheduleId 两个字段**；回调侧写流水用 `appointment.fee_fen`，不看载荷金额 | 两条都有测试（真 HTTP 第 8 步实测） |
+| **红线** 458「除本方法外禁止任何地方更新预约状态」 | 全仓只有一条改 status 的 SQL（`AppointmentMapper.confirmIfPending`），回调与患者侧入口**共用同一个方法** `confirmAndBook` | `AppointmentPaymentService` 类注释 |
+| 461「J27 预约事务中让支付抛异常 → appointment/schedule 全部回滚（库中无残留）」 | 2 例，含审计行也一起消失 | `AppointmentPayFailureTest` |
+| 462「J28 支付回调幂等：重复回调 → 只处理一次」 | 7 例 | `AppointmentIntegrationTest` |
+| 463「J29 支付成功 → 预约状态 CONFIRMED + 剩余号源扣减」 | 5 例，含 4 线程真并发不超卖 | `AppointmentIntegrationTest` |
+| 464「J30 同一就诊人同一排班重复预约 → 被拒（唯一索引）」 | 5 例，含原生 SQL 直插证明 `uk_patient_schedule` 真在 | `AppointmentIntegrationTest` |
+| 466「**人工验收**：完整走「选择就诊人→选科室→选医生→确认→支付→预约成功」」 | 四页新写 + T10 三页串成链路；skill-cli 驱动实测见「T12-M」节（**另一次提交**） | 本卡收尾第 3 步 |
+| **DoD** 468「🚩 M1：预约核心链路打通」 | 后端 175 例 + 真 HTTP 40 步；本卡是**第一个推送点** | 见「当前状态」 |
+
+### 范围判定：三样不属于本卡，两样不属于首版
+
+卡片只给动词，端点边界要看 PRD。**PRD §9.1 第 610 行**那一格写的是「预约挂号 | **创建预约、取消预约、预约列表、预约详情**」。四个能力里只有「创建预约」是 T12——后三个属 T13「预约管理 + 退号」（页面也在那儿：§6.1 第 527 行的「预约挂号记录」「预约挂号详情」列在个人中心模块下，而 T13 卡片 474 行起正是「预约记录列表 / 退号」）。
+
+**所以本卡后端只有 2 个新端点**（`POST /user/appointments` + 回调），没写列表、没写详情、没写取消。这是 T08-G 那条规矩的又一次两路核对：先读卡片动词，再读 §9.1 与 §6.1，两边一起指才算数。
+
+首版不做的两样：① 真实微信支付（附录 A「真实微信支付对接」），② 待支付超时自动取消（卡片 458 行自己标了"二期做"）。
+
+### 规格空洞①：挂号费从头到尾没有任何来源
+
+这是本卡最硬的一块，因为金额是钱，而红线要求「禁篡改」。证据链全摆出来：
+
+| 查了哪里 | 结果 |
+|---|---|
+| `V1__init.sql` 全 28 张表 | 只有 `appointment.fee_fen`（V1:126）存"这笔收了多少钱"，**没有任何一列存"定价"** |
+| `title` 表（V1:72-79） | 只有 `name` / `sort_order` |
+| `doctor`（V1:84-96）、`schedule`（V1:101-113） | 都没有费用列 |
+| PRD 全文 `挂号费\|费用\|价格\|收费` | §7.1 第 546 行只说"支付挂号费"；§581 数据字典说预约记录含"费用"；**没有一个数额** |
+| PRD §4.4 费用管理（366–383 行，= T26） | 全是消费/充值/退款**记录查询**，无定价功能 |
+| PRD §4.6.3 职称管理（456–458 行，= T28） | 只说「添加职称类型」 |
+| `seed.sql:22` 原文 | 「**PRD 未规定任何挂号费/缴费数额，下列金额是为让列表可读而定的**」 |
+
+**处置**：定价收进 `AppointmentFeeService` 一处，值**直接沿用种子已有的三个数**（主任医师 5000 / 副主任医师 3000 / 主治医师 2000 分），不给 `title` 造一个规格从没要求过的列。逐笔核对过 13 条种子预约全部吻合：医生 1 张伟、3 王建国（主任医师）名下都是 5000，医生 2 李慧敏（副主任）3000，医生 4 陈雪、5 刘一鸣（主治）2000。
+
+反面也要记：如果加一列 `title.fee_fen`，就连带要求 T28 的职称管理页出现一个 PRD 没画过的输入框——那是凭空发明需求。**没有真实定价来源时，把已有暂定值收敛到单一出口，比再造一个来源诚实。** 真定价落地（T26 或 T28）时只改这一个类。
+
+查不到职称时按最低档 2000 收 + 打 WARN（`doctor.title_id` 在 V1:88 可空）：宁可少收医院也不能多收患者，也不能让一笔正常挂号莫名失败。
+
+### 规格空洞②：J27 与「外部调用走 afterCommit」两条红线互相矛盾
+
+| 要求 | 出处 | 意味着 |
+|---|---|---|
+| 「预约事务中让支付抛异常 → 全部回滚」 | 卡片 461 行 J27 | ⑦发起支付必须在 `@Transactional` **里面** |
+| 「微信支付/短信等外部调用走 afterCommit」 | T04 起的全局红线 | 真实 HTTP 调微信必须在事务**外面** |
+
+首版不炸，因为按附录 A「真实微信支付不做」，⑦是**本地纯函数**（`MockWechatPayService.prepay`，无网络无外部状态），放事务内满足 J27 且没有长时间持有连接的风险。
+
+这个矛盾**写在代码里而不是记在脑子里**：`WechatPayService` 接口注释逐条列了两侧的落点，并写明「真实微信支付落地时必须把预下单挪到 afterCommit，那时 J27 的语义要重述为'预下单失败由补偿任务关掉 PENDING_PAYMENT 单'，不能一边留着事务内的真 HTTP 调用、一边说红线守住了」。
+
+### 语义修正：「验签」和「支付结果」是两件正交的事（被测试逼出来的）
+
+第一版 `MockWechatPayService.verifyNotify` 写成 `return "SUCCESS".equals(returnCode)`，把两件事压进一个返回值。后果不是风格问题：**「签名正确但这笔没付成」这条微信真会发的通知没法表达**——它会被当成验签失败整个拒掉，而真实语义应该是"照单收下、ACK、状态不动"。
+
+改开之后：`verifyNotify` 只回答"这请求真是微信发来的吗"，`returnCode` 由 `handleNotify` 单独判。跟着补了一条安全断言 `j28_notifyThatFailsVerification_isRejectedAndNotTreatedAsDuplicate`：验不过必须抛 3001 且单据一个字不改，**绝不能把验签失败的请求当"重复回调"友好 ACK**——那等于告诉伪造者"这条路能试"。真 HTTP 验收 7e 步同样实测过。
+
+### 实现要点与有意取舍
+
+| 取舍 | 做法 | 理由 |
+|---|---|---|
+| **号源只能靠一条带条件的 UPDATE 扣** | `occupySlot`：`SET remaining_slots = remaining_slots - 1 WHERE id=? AND deleted=0 AND remaining_slots>0`，返回 0/1 | "先查 `>0` 再写 `-1`"在并发下必然超卖。而且**号源超卖没有任何索引能兜**：`uk_doctor_date_slot` 管排班唯一、`uk_patient_schedule` 管同一人不重复，都不管"这个班一共放出去几个号"。超卖还是**到医院现场才被发现**的错误（两个人拿同一时段的号去候诊） |
+| 写序是「先扣号、再建单」 | 见 `create` 的方法注释 | 扣不到号就没必要留半张单；先拿 `schedule` 行锁，并发者阻塞在锁上而非 `appointment` 唯一索引间隙上，拿 0 干净回 2003。反序（先 insert 再扣号）两事务互持对方要的锁，死锁概率明显更高 |
+| **幂等也靠受影响行数** | `confirmIfPending`：`WHERE id=? AND status='PENDING_PAYMENT'` | 「先查状态再改」会让两次并发回调同时通过检查，写出**两条 `payment_record`**——而 `payment_record.order_no`（V1:156-167）**没有唯一索引**，数据库不会拦。幂等必须一次判定完成 |
+| 状态跃迁全仓只有一处 | 回调与患者侧都进 `confirmAndBook` | 卡片 458 行红线。T13 退号是另一张卡的另一个跃迁；本卡没给外部代码留下改 `appointment.status` 的口子 |
+| **患者侧支付入口独立**（`POST /user/appointments/{id}/pay`） | 要患者 token + 校验这笔预约属于他，内部与回调共用同一跃迁 | 回调按微信要求必须 permitAll，而 mock 验签无从真验 ⇒ 那是一条无凭据的开放接口。若小程序也走它，等于把"任何人能把别人的待支付单点成已支付"从开发环境搬进真实用户流程。**首版这个敞口实测存在**（`MockWechatPayService` 启动即 WARN，验收 7 步就是故意用匿名请求把它证明出来给人看）；真实通道落地后本入口应下线 |
+| 支付记录用 `appointment.order_no` 做关联 | 不新增 `appointment_id` 列 | `payment_record` 没有指向预约的列，而加一列没有任何规格要求（又是凭空发明 schema）。回调送进来的 `out_trade_no` 本来就是它，同一单号即同一笔业务，语义现成 |
+| `items` 用 ObjectMapper 生成 | 形状照 `seed.sql:192` 的 `[{"name":...,"amountFen":...}]` | V1:160 是 `JSON NOT NULL`，拼字符串遇到引号就被列拒掉，只表现为一次 500，很难往这看 |
+| 行名用「门诊挂号费」，不照抄种子的「消化内科门诊诊查费」 | — | 种子的格式要再跳 doctor→department 才有科室名；更关键的是**诊查费与挂号费是两种费用**，PRD 546 行说的是挂号费，只借用种子的 JSON 形状，不冒充它的语义 |
+| 回调查单用 `selectList` 不用 `selectOne` | 多行时取最早一条 + WARN | `appointment.order_no` 只有普通索引 `idx_order_no`（V1:134），**无唯一约束**，`selectOne` 撞多行会抛 `TooManyResultsException` 把回调炸成 500 |
+| 过去的排班也回 2001（不给"已过期"专码） | `requireBookableSchedule` | 与患者端读口径对齐：T10 的 `CatalogService` 本来就只给 `date >= today` 的排班，患者看不见过去的班。给一个不同的码等于用写侧把读侧屏蔽掉的信息又漏出去 |
+| 软删排班也回 2001 | `selectById` 被 `@TableLogic` 加 `deleted=0` | "T11 停掉的班"和"根本没这条班"在患者视角应当不可区分 |
+| J30 的第二层在 controller 翻译 | `catch (DuplicateKeyException \| ConcurrencyFailureException)` → 2005 | service 是 `@Transactional`，里面 catch 会标 rollback-only → commit 抛 `UnexpectedRollbackException` → 说不清的 500。T07/T08/T11 靠"不套事务"绕开，**本卡不能照抄**（卡片 452 行要求整方法一个事务），所以只能把翻译挪到事务边界外 |
+| 前置查不看 `status` | 只被 `@TableLogic` 过滤软删行 | 于是**已取消的单继续占着"人+班"**。T12 没有任何入口能造 CANCELLED，所以不影响本卡；这条语义用 `j30_cancelledAppointmentStillBlocksRebooking` 显式钉住并**记给 T13**：退号后能不能重约同一班，是那张卡要答的题 |
+| 预约时间按时段推导 | `LocalDateTime.of(schedule.date, TimeSlot.startTimeOf(code))` | 不接受客户端传时间；MORNING 08:30 / 其余 14:00 是照抄 `seed.sql:140` 那条 SQL（含它的 ELSE 分支），EVENING 18:30 见「遗留 TODO」 |
+
+### 跨卡改动两处（按附录 C 第 825 行强制回归被改卡）
+
+| 改了谁的地基 | 为什么非改不可 | 回归证据 |
+|---|---|---|
+| **T04 的 `AuditLogAspect`** | 卡片 453 行第⑨步要求**患者侧**预约也记审计，而原实现只认 `LoginUser`，遇到患者主体返回 null → 抛 401，等于每个挂号请求都炸。扩为同时认 `LoginPatient`；`OperatorType` 多两个取值 `PATIENT`/`SYSTEM` | `AuditLogTest` 3/3、`AuditFieldFillTest` 3/3 PASS，全套 175 例零回归 |
+| **T10 的 `ScheduleItemResponse`** | PRD 80 行要求「确认预约信息」页**提交前**就展示费用，而那页的数据全来自医生详情的排班列表。另开"查价格"端点既无规格来源又会造出第二个价格出口 → 给排班项加 `feeFen`，值走 `AppointmentFeeService` 同一出处 | `CatalogIntegrationTest` **19/19 PASS**（曾担心它断言"字段恰好这几个"，实测没有） |
+
+两处都不是"顺手优化"：没有它们，本卡的⑨和 PRD 80 行就落不了地。
+
+**顺带欠下的一笔语义债**：`audit_log.operator_id` 从此是按 `operator_type` 分流的**多态列**——员工指向 `admin.id`、`PATIENT` 指向 `user.id`、`SYSTEM` 恒为 0（0 在两张表里都不可能真实存在，AUTO_INCREMENT 从 1 起，所以哨兵不会被误认成某个真人）。推导与后果写进 `OperatorType` 的类注释。**消费这条流水的管理端页面（T25–T28）在按 id 关联人名时必须先看 type**，否则会把某个患者的 userId 当成管理员名字。
+
+V1:404 那句列注释（`ADMIN/DOCTOR/NURSE`）与代码取值不再完全相等，这是**有意不追赶**：V1 已被 Flyway 校验，改迁移文件任何一个字节都会让启动失败；列本身是 `VARCHAR(32)`，多两个取值物理上零成本。
+
+### 文件清单（新增 29 个 / 修改 13 个）
+
+**后端主源码（新增 11）**
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `service/AppointmentService.java` | 224 | A 段那一个事务方法 |
+| `service/AppointmentPaymentService.java` | 262 | B 段四步 + 全仓唯一的状态跃迁点 + 流水 + 显式审计 |
+| `service/AppointmentFeeService.java` | 103 | 挂号费唯一出处（类注释就是那份证据链） |
+| `service/WechatPayService.java` | 59 | 支付接缝；两个方法各落在事务哪一侧写在注释里 |
+| `service/MockWechatPayService.java` | 125 | 首版唯一实现，启动 WARN |
+| `controller/AppointmentController.java` | — | `POST /user/appointments`、`POST /{id}/pay` |
+| `controller/WechatNotifyController.java` | — | `POST /payments/wechat/notify`（全仓第一个 permitAll 业务接口） |
+| `dto/AppointmentCreateRequest.java` | 33 | 只有两个字段 |
+| `dto/AppointmentResponse.java` | 67 | 10 字段，逐个对应 PRD 80/81/581 |
+| `dto/PayNotifyRequest.java` | 49 | 形状照微信；**无金额字段** |
+| `dto/PaymentResultResponse.java` | 28 | `{orderNo, status, processed}`，`processed` 让幂等可观测 |
+
+**后端修改（8）**：`mapper/ScheduleMapper.java`（+`occupySlot`）、`mapper/AppointmentMapper.java`（+`confirmIfPending`，本卡把它从空接口变成有手写 SQL）、`enums/TimeSlot.java`（+时段时刻）、`enums/OperatorType.java`（+2 值）、`aspect/AuditLogAspect.java`（认患者主体）、`config/SecurityConfig.java`（只放行回调那一个精确路径）、`service/CatalogService.java` + `dto/ScheduleItemResponse.java`（`feeFen`）、`application.yml`（`wechat.pay.mchid/apiv3key/mock-outcome`）。
+
+**`ErrorCode` 一行未改**——2003 号源已满 / 2004 预约不存在 / 2005 重复预约 / 2006 预约状态错误 / 3001 支付失败全是 T02 建模时预留段里已有的码。
+
+**测试（新增 2）**：`AppointmentIntegrationTest` 948 行 27 例、`AppointmentPayFailureTest` 223 行 2 例。
+
+**小程序（新增 16 = 四页 × 4 文件；修改 4）**：`pages/appointment/notice|patient|confirm|result`，改 `doctor/detail.{js,wxml,wxss}`（加挂号入口 + 费用列）与 `app.json`（追加 4 条路由）。
+
+**未新建迁移**：`appointment` / `payment_record` / `schedule` 三张表 V1 已建齐、`uk_patient_schedule`（V1:130）已在。
+
+### 门禁证据：`mvn -o clean test` 全绿 175 例
+
+```
+[INFO] Tests run: 27, Failures: 0, Errors: 0 -- com.hospital.service.AppointmentIntegrationTest
+[INFO] Tests run:  2, Failures: 0, Errors: 0 -- com.hospital.service.AppointmentPayFailureTest
+[INFO] Tests run: 175, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+19 个测试类逐个点数（相加 = 175，与汇总行对齐，防止"某些类根本没被跑到"）：
+
+| 测试类 | 例数 | | 测试类 | 例数 |
+|---|---|---|---|---|
+| AuditFieldFillTest | 3 | | **AppointmentIntegrationTest** | **27**（本卡新增） |
+| AuditLogTest | 3 | | **AppointmentPayFailureTest** | **2**（本卡新增） |
+| AuthIntegrationTest | 7 | | CaptchaIntegrationTest | 8 |
+| CaptchaServiceTest | 5 | | CatalogIntegrationTest | 19 |
+| FlywayMigrationTest | 1 | | InpatientIntegrationTest | 11 |
+| MoneyMaskingTest | 7 | | PatientIntegrationTest | 17 |
+| PermissionServiceTest | 9 | | ScheduleIntegrationTest | 29 |
+| SeedCheckTest | 4 | | SerialNumberServiceTest | 3 |
+| SeedConstraintTest | 4 | | UserAuthIntegrationTest | 9 |
+| TaskKernelTest | 7 | | | |
+
+基线：T11 收尾 146 例 / 17 类 → 本卡 +29 例 / +2 类 = **175 例 / 19 类**；既有 146 例一例未红，**尽管本卡动了 T04 的切面与 T10 的出参契约**。完整日志 `E:/qdspace/_mp-driver/t12-mvn7.log`。
+
+**第一版 8 红，两类原因**（全记录，因为它们都是会重犯的类型）：
+
+| 类型 | 用例 | 根因 | 修的是谁 |
+|---|---|---|---|
+| **业务 bug** | `j29_create...` | `TimeSlot` 写成 `MORNING(0, 30)`，本意 08:30 → **每个上午的号都约在凌晨** | 改生产代码 `MORNING(8, 30)` |
+| **设计缺陷** | `j28_notifyFailCode...` | `verifyNotify` 把验签与支付结果压成一个返回值，"签名对但没付成"无从表达 | 改生产代码（两个轴拆开）+ 接口注释 |
+| 测试自身 | 3 例 401 | 用了没初始化的 token，发出去成 `Bearer null` | 改测试：先 `ensurePatientToken()` |
+| 测试自身 | 1 例 403≠401 | 匿名请求期望写错（匿名是 401；403 要求"认出来但不许进"） | 改测试为 401，反而更证明放行没写宽 |
+| 测试自身 | 2 例 NPE | 断言里取 `created.get("scheduleId")`，而 `AppointmentResponse` 有意不含该字段 | 改测试：显式用本地 `scheduleId` |
+| 测试自身 | 1 例 Duplicate | 过去排班探针用"三天前"，撞上种子 `CURDATE()-3` 的真实排班 | 改测试：改用两年前，清理加一条边界 |
+| 测试自身 | 编译错 | 中文引号嵌在 Java 字符串里；`andExpect` 被塞了第二个参数（`JsonPathResultMatchers` 没有那个重载） | 改测试 |
+
+**两条可泛化的断言纪律**（T11 那两条的延续）：
+
+1. **时间类断言不要比字符串形状**，解析成 `LocalDateTime` 再比。`spring.jackson.date-format` 只管 `java.util.Date`，`LocalDateTime` 输出带不带秒位取决于 JSR-310 的写入配置——把形状写死等于把序列化细节焊进测试。
+2. **铺数据的每一步也要断言**。并发用例里 4 个 `POST /user/patients` 没查响应码，手机号位数错 → 4 个 id 全是 `None` → 最后表现为"并发测试挂了 400"，错误从铺数据漂到被测步骤，白查一轮。
+
+J27 / J28 / J29 / J30 的 29 个用例分派：
+
+| 组 | 例数 | 用例与钉住的东西 |
+|---|---|---|
+| J27 | 2 | `payFailure_rollsBackAppointmentSlotAndAudit`（预约/号源/审计三者一起还原）、`theSlotIsStillBookableAfterTheFailure`（回滚不干净最典型的症状就是"号悄悄少一格"） |
+| J28 | 7 | `repeatedNotify_processesExactlyOnceAndBooksOnePayment`（推 4 次：流水仍 1 条、审计仍 1 条）、`concurrentDuplicateNotify_writesOnePaymentRecord`（5 并发恰好 1 次推进）、`notifyWithoutToken_isReachableButOtherPaymentPathsAreNot`、`notifyFailCode_leavesAppointmentPendingAndBooksNothing`、`notifyThatFailsVerification_isRejectedAndNotTreatedAsDuplicate`、`notifyUnknownOrderNo_returns2004AndChangesNothing`、`notifyForCancelledAppointment_returns2006NotIdempotentAck` |
+| J29 | 5 | `create_persistsPendingPaymentRowAndDeductsOneSlot`（单号正则 / PENDING_PAYMENT / 5000 分 / 08:30 / 号源 20→19）、`eveningSlotUsesTheExtensionClockTime`（把 18:30 这个补值钉成可见）、`payByPatient_confirmsAndBooksOnce`（含 `items` JSON 形状与金额来源）、`slotFullyBooked_fourthRequestGetsNoSlotsAndWritesNothing`、`concurrentBooking_neverOversells`（4 抢 2 → 2×200 + 2×2003，库里 2 行） |
+| J30 | 5 | `secondBookingRejectedWithoutTakingAnotherSlot`（被拒那次不许多占号）、`differentPatientsOnSameSchedule_areBothAllowed`、`samePatientOnDifferentSchedules_isAllowed`、`uniqueIndexRejectsDuplicateAtDatabaseLevel`（直插必抛且消息含 `uk_patient_schedule`）、`cancelledAppointmentStillBlocksRebooking_isT13sProblemNotOurs` |
+| 归属/校验/隔离 | 6 | `anotherUsersPatient_returns1003AndWritesNothing`、`pay_anotherUsersAppointment_returns2004AndStaysPending`、`ignoresAnyAmountTheClientSends`（禁篡改）、`rejectsMissingFieldsAndBlankBody`、`rejectsUnknownCancelledAndPastSchedules_allAs2001`、`staffAndAnonymousCannotReachUserAppointmentEndpoints` |
+| 审计 | 2 | `create_isAttributedToThePatientAndPaysNoTargetIdYet`、`payRecordsSystemOperatorWithZeroAsTheNonHumanSentinel` |
+| 费用 | 2 | `followsTheDoctorsTitleAndMatchesTheSeedNumbers`（5000 vs 2000，与种子逐笔对齐）、`isAlsoExposedOnTheScheduleListSoThePatientSeesItBeforeSubmitting`（两个接口不得报出两个价） |
+
+**J27 为什么要单独一个测试类**：它需要 `wechat.pay.mock-outcome=failure` 这个配置，而同一 Spring 上下文里所有测试共享配置；JUnit 5 的 `@Nested` 类**不允许自带上下文配置注解**（必须沿用外层），所以只能另开顶层类 + `@TestPropertySource` 起第二个上下文。这个失败注入点用配置而不是 mock bean，是为了不为了测试去改生产服务的装配。
+
+数据自净：两个测试类的 `@AfterEach` 都是叶子到根（流水 → 预约 → 排班 → 就诊人 → 账号 → 审计），再断言六张表计数回到 `@BeforeEach` 基线。SQL 里零中文字面量（GBK 老坑）。
+
+### 真 HTTP 验收：40 步 40/40 PASS
+
+MockMvc 175 例全绿之后仍要真跑一遍，是因为这一卡"能不能上线"恰恰压在四件 MockMvc 证不了的事上：① **回调是系统里第一个 permitAll 的业务接口**，它在真实过滤器链 + `context-path=/api` 下的放行边界只有真请求能验；② 号源不超卖是并发问题，真 Tomcat 线程池才是"两个人同时点"的真实形状；③ 金额只信服务端走的是真实 Jackson 反序列化配置（未知属性怎么处置是容器行为不是我的代码）；④ 中文全程 UTF-8 往返。
+
+脚本 `E:/qdspace/_mp-driver/t12_http.py`（仓库外，只用 Python 标准库 + 线程；员工 token 的验证码答案从 Redis 真读，不猜不硬编码）。关键实测原文：
+
+```
+1    POST /admin/schedules 医生1 2031-10-07 上午 20 号      PASS  scheduleId=41632
+2    GET /user/doctors/1 排班项带 feeFen                    [20, 5000] PASS
+4    POST /user/appointments 创建预约                       orderNo=YY20260928-0116
+4b     状态是 PENDING_PAYMENT（卡片⑤，⑧才由支付推进）         PASS
+4c     单号格式 ^YY\d{8}-\d{4}$                            PASS
+4e     预约时间 = 排班日 + 上午 08:30（seed.sql:140）          2031-10-07T08:30:00 PASS
+4h     号源被原子扣掉一个 20→19                              PASS
+5    POST /user/appointments/{id}/pay                     ['CONFIRMED', True] PASS
+5b     连点两次都是幂等空转                                 PASS
+5c     支付流水只有一条，金额取自己账上的                      [1, 5000] PASS
+5d     流水明细是 V1:160 要求的 JSON 形状                    PASS
+5e     号源不二次扣减（支付不再动 schedule）                   19 PASS
+6    CREATE_APPOINTMENT 审计 operator_type=PATIENT         ['PATIENT','1158'] PASS
+6b   APPOINTMENT_PAID 审计 SYSTEM / operator_id=0 / appointment  PASS
+7    匿名 POST /payments/wechat/notify 能进（permitAll 生效） ['CONFIRMED', True] PASS
+7b     同一笔重复回调 processed=false                       PASS
+7c     重复回调没有多写流水（钱只记一次）                      1 PASS
+7d     签名对但结果 FAIL：状态不回退也不推进                   CONFIRMED PASS
+7e     不带签名 → 3001 支付回调验签未通过（不是重复回调 ACK）     PASS
+7f     查无此单 → 2004                                     PASS
+7g     匿名打 /payments/1 仍 401（放行的是那一个精确路径）      [401,401] PASS
+8    请求体硬塞 feeFen=1 / amountFen=1 → 仍按职称收 2000      2000 PASS   ← 禁篡改
+9    医生角色打 /user/appointments → HTTP 403 + 4001        PASS   ← PRD 41 行
+9b/9c/9d  匿名 401；拿别人就诊人 1003 且 remaining=4；替别人支付 2004
+10a  并发用的 4 个就诊人都建成功                              ids=[482,483,484,485] PASS
+10   4 个并发抢 2 个号 → 恰好 2 成功 2 号满（不超卖）           codes=[200,200,2003,2003] PASS
+10b    库里恰好 2 行、号源归 0                               [2, 0] PASS
+11   自净核查六张表回到基线                                  150/13/4/10/4/0 PASS
+
+合计 40 步，PASS 40，FAIL 0        PY_EXIT=0
+```
+
+跑了两轮才对，两轮各一处红，**都是脚本自己的错，不是业务错**：
+
+| 轮次 | 现象 | 根因 |
+|---|---|---|
+| 第 1 轮 | 跑到 5d 崩：`AttributeError: 'NoneType' object has no attribute 'strip'` | `subprocess.run(text=True)` 按**系统区域编码 GBK** 解码 mysql 输出，而 `items` 里存的是中文「门诊挂号费」→ `UnicodeDecodeError` 让 `stdout` 变成 None。这台机器的 GBK 坑换了个位置咬人（HTTP 侧、SQL 字面量侧都防过，**子进程解码侧没防**）→ 改 `encoding='utf-8'` |
+| 第 2 轮 | 步骤 10 四路全 400、库里 0 行 | 并发用的就诊人手机号拼成 `'1390002%05d'` = 12 位，超 11 位规则被 `@Pattern` 拒，而我没断言铺数据的结果 → 拿 4 个 `None` 去挂号。修完顺手加了 `10a` 一步专门断言"4 个就诊人确实建成功" |
+
+第 1 轮还留下一个副作用：**脚本中断在第 21 步，收尾自净没跑到**，探针数据留在库里。做法是先只读盘点残留（探针排班 1 / 预约 1 / 流水 1 / mock 账号 2 / 就诊人 1 / 审计 2，总数 151/14/5/11/6 对比基线 150/13/4/10/4），确认后按叶子到根清一遍，复核回到 150/13/4/10/4/0 才重跑。**清理语句与脚本第 11 步完全同一套**，不是我临时发明的另一种删法。
+
+### 数据自净（脚本内前后对照 + 独立复核）
+
+| 表 | 基线 | 验收中峰值 | 收尾（脚本自比 = 独立 SQL） | 清理口径 |
+|---|---|---|---|---|
+| `schedule` | 150 | 154（4 条探针） | **150** | `date >= CURDATE() + INTERVAL 4 YEAR`（种子只覆盖 ±7 天） |
+| `appointment` | 13 | 19 | **13** | `schedule_id` 属于探针排班 |
+| `payment_record` | 4 | 6 | **4** | `order_no` 属于那些预约 |
+| `patient` | 10 | 15 | **10** | `user_id` 属于两个 mock 账号 |
+| `user` | 4 | 6 | **4** | `wechat_openid LIKE 'MOCK_OPENID_%'`（种子是 `SEED_OPENID_` 前缀，不会误伤） |
+| `audit_log`（`target_type='appointment'`） | 0 | 8 | **0** | 本卡两个 action |
+
+`payment_record` 从 4 回到 4 是本卡**特有**的一项证据——T07~T11 全都只读这张表，本卡是第一个往财务单据里写行的卡，所以它必须被单列出来数。
+
+### 附录 B · 全局红线检查表（14 条逐条扫）
+
+| # | 红线 | 本卡结论 |
+|---|---|---|
+| 1 | 金额有没有 FLOAT/DOUBLE | **没有**：`appointment.fee_fen` / `payment_record.amount_fen` / `items[].amountFen` 全是 `BIGINT`/整数分；`AppointmentFeeService` 返回 `long` |
+| 2 | 护士视角新接口会不会吐金额 | **不会**：`feeFen` 命中 `MoneyMaskingModifier` 的字段名规则（含 fen），裁剪对 `nurse` 生效；而本卡的两个端点在 `/user/**` 下，员工 token 实测 403（验收 9 步），护士根本进不来。**"该看见的人（患者自己）看得见、不该看见的角色拿不到"两侧都成立** |
+| 3 | 新写操作有没有写 audit_log、同事务吗 | **是**：创建走 `@AuditLog`（患者档），支付推进走显式 `AuditLogService.write`（SYSTEM 档），两者都在各自事务内，业务失败一起回滚。机械证明：`j27_payFailure_rollsBack...` 断言审计行数不变、`j28_notifyUnknownOrderNo` 断言查无此单不写审计 |
+| 4 | 跨表写入是否一个 `@Transactional`、外部调用是否 afterCommit | **跨表是一个事务**（`schedule` 扣号 + `appointment` 建单 + `audit_log`）；**外部调用这一条本卡有已知偏离**：J27 要求预下单在事务内，而真实微信调用按红线应在 afterCommit。首版⑦是本地纯函数所以不冲突，冲突的解法与重述义务写在 `WechatPayService` 接口注释和本文「规格空洞②」 |
+| 5 | 指标口径有没有在别处重算 | **没有**：挂号费只在 `AppointmentFeeService` 一处（`create` 记账与 `CatalogService` 展示共用），实测两个接口报出同一个数（`fee_isAlsoExposedOnTheScheduleList...`） |
+| 6 | 权限判断是否只写在 UI | **不是**：`/user/** → hasRole(patient)` 服务端硬拦；归属靠 `patient.user_id`；回调靠验签。医生信息页"约满不给按钮"只是体验层，**绕过前端直接 POST 会被 2003 拦下**（`slotFullyBooked...` 与验收 10 步都是绕 UI 直打） |
+| 7 | 自动派发的任务是否幂等 | **N/A**：本卡不派任务（`task` 表一行未动）。真正要求幂等的是支付回调，见第 8 条下方 |
+| 8 | 小程序端新接口是否强制注入 userId 归属校验 | **是**：`AppointmentCreateRequest` 无 userId 字段，userId 只从 `SecurityUtils.currentUserId()` 取；就诊人必须属于当前人（否则 1003）；`pay` 入口校验这笔预约属于他（否则 2004）。实测验收 9c/9d 两步 |
+| 9 | 金额用 `<Money>`、列表用 `<DataTable>`、状态用 `<StatusBadge>` | **N/A**：`admin/` 一行未动（后台预约管理页属 T25） |
+| 10 | 列表筛选/搜索/分页是否进 URL | **N/A**：本卡无管理后台列表页；小程序端页面靠 `navigateTo` 传参，地址栏概念不适用 |
+| 11 | 有没有多装 T01 清单外的三方库 | **没有**：`pom.xml` 未改（微信支付用桩实现，不需要 SDK）；小程序端零依赖（也没有 package.json）；验收脚本只用 Python 标准库 |
+| 12 | 有没有实现附录 A「首版不做」的东西 | **没有**：真实微信支付未接（`MockWechatPayService` + 启动 WARN + `verifyNotify` 里配了真 mchid 就抛 `IllegalStateException`）；定时任务取消超时单未做；消息推送未做 |
+| 13 | 本卡测试场景（J 编号）是否逐条真实通过 | **是**：J27 2 例 + J28 7 例 + J29 5 例 + J30 5 例 + 归属/隔离 6 例 + 审计 2 例 + 费用 2 例 = 29 例，`mvn -o clean test` 实跑 **175/175**、`BUILD SUCCESS`，日志 `t12-mvn7.log`；另有真 HTTP **40/40**、UI 验收见「T12-M」节 |
+| 14 | 身份证/手机号是否加密存储 | **本卡不新增加密面**：预约链路只引用 `patient_id`，不落任何身份证/手机号；出参 `patientName` 是姓名（PRD 80 行明确要求展示），`Phone/idCard` 全程不出现 |
+
+**幂等这条单列**（附录 B 反问清单的"重复请求会不会出两份"在本卡的正身）：`payment_record.order_no` 无唯一索引，数据库不会替你拦双写流水，所以幂等只能由"带条件的 UPDATE + 受影响行数"承载。测试 `j28_concurrentDuplicateNotify_writesOnePaymentRecord` 就是这个的回报。
+
+### 小程序四页（PRD §3.3.1 页面流程 75–81 行 / §6.1 第 511 行）
+
+§6.1 第 511 行「门诊服务-预约挂号」列了七页：选择就诊人、选择科室、科室详情、预约须知、医生信息、确认预约信息、预约信息。**其中「选择科室 / 科室详情 / 医生信息」三页 T10 已交付**，本卡补齐另外四页，并在医生信息页上接出挂号入口。
+
+链路顺序两个来源不一致，取的是 §7.1 的流程图为轴：
+
+| 来源 | 顺序 |
+|---|---|
+| PRD §3.3.1 页面清单（75–81） | 选择就诊人 → 选择科室 → 科室详情 → **预约须知** → 医生信息 → 确认 → 成功 |
+| PRD §7.1 流程图（546） | 登录 → 选择就诊人 → 选择科室 → 选医生/时段 → **查看预约须知** → 确认预约信息 → 支付 → 预约成功 |
+
+`tabBar「预约」`在 T10 就落成科室列表（患者的自然入口），所以采用 §7.1：**医生信息页选时段 → 预约须知 → 选择就诊人 → 确认预约信息 → 成功页**。
+
+| 页面 | 打的接口 | 关键取舍 |
+|---|---|---|
+| `pages/appointment/notice` | 无（纯文案） | 须知内容**只写 PRD 84–87 那四条业务规则**，一条都不自补。"提前 30 分钟到院""爽约进黑名单"这类看着像常识的条款本仓库没有任何出处，写上去就是编造。库里也没有"须知"表（`announcement` 是公告表，type 只有 NOTICE/ACTIVITY），后台「预约须知管理」标的是 T27 → 届时本页改读接口 |
+| `pages/appointment/patient` | `GET /user/patients` | ①顶部回显刚选的号（这页夹在选号与确认之间，不带上下文患者会忘了自己选的哪天）；②加载放 **`onShow` 而不是 `onLoad`**：从空态去「添加就诊人」再返回时必须自动看到新人，否则停在过期空列表上；③关系码翻译走 `utils/format.js` 的 `relationLabel`，后端只回码 |
+| `pages/appointment/confirm` | `POST /user/appointments` → `POST /user/appointments/{id}/pay` | ①展示的 `patientName / departmentName / doctorName / date+slot / feeText` 正是 PRD 80 行那五项，其中**费用来自只读排班接口、只是给患者看**，入账金额由服务端另算（实测塞 `feeFen=1` 无效）；②提交后串行调用支付，`submitting` 标志防连点；③失败解除按钮状态并让用户能重试（后端 message 已被 `utils/request.js` toast，页面不重复 toast）；④按钮下方明写「首版为模拟支付通道，不会产生真实扣款」——不能让患者以为钱被划走了 |
+| `pages/appointment/result` | 无（用创建响应跳转带参） | 状态标签四值映射（`STATUS_LABELS`，出处 V1:124）；**二维码不做**（见下表）；单号做大字，报号可用；`switchTab` 回主 tab 而不是 `navigateBack`（后者会一路退回科室列表） |
+| `pages/doctor/detail`（改） | 同上（T10 只读页） | 每条排班多一列挂号费 + 「去挂号」按钮；**约满的行不显示按钮**（点了只会拿 2003，省一次注定失败的请求），但**行依然可见并标"已约满"**——隐藏等于谎报"那天不出诊"（T10 立的规矩，本卡沿用）。T10 那句「所以这里没有预约按钮」的注释随之改写，避免留下与代码相反的说明 |
+
+写完后静态自查抓到一处、修一处：① 新页引用了 `.empty-icon/.empty-title`，但本仓库 wxss 是**页面作用域、没有全局空态类**（每页各自定义），照 `patient/list.wxss` 的原值补齐，不另起一套视觉；② 初版须知页脚我顺手加了「最终解释权归医院所有」——**那是凭空写的法律套话，没有出处，删掉**。
+
+### 本卡有意未做的事（附录 D 第 3 条）
+
+| 未做 | 依据 |
+|---|---|
+| 预约列表 / 详情 / 取消预约 | PRD §9.1 第 610 行那格的后三项属 **T13**；页面在 §6.1 第 527 行的个人中心 |
+| 真实微信支付（预下单、V3 验签、`wx.requestPayment`、ACK 格式） | 附录 A 二期；桩实现 + 启动 WARN + 配了真 mchid 就抛 `IllegalStateException` |
+| 待支付超时自动取消 | 卡片 458 行自己写着"定时任务，二期做" |
+| 成功页的**二维码** | PRD 81 行要求，但：小程序端无 package.json、装不了二维码库（附录 B #11 也不许新增 T01 清单外的库），且**没有任何规格说明码里编码什么内容**。用单号大字替代并在此记账 |
+| 支付回调里的**金额比对** | mock 载荷没有金额；真实通道落地时必须补"回调金额与本地账不一致就拒单"，义务写在 `MockWechatPayService.verifyNotify` 与 `PayNotifyRequest` 注释里 |
+| 通知患者（挂号成功/停诊） | 附录 A 二期消息推送 |
+| 退号后能否重约同一"人+班" | `uk_patient_schedule` 不看 status，已取消的单仍占索引位。本卡不产生 CANCELLED，用 `j30_cancelledAppointmentStillBlocksRebooking` 显式钉住并交给 T13 |
+| 预约表加"超时时间/支付截止"列 | 无规格来源（超时取消本身是二期） |
+| `appointment` 的软删/复活 | 本卡从不软删预约，所以不存在 T08/T11 那种"软删行占唯一索引"的信息缺口 |
+
+### 遗留 TODO（非本卡范围，记账不忘）
+
+- **EVENING 18:30 是补值，无规格依据**：`seed.sql:140` 那条 SQL 只有 `MORNING → 08:30` 和 ELSE → 14:00 两支（种子里根本没有晚间排班），而 `appointment_time NOT NULL` 逼着 T12 给 EVENING 一个时刻。真三段起止时刻属 T25「医生排班管理」（卡片 701 行）。断言 `j29_eveningSlotUsesTheExtensionClockTime` 存在的意义就是将来改它时会红。
+- **真实微信支付落地时要一并做的四件**：预下单挪 afterCommit（并重述 J27）、`verifyNotify` 换真验签、回调比对本地金额、ACK 换成微信要的格式（V3 JSON / V2 XML）。同时下线 `/user/appointments/{id}/pay` 这个模拟入口。
+- `audit_log.operator_id` 变多态列 → T25~T28 的管理端审计页按 id 关联人名前必须先看 `operator_type`。
+- `PaymentResultResponse.processed` 目前只用于测试与回调可观测；真实通道下 ACK 语义要按它决定要不要重推。
+- 老账未清：公开仓库历史里的默认凭据（`JWT_SECRET`、seed `admin123` 的 BCrypt 值、`MYSQL_PASSWORD:-123456`、`crypto.key`）；`HttpMessageNotReadableException` → 400 的小卡；`?? admin/curl` 仍未跟踪。
+- 值得进 `docs/CONVENTIONS.md` 的三条（T11 提的两条之外新增）：**子进程读数据库输出必须 `encoding='utf-8'`**（`text=True` 在这台机器上是 GBK，含中文的列会炸且症状是"stdout 变 None"，看着像 SQL 错）；**时间断言解析后比，不比字符串形状**；**铺数据的每一步也要断言**。
+
+### 当前状态
+
+- 后端 **175 例 / 19 类全绿**（+29 / +2 类，既有 146 例零回归，含 T04 切面与 T10 契约两处跨卡改动的回归）；真 HTTP **40/40 PASS**；六张表计数回到基线（`payment_record` 4→4 是本卡特有的证据）；附录 B 14 条扫完，第 4 条记了一处**已知偏离**（J27 vs afterCommit）。
+- 小程序四页 + 医生信息页入口写完，`node --check` 5 个 JS 全过、`app.json` 与 4 个页面 json 解析全过。
+- **待做**：skill-cli 驱动四页 UI 链路实测（结果补进「T12-M」节，另一次提交）→ 然后才是 🚩 **M1 推送**（推送前扫凭据、推送后 `git ls-remote` 与 `git rev-parse HEAD` 逐字符比对）。UI 验收做完之前不推。
+- 后端进程**在后台运行**（8080，日志 `E:/qdspace/_mp-driver/t12-backend.log`），UI 验收要复用；下次跑 `mvn clean test` 前必须先停它。
+
 
 
 

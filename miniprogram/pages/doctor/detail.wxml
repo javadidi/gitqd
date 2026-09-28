@@ -29,7 +29,8 @@
     <view class="card">
       <view class="section-title">出诊时间</view>
 
-      <!-- T10 只做只读展示：卡片 417 行红线「不做预约（T12）」，所以这里没有预约按钮 -->
+      <!-- T10 这页是纯只读（卡片 417 行红线「不做预约（T12）」）；T12 把预约落地后，
+           每条排班多了挂号费与一个"去挂号"按钮，约满的行不给按钮。 -->
       <view wx:if="{{!loading && !hasSchedule}}" class="doctor-schedule-empty">
         <view class="empty-icon">📅</view>
         <view class="empty-title">近期暂无出诊安排</view>
@@ -50,6 +51,16 @@
         <view class="schedule-slots">
           <text wx:if="{{item.booked}}" class="schedule-slots-booked">已约满</text>
           <text wx:else class="schedule-slots-left">余 {{item.remainingSlots}}/{{item.totalSlots}}</text>
+        </view>
+        <view class="schedule-fee">{{item.feeText}}</view>
+        <view class="schedule-action">
+          <button
+            wx:if="{{!item.booked}}"
+            class="btn-primary schedule-book-btn"
+            size="mini"
+            data-schedule="{{item}}"
+            catchtap="onBook"
+          >去挂号</button>
         </view>
       </view>
     </view>

@@ -74,15 +74,23 @@ public class CatalogService {
     private final DoctorMapper doctorMapper;
     private final TitleMapper titleMapper;
     private final ScheduleMapper scheduleMapper;
+    /**
+     * T12 加：排班条目上要多挂一个「挂号费」，因为 PRD 80 行要求患者<b>提交前</b>就在
+     * 「确认预约信息」页看见费用，而这个页的数据全部来自医生详情里的这条排班列表。
+     * 价格不重复实现，走 {@link AppointmentFeeService} 这个唯一出处。
+     */
+    private final AppointmentFeeService feeService;
 
     public CatalogService(DepartmentMapper departmentMapper,
                           DoctorMapper doctorMapper,
                           TitleMapper titleMapper,
-                          ScheduleMapper scheduleMapper) {
+                          ScheduleMapper scheduleMapper,
+                          AppointmentFeeService feeService) {
         this.departmentMapper = departmentMapper;
         this.doctorMapper = doctorMapper;
         this.titleMapper = titleMapper;
         this.scheduleMapper = scheduleMapper;
+        this.feeService = feeService;
     }
 
     // ============================================================
@@ -161,11 +169,14 @@ public class CatalogService {
         response.setId(doctor.getId());
         response.setName(doctor.getName());
         response.setDepartmentId(doctor.getDepartmentId());
-        response.setTitleName(resolveTitleNames(Set.of(doctor.getId())).get(doctor.getId()));
+        String titleName = resolveTitleNames(Set.of(doctor.getId())).get(doctor.getId());
+        response.setTitleName(titleName);
         response.setIntro(doctor.getIntro());
         response.setSpecialty(doctor.getSpecialty());
         response.setAvatar(doctor.getAvatar());
-        response.setSchedules(listFutureSchedules(doctorId));
+        // 挂号费对这个医生是常数（按职称定），所以查一次摊给每一条排班，而不是每条排班各查一次。
+        response.setSchedules(listFutureSchedules(doctorId,
+                feeService.feeFenOfTitleName(titleName, doctorId)));
 
         // 科室可能已被软删（doctor.department_id 没有外键约束，V1:87 只是普通索引），
         // 此时 departmentName 为 null，配合 non_null 整个键消失，小程序用 '—' 兜。
@@ -268,7 +279,7 @@ public class CatalogService {
      * <p>过去的排班一律不返回：seed 造了 CURDATE()-7..+7 共 15 天 ×5 医生 ×2 时段 =150 行，
      * 不过滤会把一半废数据推给小程序，且对"我要挂号"没有任何意义。
      */
-    private List<ScheduleItemResponse> listFutureSchedules(Long doctorId) {
+    private List<ScheduleItemResponse> listFutureSchedules(Long doctorId, long feeFen) {
         List<Schedule> rows = scheduleMapper.selectList(new LambdaQueryWrapper<Schedule>()
                 .eq(Schedule::getDoctorId, doctorId)
                 .ge(Schedule::getDate, LocalDate.now())
@@ -285,6 +296,7 @@ public class CatalogService {
                     item.setTimeSlot(row.getTimeSlot());
                     item.setTotalSlots(row.getTotalSlots());
                     item.setRemainingSlots(row.getRemainingSlots());
+                    item.setFeeFen(feeFen);
                     return item;
                 })
                 .toList();

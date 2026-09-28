@@ -1,0 +1,41 @@
+<view class="page-apt-confirm">
+  <view class="container">
+    <view class="card">
+      <view class="section-title">确认预约信息</view>
+
+      <view class="cf-row">
+        <text class="cf-label">就诊人</text>
+        <view class="cf-value-row">
+          <text class="cf-value">{{patientName || '—'}}</text>
+          <text wx:if="{{relationLabel}}" class="cf-tag">{{relationLabel}}</text>
+          <text class="cf-change" bindtap="onChangePatient">更换</text>
+        </view>
+      </view>
+
+      <view class="cf-row">
+        <text class="cf-label">科室</text>
+        <text class="cf-value">{{departmentName || '—'}}</text>
+      </view>
+
+      <view class="cf-row">
+        <text class="cf-label">医生</text>
+        <text class="cf-value">{{doctorName || '—'}}</text>
+      </view>
+
+      <view class="cf-row">
+        <text class="cf-label">就诊时间</text>
+        <text class="cf-value">{{date}} {{slotLabel}}</text>
+      </view>
+
+      <view class="cf-row cf-row-fee">
+        <text class="cf-label">挂号费</text>
+        <text class="cf-fee">{{feeText}}</text>
+      </view>
+    </view>
+
+    <button class="btn-primary cf-submit" loading="{{submitting}}" disabled="{{submitting}}" bindtap="onSubmit">
+      确认支付 {{feeText}}
+    </button>
+    <view class="cf-tip">首版为模拟支付通道，不会产生真实扣款</view>
+  </view>
+</view>

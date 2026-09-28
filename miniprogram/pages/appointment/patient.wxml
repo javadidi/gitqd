@@ -1,0 +1,39 @@
+<view class="page-apt-patient">
+  <view class="container">
+    <!-- 顶部把刚选的号回显一遍：这一页夹在「选时段」和「确认」中间，
+         不带着上下文的话，患者走到这里会忘了自己刚选了哪天哪个时段。 -->
+    <view class="card apt-slot-card">
+      <view class="apt-slot-title">{{doctorName || '—'}} · {{departmentName || '—'}}</view>
+      <view class="apt-slot-line">{{date}} {{slotLabel}}</view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">选择就诊人</view>
+
+      <view wx:if="{{!loading && patients.length === 0}}" class="apt-empty">
+        <view class="empty-icon">🧑</view>
+        <view class="empty-title">还没有添加就诊人</view>
+        <view class="text-muted empty-desc">挂号前需要先有一位就诊人，添加完回来继续</view>
+        <button class="btn-outline" bindtap="onAddPatient">去添加就诊人</button>
+      </view>
+
+      <view
+        wx:for="{{patients}}"
+        wx:key="id"
+        class="patient-row"
+        data-patient="{{item}}"
+        bindtap="onPick"
+      >
+        <view class="patient-row-main">
+          <text class="patient-row-name">{{item.name}}</text>
+          <text class="patient-row-relation">{{item.relationLabel}}</text>
+        </view>
+        <view class="patient-row-sub">
+          <text class="text-muted">就诊卡 {{item.cardNo || '—'}}</text>
+          <text class="text-muted">{{item.phone || '未填手机号'}}</text>
+        </view>
+        <view class="patient-row-arrow">›</view>
+      </view>
+    </view>
+  </view>
+</view>

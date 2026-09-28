@@ -1,0 +1,64 @@
+.apt-slot-card {
+  padding: 24rpx;
+}
+
+.apt-slot-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.apt-slot-line {
+  margin-top: 8rpx;
+  font-size: 26rpx;
+  color: #2563eb;
+}
+
+.notice-item {
+  display: flex;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.notice-item:last-of-type {
+  border-bottom: none;
+}
+
+.notice-item-index {
+  width: 40rpx;
+  height: 40rpx;
+  line-height: 40rpx;
+  text-align: center;
+  border-radius: 50%;
+  background: #eff6ff;
+  color: #2563eb;
+  font-size: 22rpx;
+  margin-right: 16rpx;
+  flex-shrink: 0;
+}
+
+.notice-item-body {
+  flex: 1;
+}
+
+.notice-item-title {
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+.notice-item-desc {
+  margin-top: 4rpx;
+  font-size: 24rpx;
+  color: #9ca3af;
+}
+
+.notice-foot {
+  margin-top: 24rpx;
+  font-size: 22rpx;
+  color: #cbd5e1;
+  text-align: center;
+}
+
+.apt-next {
+  margin-top: 32rpx;
+}

@@ -11,7 +11,11 @@
     "pages/inpatient/bind",
     "pages/inpatient/detail",
     "pages/department/detail",
-    "pages/doctor/detail"
+    "pages/doctor/detail",
+    "pages/appointment/notice",
+    "pages/appointment/patient",
+    "pages/appointment/confirm",
+    "pages/appointment/result"
   ],
   "window": {
     "navigationBarBackgroundColor": "#ffffff",

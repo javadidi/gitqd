@@ -46,4 +46,30 @@ public interface ScheduleMapper extends BaseMapper<Schedule> {
     @Update("UPDATE schedule SET deleted = 1, remaining_slots = total_slots "
             + "WHERE id = #{id} AND deleted = 0")
     int cancelById(@Param("id") Long id);
+
+    /**
+     * 占一个号：把剩余号源原子减 1。返回 1 = 抢到，0 = 号已满（或这行已被取消）。
+     *
+     * <p><b>为什么必须是「一条 UPDATE 带 {@code remaining_slots > 0} 条件」</b>：
+     * 卡片 453 行第⑥步「扣减剩余号源」是全局唯一一处号源减少，而 T12 的并发场景就是
+     * 「N 个人同时点同一个时段」。如果写成「先 selectById 判 {@code remaining > 0}，
+     * 再 updateById 写 {@code remaining - 1}」，这两步之间别人也在读同一个值，
+     * 两条 UPDATE 都会写成就剩 0，实际却放出去两个号 —— 超卖。
+     * 把判断挪进 WHERE，读改写就在 InnoDB 的行锁里合成一个原子动作，
+     * 返回值 0/1 直接就是"我抢到了没有"，不需要额外加锁也不需要重试循环。
+     *
+     * <p>前置查（{@code ScheduleService} 与本项目 R2 那套「友好提示 + 数据库兜底」的两层规矩一样）
+     * 仍然留在 service 里，但那只为了把"号已满"提前变成一条不带异常的消息；
+     * <b>正确性只依赖本方法</b>。
+     *
+     * <p>回滚不需要配套的"加回去"语句：调用方是 {@code @Transactional} 的预约事务，
+     * 事务内任何一步失败（含 J27 要求的支付异常）都由数据库回滚把这一下减掉还原。
+     *
+     * <p>{@code deleted = 0} 是手写的：自定义 SQL 不会被 MyBatis-Plus 的 {@code @TableLogic}
+     * 自动追加逻辑删条件（{@link #reviveSoftDeleted} 的注释里有完整推导），必须自己带上，
+     * 否则能给一条已取消的排班占号。
+     */
+    @Update("UPDATE schedule SET remaining_slots = remaining_slots - 1 "
+            + "WHERE id = #{scheduleId} AND deleted = 0 AND remaining_slots > 0")
+    int occupySlot(@Param("scheduleId") Long scheduleId);
 }

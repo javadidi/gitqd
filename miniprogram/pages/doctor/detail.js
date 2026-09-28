@@ -1,6 +1,6 @@
 const app = getApp()
 const { get } = require('../../utils/request')
-const { timeSlotLabel, weekdayLabel } = require('../../utils/format')
+const { timeSlotLabel, weekdayLabel, formatMoney } = require('../../utils/format')
 
 Page({
   data: {
@@ -38,8 +38,12 @@ Page({
         date: item.date,
         weekday: weekdayLabel(item.date),
         slotLabel: timeSlotLabel(item.timeSlot),
+        timeSlot: item.timeSlot,
         totalSlots: item.totalSlots,
         remainingSlots: item.remainingSlots,
+        feeFen: item.feeFen,
+        // 挂号费由后端按职称算好下发（唯一出处 AppointmentFeeService），前端只做元/分换算。
+        feeText: formatMoney(item.feeFen),
         // 约满的排班不隐藏：藏起来等于告诉患者"这位医生那天不出诊"，是误导。
         // 灰掉 + 明写"已约满"，患者能区分"没排班"和"排了但满了"。
         booked: item.remainingSlots === 0,
@@ -64,5 +68,27 @@ Page({
 
   onBackToDepartment() {
     wx.navigateBack()
+  },
+
+  /**
+   * 挂这个号的入口（T12 加）。T10 那版这里是只读的，卡片 417 行红线写着「不做预约（T12）」；
+   * 现在预约归本卡，所以按钮出现在这里，并且**只有有余号的行可点**——
+   * 约满的行依然显示（不隐藏，理由见上面的注释），但按下去只会得到一个 2003，
+   * 所以前端直接不给它绑点击，省一次注定失败的请求。
+   */
+  onBook(e) {
+    const item = e.currentTarget.dataset.schedule
+    const doctor = this.data
+    const query = [
+      `scheduleId=${item.id}`,
+      `doctorId=${doctor.doctorId}`,
+      `doctorName=${encodeURIComponent(doctor.name)}`,
+      `departmentName=${encodeURIComponent(doctor.departmentName)}`,
+      `date=${item.date}`,
+      `timeSlot=${item.timeSlot}`,
+      `slotLabel=${encodeURIComponent(item.slotLabel)}`,
+      `feeFen=${item.feeFen == null ? '' : item.feeFen}`,
+    ].join('&')
+    wx.navigateTo({ url: `/pages/appointment/notice?${query}` })
   },
 })
