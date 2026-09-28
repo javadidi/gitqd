@@ -11,6 +11,7 @@ import com.hospital.entity.Department;
 import com.hospital.entity.Doctor;
 import com.hospital.entity.Schedule;
 import com.hospital.entity.Title;
+import com.hospital.enums.TimeSlot;
 import com.hospital.exception.BizException;
 import com.hospital.mapper.DepartmentMapper;
 import com.hospital.mapper.DoctorMapper;
@@ -68,13 +69,6 @@ import java.util.stream.Collectors;
  */
 @Service
 public class CatalogService {
-
-    /**
-     * 同一天内的时段顺序。出处 V1__init.sql:105 列注释「MORNING/AFTERNOON/EVENING」。
-     * 用显式权重而不是字符串自然序，因为 AFTERNOON &lt; EVENING &lt; MORNING 按字母排是错的。
-     * 未知码值排最后（防御性：将来加了新时段不会让整页 500）。
-     */
-    private static final List<String> SLOT_ORDER = List.of("MORNING", "AFTERNOON", "EVENING");
 
     private final DepartmentMapper departmentMapper;
     private final DoctorMapper doctorMapper;
@@ -282,7 +276,7 @@ public class CatalogService {
         return rows.stream()
                 .sorted((a, b) -> {
                     int byDate = a.getDate().compareTo(b.getDate());
-                    return byDate != 0 ? byDate : Integer.compare(slotWeight(a.getTimeSlot()), slotWeight(b.getTimeSlot()));
+                    return byDate != 0 ? byDate : Integer.compare(TimeSlot.weight(a.getTimeSlot()), TimeSlot.weight(b.getTimeSlot()));
                 })
                 .map(row -> {
                     ScheduleItemResponse item = new ScheduleItemResponse();
@@ -294,11 +288,6 @@ public class CatalogService {
                     return item;
                 })
                 .toList();
-    }
-
-    private static int slotWeight(String timeSlot) {
-        int index = SLOT_ORDER.indexOf(timeSlot);
-        return index < 0 ? SLOT_ORDER.size() : index;
     }
 
     /**

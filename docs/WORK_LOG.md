@@ -3554,6 +3554,318 @@ DELETE FROM user WHERE id > 4 AND wechat_openid LIKE 'MOCK_OPENID_%';   -- user_
 - 本节不改动任何产品代码（新增的 `fn/t10-call.js`、`fn/t10-sched.js`、`fn/t10-reload.js`、`fn/t10-reload2.js` 与 6 个参数文件都在仓库外），故不触发后端门禁与 admin 门禁。
 - T10 至此**全卡收口**：后端 117 例 + 真 HTTP 35 步 + UI 12 项，三层证据齐；库回基线，验收账号已删。下一张卡 T11（排班管理）。
 
+---
+
+## T11 · 排班管理（后台 CRUD，仅后端）（2026-09-28）
+
+### 任务卡原文 → 实现对照
+
+任务卡（《医疗预约挂号小程序-任务卡开发流程-Java版.md》427–444 行）**逐字**对（左列是卡片原句，不是我的转述）：
+
+| 卡片原文（逐字） | 实现 | 落点 |
+|---|---|---|
+| 430「排班列表：展示医生排班（日期/时段/总号源/剩余号源）」 | `GET /admin/schedules` 返回 `ScheduleAdminResponse`，四个展示维度一个不多（`departmentName` 也不要）；三个 query 参数**全部可选**，不传就是全量 | `ScheduleController:68` / `ScheduleService.list` |
+| 431「创建排班：选择医生/日期/时段/号源数量」 | `POST /admin/schedules`，入参恰好这四项，`remainingSlots` 由服务端派生 | `ScheduleController:78` / `ScheduleCreateRequest` |
+| 432「**R2 硬约束**：同一医生同一时段不可重复排班，后端前置查 + 唯一索引兜底」 | 两层照做：service 前置查（友好 2002）+ 数据库 `uk_doctor_date_slot`；controller 把 `DuplicateKeyException`/`ConcurrencyFailureException` 翻译成 2002 | `ScheduleService.create` / `ScheduleController:83` |
+| 433「修改/取消排班：调整号源或取消排班」 | 「修改」= 调整号源 → `PUT /admin/schedules/{id}` **只接受 `totalSlots`**；「取消」→ `DELETE /admin/schedules/{id}?reason=` 软删 + 号源归位 | `ScheduleService.updateSlots` / `ScheduleService.cancel` |
+| **红线** 435「不做预约（T12）」 | `appointment` 表**只被读**（取消守卫里 `selectCount`），一行未写；无下单/扣号源/支付任何代码 | `git status` 可证：本卡 10 个文件里无预约相关改动 |
+| **⚠️ 易混淆** 437「排班取消时，已预约的记录需处理（通知患者/自动退号）」 | **本卡选择「拒绝取消」**：有 `status <> 'CANCELLED'` 的预约 → 新码 `SCHEDULE_HAS_APPOINTMENTS(2007)`。自动退号归 T13、通知患者归附录 A 二期 | 见下方「语义分叉」 |
+| 440「J24 创建排班 → 数据正确」 | 9 个用例（四字段落库、EVENING、system 角色、列表筛选/排序、排除已取消、时段码值、医生不存在、号源数校验、审计行） | `ScheduleIntegrationTest` |
+| 441「J25 重复排班 → 被拒」 | 6 个用例，含**原生 SQL 直插证明唯一索引真在**、**8 线程并发只留一行** | `ScheduleIntegrationTest` |
+| 442「J26 取消排班 → 剩余号源恢复」 | 7 个用例 + 4 个修改号源用例 | `ScheduleIntegrationTest` |
+| **DoD** 444「排班 CRUD 通；唯一索引验证」 | 后端 29 例全绿 + 真 HTTP 66/66 PASS；唯一索引由「原生 SQL 直插必抛 `uk_doctor_date_slot`」和「8 线程只落一行」双重证明 | 见下两节 |
+
+**筛选条件（`doctorId/dateFrom/dateTo`）的来源不是卡片 430 行**，这一点要说清楚，不能把设计选择写成规格原文。它的依据是：① 附录 B 第 808 条把「列表筛选/搜索/分页是否进 URL」列为全局红线，前提就是后台列表要可筛；② 筛选维度取自 430 行那四个展示列里的两个可枚举维度（日期、医生），时段不做筛选（同日三条一起看才有意义）。三者都是**可选参数**、排序口径沿用 T10 已确立的「日期↑ → `TimeSlot.weight`↑」，所以本卡没有引入任何规格外的新概念，但也没有哪一行字明确要求这三个参数——T25 的页面若要别的筛法，改的是页面而不是这套参数的存在性。
+
+
+
+### 范围判定：五个来源对齐，本卡**不含任何 UI**
+
+T08-G 的教训是「只看动词清单会漏范围」，所以开写前把五个来源全摆出来。结论与前几张卡相反——**这次不是漏了页面，而是页面确实不属于本卡**：
+
+| 来源 | 原文 | 含 admin 页面？ | 含批量/停诊/调班？ |
+|---|---|---|---|
+| 任务卡 429–433 | 排班列表 / 创建 / R2 / 修改 / 取消 | 未提 | 未提 |
+| 任务卡 444 DoD | 「排班 CRUD 通；唯一索引验证」 | 未提 | 未提 |
+| **任务卡 701（T25「管理后台 - 预约管理」）** | 「医生排班管理：设置医生排班，**支持批量排班、临时停诊/调班**」+ J56「排班管理 → CRUD 通」 | — | **明确写在 T25** |
+| **`admin/src/App.tsx:37`** | `<PlaceholderPage title="医生排班管理" prd="4.3.4" card="T25" />` | **归 T25**（占位页早就标了归属） | — |
+| PRD §9.2 后台功能清单（**630 行**） | 「预约管理 \| 预约列表/详情、**排班管理（CRUD）**、停诊设置」 | 页面在「预约管理」模块 = **T25** | 停诊设置也在同一行 → T25 |
+| PRD §6.2 后台页面清单（**534 行**） | 「预约管理 \| …、**医生排班**」 | 同上 | — |
+| PRD §4.3.4（**359–361 行**） | 「设置医生排班（日期、时段、号源数量）」+「**支持批量排班**」 | — | 批量排班 → T25 |
+
+**判据是 `App.tsx` 里那张占位卡自己声明的 `card` 归属 + PRD 把页面列在「预约管理」模块下（T25 的标题正是「管理后台 - 预约管理」）**，不是我的推断：后台排班页属于 T25，所以 T11 是**纯后端卡**——零 React 文件、零小程序文件、`SecurityConfig` 一行未改（`/admin/** → 已登录员工` 那条既有规则自动覆盖新路径）。这与 T10 同型：T10 也没动 `admin/`，因为医生管理/科室管理页标的是 T27。批量排班/临时停诊/调班三件事同样**留给 T25**，理由见「本卡有意未做的事」。
+
+### 语义分叉：卡片 437 行「已预约的记录需处理」——处理 ≠ 本卡处理
+
+那句 ⚠️ 提醒给了三种可能做法，选错会做出一张越权的卡：
+
+| | A：拒绝取消（**选定**） | B：级联自动退号 | C：允许取消并通知患者 |
+|---|---|---|---|
+| 行为 | 有活预约 → 2007，让管理员先退号 | 同事务把预约置 `CANCELLED` + 生成退款单 | 置软删 + 发短信/模板消息 |
+| 依赖 | 无 | **退号能力属 T13**；且 T12 卡片 458 行是红线：「除本方法外禁止任何地方更新预约状态」 | **消息推送属附录 A 二期**（786 行） |
+| 本卡可实现？ | 是 | 否——实现了就同时踩 T12 红线和附录 A 禁令 | 否——踩附录 A |
+
+**选定 A**，并把两条 TODO 写进 `ScheduleService.cancel` 的方法注释里注明归属（T13 / 附录 A），不是「忘了做」而是「记账不做」。守卫口径与 `seed.sql:131` 的注释一致：`status <> 'CANCELLED'` 才算占号——种子里本来就有一笔 `CANCELLED` 预约，所以「已退号后允许停诊」是能当场验的真场景（`j26_cancelScheduleWithOnlyCancelledAppointmentSucceeds`），不是设想。
+
+### 实现要点与有意取舍
+
+| 取舍 | 做法 | 理由 |
+|---|---|---|
+| **不加 V4 迁移** | `schedule` 表没有 status 列，取消复用 `deleted=1` | 表里已有 `deleted`，加一列 status 是「同一件事两个真相来源」；且 T12 要读的是号源数不是排班状态 |
+| **软删行必须能复活** | `create` 先手写 `UPDATE … SET deleted=0` 复活，再 `insert` | `uk_doctor_date_slot(doctor_id, date, time_slot)` **不含 `deleted`**，软删行仍占索引位；不复活则该槽位永远排不了班。与 T08-G 就诊人「本人同卡号可复活」同模式 |
+| 复活/取消都写**手写 `@Update`** | `ScheduleMapper.reviveSoftDeleted` / `cancelById` | MyBatis-Plus 因 `@TableLogic` 给所有生成的 SELECT/UPDATE 自动追加 `deleted=0`，`updateById`/`deleteById` **永远碰不到软删行**——这正是 T06 泄漏 11 行 `title` 的同一个坑 |
+| 唯一索引异常在 **controller** 翻译，不在 service | `catch (DuplicateKeyException \| ConcurrencyFailureException)` → 2002 | service 是 `@Transactional`，事务里捕获 DB 异常会把事务标记 rollback-only，方法正常返回时 commit 抛 `UnexpectedRollbackException` → 说不清的 500（T07 `loginByWechat`、T08 `PatientService` 同因）。写操作又**必须**留在这层事务里（审计同事务红线），所以只能把翻译挪到事务边界外 |
+| 连 `ConcurrencyFailureException` 一起 catch | 不只 `DuplicateKeyException` | 不匹配的复活 UPDATE 会在唯一索引上取**间隙锁**，并发下输家可能表现为死锁/等锁超时而不是重复键。两种对管理员是同一句话「这个时段已被别人排了」，都翻成 2002，也让 8 线程并发测试变成确定性的 |
+| 出参**没有 `departmentName`** | `ScheduleAdminResponse` 七个字段 | 卡片 430 行只说「按医生、日期筛选」，PRD §4.3.4 也没有科室列；T25 的页面需要时再加（不做投机字段） |
+| 入参**没有 `remainingSlots`** | 只收 `totalSlots` | 收 `remainingSlots` 就等于允许 `remaining > total` 的非法账本；剩余值是派生的，归 T12 的下单事务写（卡片 453 行第⑥条） |
+| **不校验「不能排过去的日期」** | 只校 `@NotNull` | 没有任何规格来源要求它，且 seed 自己就在 `CURDATE()−7` 造历史排班；凭空加校验违反「宁少勿假」 |
+| `timeSlot` 收**码值**不收中文 | `MORNING/AFTERNOON/EVENING`，非法值 → 400 且消息里回显三个合法码 | 与 T10 的 `ScheduleItemResponse` 一致；中文 label 是展示层的事（`V1:105` 列注释是码值唯一出处） |
+| 时段排序权重收进枚举 | 新建 `TimeSlot.weight()`，`CatalogService` 里原来的私有 `SLOT_ORDER` + `slotWeight` 删掉 | 排序口径原本在 `CatalogService` 里，T11 列表也要用 → 两处就会漂。单一出处，本卡顺手做了这个重构（不是无关清理：新代码直接依赖它） |
+| `reason` 走 **query param 而不是 body** | `@RequestParam(required=false)` | 部分代理/客户端会丢掉 DELETE 的 request body；query param 在真 HTTP 里实测能带着中文 `医生出差` 完整落库 |
+| 修改号源时保住已约数 | `booked = total − remaining`，`newRemaining = newTotal − booked`，`newTotal < booked` → 400 | 直接 `remaining = newTotal` 会把已占的号凭空放出去，等于超卖 |
+| 读操作不写审计 | 只有 create/update/cancel 三个写方法带 `@AuditLog` | PRD 485 行审计范围是「管理后台**操作**」；T10 只读卡零审计的先例一致 |
+| `doctorId` 不存在 → 5001（不是 2001） | `requireDoctor` 与 T10 同码 | `schedule.doctor_id` **没有外键约束**（V1），不校验就会静默造出指向不存在医生的排班；语义是「引用的数据不存在」，与 T10 的科室/医生一致 |
+
+### 文件清单（新增 7 个 / 修改 3 个，共 1947 行）
+
+| 文件 | 行数 | 说明 |
+|---|---|---|
+| `backend/.../enums/TimeSlot.java` | 35 | 新增。时段码值 + 排序权重的单一出处 |
+| `backend/.../dto/ScheduleCreateRequest.java` | 54 | 新增。四字段，注释里记「为什么不收 remainingSlots / 为什么不校过去日期」 |
+| `backend/.../dto/ScheduleUpdateRequest.java` | 32 | 新增。只有 `totalSlots` |
+| `backend/.../dto/ScheduleAdminResponse.java` | 49 | 新增。后台专用，与 T10 的患者端内嵌项分开（那个没有 `doctorId`） |
+| `backend/.../service/ScheduleService.java` | 314 | 新增。list / create（复活分支）/ updateSlots / cancel（守卫） |
+| `backend/.../controller/ScheduleController.java` | 113 | 新增。`@RequestMapping("/admin/schedules")` 四端点 + 唯一索引兜底翻译 |
+| `backend/src/test/.../ScheduleIntegrationTest.java` | 909 | 新增。**29** 个测试 |
+| `backend/.../common/ErrorCode.java` | 58 | 改。新增 `SCHEDULE_HAS_APPOINTMENTS(2007)`，沿用 T02 预留的 2xxx 排班/预约段 |
+| `backend/.../mapper/ScheduleMapper.java` | 49 | 改。两条手写 `@Update`（复活 / 取消） |
+| `backend/.../service/CatalogService.java` | 334 | 改。删私有 `SLOT_ORDER`/`slotWeight`，改用 `TimeSlot.weight` |
+
+**未新建迁移、未改 `SecurityConfig`、未碰 `admin/` 与 `miniprogram/` 任一行。**
+
+### 门禁证据：`mvn clean test` 全绿 146 例
+
+命令与为什么这么跑：
+
+```
+netstat -ano | grep ':8080' | grep LISTENING      # 先确认后台还有谁
+taskkill //PID 65164 //F                          # T10 遗留的后端必须停：mvn clean test 与它抢 8080 且 target/ 正被占用
+cd backend && E:/apache-maven-3.9.16/bin/mvn clean test 2>&1 | tee E:/qdspace/_mp-driver/t11-mvn.log | tail -60
+```
+- `netstat` 在前：不确认 PID 就 `taskkill` 有误杀风险（Git Bash 里 `//PID` 双斜杠才会转成 `/PID`）。
+- `clean`：必须带，理由同 T09（不 clean 可能测到旧字节码）。
+- `2>&1 | tee`：Maven 的中文告警在 GBK 控制台会花，整份日志落到**仓库外**文件里再看；`tail` 只把结论打到终端。
+
+**第一次编译就翻车（1 个编译错）：** `j25_uniqueIndexRejectsDuplicateAtDatabaseLevel` 调了声明 `throws Exception` 的 `createSchedule` 助手，方法签名漏了 `throws Exception` → 「未报告的异常错误」。补上签名。
+
+**编译过了以后 1 failure + 8 errors，两类根因全在测试侧、都不是业务代码：**
+
+| 现象 | 根因 | 修法 |
+|---|---|---|
+| 8 × `ClassCastException: java.lang.Boolean cannot be cast to java.lang.Number` | `schedule.deleted` 是 `TINYINT(1)`，MySQL 驱动默认 `tinyInt1isBit=true`，`SELECT *` 拿回来是 **Boolean** 而不是数字 | 在 `rawSchedule()` 助手里把 `deleted` 统一归一成 0/1，8 处断言一处修好。**这条应进 `docs/CONVENTIONS.md`**：凡 `SELECT *` 取 `tinyint(1)` 列都不能当 Number 取 |
+| `detail 应含 "totalSlots":30` 断言失败，实际 `{"request": {"totalSlots": 30}}` | ① `audit_log.detail` 是 **JSON 列**（V1:409），MySQL 存完再吐会**重新规范化**（冒号后带空格），字面量子串比对必挂；② 切面按「参数名 → 入参」组装，`create(request)` 多一层嵌套 | 改成 `objectMapper.readTree` 按 `$.request.totalSlots` 取值。顺手把 update 那条 `contains("25")` 的**弱断言**（id 或日期里也可能出现 25）换成同一路径断言 |
+
+结果：
+
+| 指标 | 值 |
+|---|---|
+| `MVN_EXIT` | **0** |
+| 汇总行 | `Tests run: 146, Failures: 0, Errors: 0, Skipped: 0` |
+| 构建 | `BUILD SUCCESS` |
+| 本卡测试类 | `Tests run: 29, Failures: 0, Errors: 0 -- ScheduleIntegrationTest`，1.127 s |
+| 完整日志 | `E:/qdspace/_mp-driver/t11-mvn.log` |
+
+17 个测试类逐个点数（相加 = 146，与汇总行对齐，防止「某些类根本没被跑到」）：
+
+| 测试类 | 例数 | | 测试类 | 例数 |
+|---|---|---|---|---|
+| AuditFieldFillTest | 3 | | CaptchaServiceTest | 5 |
+| AuditLogTest | 3 | | **ScheduleIntegrationTest** | **29**（本卡新增） |
+| AuthIntegrationTest | 7 | | CatalogIntegrationTest | 19 |
+| FlywayMigrationTest | 1 | | InpatientIntegrationTest | 11 |
+| MoneyMaskingTest | 7 | | PatientIntegrationTest | 17 |
+| SeedCheckTest | 4 | | PermissionServiceTest | 9 |
+| SeedConstraintTest | 4 | | SerialNumberServiceTest | 3 |
+| CaptchaIntegrationTest | 8 | | UserAuthIntegrationTest | 9 |
+| TaskKernelTest | 7 | | | |
+
+基线对比：T10 收尾是 117 例 / 16 类，本卡 +29 例 / +1 类 = **146 例 / 17 类**，既有用例一例未红（`CatalogService` 的时段排序重构由 T10 自己的 19 例回归守住）。
+
+J24 / J25 / J26 三条场景的 29 个用例分派：
+
+| 编号 | 用例 | 钉住什么 |
+|---|---|---|
+| J24 | `j24_createSchedule_persistsAllFourFields` | 四字段落库 + `date` 出参是 `2031-01-05` 形状 + JSON 里**没有** `deleted`/`createdAt` 键 + 库里原始行核对 |
+| J24 | `j24_createSchedule_acceptsEveningSlot` | `EVENING` 可建（种子里没有的第三个码值） |
+| J24 | `j24_createSchedule_systemRoleCanWrite` | `system` 角色（`permissions=["*"]`）写得住 |
+| J24 | `j24_listSchedules_filtersByDoctorAndDateRange` | 三条件筛选 + 日期↑ → `TimeSlot.weight` ↑ → 医生 id↑ 的三级排序（按 id 断言，不靠反射比字段） |
+| J24 | `j24_listSchedules_excludesCancelled` | `@TableLogic` 让列表自动看不到软删行 |
+| J24 | `j24_createSchedule_invalidTimeSlotRejected` | `NOON` → HTTP **200** + code 400 + 消息回显三个合法码 + 库里 0 行 |
+| J24 | `j24_createSchedule_unknownDoctorRejected` | `doctorId=999999` → 5001（无外键必须自己校） |
+| J24 | `j24_createSchedule_totalSlotsMustBePositive` | `0` 与**缺字段**两种都 HTTP **400** + code 400（Bean Validation 走的是 400，业务错走 200+code，两套形状分开钉） |
+| J24 | `j24_createSchedule_writesAuditRow` | `operator_id=1` / `operator_type=ADMIN` / `target_type=schedule` / **`target_id` 是 NULL**（创建时还没 id，切面只认 `@AuditTarget` 标的 Long）/ detail 里 `$.request.totalSlots=30` |
+| J25 | `j25_duplicateLiveScheduleRejected` | 前置查层：2002 + 原有排班的 `total` 没被覆盖 |
+| J25 | `j25_sameDoctorSameDayDifferentSlotAllowed` | R2 是「医生+日期+时段」三元组，不是「一天一条」 |
+| J25 | `j25_sameSlotDifferentDoctorAllowed` | 同日期同时段不同医生可以并存 |
+| J25 | `j25_conflictWithSeedScheduleRejected` | 拿**种子真排班**撞（医生 1 / `CURDATE()+1` / 上午），种子行数不变 |
+| J25 | `j25_uniqueIndexRejectsDuplicateAtDatabaseLevel` | **DoD 的「唯一索引验证」**：绕开 service 直插 → `assertThrows(DuplicateKeyException.class)`，且 `getMostSpecificCause()` 里必须出现 `uk_doctor_date_slot` |
+| J25 | `j25_concurrentCreates_onlyOneRowSurvives` | 8 线程 `CountDownLatch` 同放飞：**恰好 1 个 200、7 个 2002、库里恰好 1 行**（出现 500 即失败） |
+| J26 | `j26_cancelSchedule_softDeletesAndRestoresSlots` | `deleted=1` + `remaining 6 → 20`（归位到 total）+ 患者端 `availableCount` **当场少一条**（取消要传导到小程序看到的号源） |
+| J26 | `j26_cancelScheduleWithActiveAppointmentRejected` | 种子真预约 `SEED-AP-0006` → 2007 + 排班一行未改 + **审计行数不变（同事务回滚的机械证明）** |
+| J26 | `j26_cancelScheduleWithOnlyCancelledAppointmentSucceeds` | 只有 `CANCELLED` 预约 → 守卫放行（与 `seed.sql:131` 口径一致） |
+| J26 | `j26_cancelledSlotCanBeRescheduledAndRevivesRow` | 重排刚取消的槽位 → **id 不变**、`deleted` 回 0、该槽位全程只有一行 |
+| J26 | `j26_cancelNonexistentScheduleReturns2001` | 不存在的排班 → 2001 |
+| J26 | `j26_cancelTwiceSecondTimeIs2001` | 取消两次不静默成功 |
+| J26 | `j26_cancelSchedule_writesAuditWithTargetAndReason` | `target_id` = 排班 id（`@AuditTarget` 生效）+ `reason=医生出差` 落审计 + 排班表**没有** `reason` 列（`assertFalse(raw.containsKey("reason"))`） |
+| 修改 | `updateSlots_keepsBookedCountAndShiftsRemaining` | 20/6（已约 14）改成 30 → 剩余 **16**，已约数不被抹掉 |
+| 修改 | `updateSlots_belowBookedCountRejected` | 改成 10 < 14 → 400 且消息含「已约 15」，行不变 |
+| 修改 | `updateSlots_nonexistentScheduleReturns2001` | 2001 |
+| 修改 | `updateSlots_writesAuditRow` | detail 按 `$.request.totalSlots` 与 `$.scheduleId` 双路径核对 |
+| 隔离 | `patientToken_cannotReachAdminScheduleEndpoints` | 患者 token 打四个动词 → HTTP **403** + 4001，数据一行未改 |
+| 隔离 | `doctorAndNurse_canReadButCannotWrite` | doctor/nurse：GET 200 放行（PRD 41 行「医生 \| 查看排班信息」），POST/PUT/DELETE → HTTP **200** + 4001（能力为空），且不产审计 |
+| 隔离 | `anonymous_gets401OnEveryEndpoint` | 匿名 → HTTP 401 |
+
+### 真 HTTP 验收：66 步 66/66 PASS
+
+脚本 `E:/qdspace/_mp-driver/t11_http.py`（仓库外，Python 标准库，不装三方包）。**这一层要证的四件事 MockMvc 证不了**：
+
+1. `dateFrom=2031-01-05` 到 `LocalDate` 的绑定要在**真 Tomcat** 的参数解析下才成立（`@DateTimeFormat(iso=ISO.DATE)`，MockMvc 不走真实 servlet 容器）。
+2. `DELETE ?reason=医生出差` 的**中文 query 参数**——percent-encode → Tomcat URI 解码 → 落库，任何一环按 GBK 处理都会变乱码；这是 T10 已踩过、本卡新增的第二个方向（T10 验的是 GET 中文搜索，本卡验的是 DELETE 的中文参数）。
+3. `context-path=/api` 前缀 + `SecurityConfig` 真实过滤器链顺序下的 401/403 响应体形状。
+4. 用**真实 doctor/nurse 账号登录**（`V2__init_admin.sql:12` 四个账号同为 `admin123`）拿到的 token 打写接口 → 4001；MockMvc 是 `JwtUtil` 自签 token，绕过了「密码对不对、角色查不查得到」这两步。
+
+第一版**当场翻车 3 步**（65 步 / PASS 62 / FAIL 3），三条**全部是脚本自己的错，不是业务代码的错**：
+
+| 编号 | 脚本断言 | 实际返回 | 真实原因 |
+|---|---|---|---|
+| 9 | 「`?doctorId=5` 不带日期 → 只有 2 条探针」 | **32 条** | 医生 5（刘一鸣）**本身就有 30 条种子排班**，我按「探针独占」的心智写了期望。32 = 30 种子 + 2 探针，是**正确行为** |
+| 10 | 「今天~+7 天区间 → 空数组」 | 12 条（`id=140` 刘一鸣 2026-09-28 上午 20/19 …） | 那段日期恰恰是种子覆盖区间。返回的每行都落在区间内、都属于医生 5 → 筛选是对的，是我把「排除探针」写成了「排除一切」 |
+| 28.user_total | 基线 5 → 收尾 4 | — | **基线是在 `wechat-login` 之后才采的**，探针用户已算进基线，收尾删掉自然少 1。取样顺序错 |
+
+修法：① 基线移到**任何写操作之前**（连 `wechat-login` 建行都在它之后）；② 第 9/10 步改成断言**筛选语义**而不是行数——「所有行 `doctorId=5` 且两条探针都在」「所有行日期都在区间内且不含任何探针 id」，另加第 10b 步「只给 `dateFrom=探针起点`、不给上界 → 恰好只剩两条探针」，这一条比原来的断言强得多（真正把上界排除也测了）。
+
+重跑 `PY_EXIT=0`，`合计 66 步，PASS 66，FAIL 0`。关键实测值（原文摘自 `E:/qdspace/_mp-driver/t11-http-result.txt`）：
+
+| 编号 | 步骤 | expect | actual | 结果 |
+|---|---|---|---|---|
+| 0a | 真实登录 admin/doctor/nurse | `[admin,doctor,nurse]` | 同 | PASS |
+| 0b | `POST /auth/wechat-login` 患者 token | 200 | 200（userId=**499**） | PASS |
+| 1 | `POST /admin/schedules` 医生5 `2031-10-07` 上午 20 号 | 200 | 200（id=**28978**） | PASS |
+| 1b | 出参字段**恰好 7 个** | 7 键 | 同 | PASS |
+| 1c | `date` 是 `yyyy-MM-dd` 字符串 | `2031-10-07` | `2031-10-07` | PASS |
+| 1f | 库里活行四字段 | `[0,20,20,MORNING]` | 同 | PASS |
+| 2 | 同三元组再建 → R2 第一层 | 2002 | 2002（message=排班冲突） | PASS |
+| 2b | 原有排班未被覆盖成 99 | 20 | 20 | PASS |
+| 3 | `timeSlot=NOON` | `[200,400]` | `[200,400]`（消息回显三码） | PASS |
+| 4/5 | `totalSlots=0` / 缺字段 | `[400,400]` ×2 | 同 | PASS |
+| 6 | `doctorId=999999` | 5001 | 5001 | PASS |
+| 7 | `EVENING` 时段可建 | 200 | 200（id=**28979**） | PASS |
+| 8 | `?doctorId=5&dateFrom&dateTo`（**真 Tomcat 的 LocalDate 绑定**） | 2 | 2（ids=[28978,28979]） | PASS |
+| 8b | 日期↑ + 上午<下午<晚上 | 排序键 | `[MORNING, EVENING]` | PASS |
+| 9 | `?doctorId=5` 不带日期 → 只按医生筛 | `[True,True]` | `[True,True]`（n=32，探针 2 条） | PASS |
+| 10 | 今天~+7 天不带 doctorId → 每行在区间内、不含探针 | `[True,True]` | `[True,True]`（n=60，医生数=5） | PASS |
+| 10b | 只给 `dateFrom`=探针起点 → 恰好剩两条探针 | `[28978,28979]` | 同 | PASS |
+| 11 | PUT `totalSlots 20→30`（已约 14） | `[30,16]` | 同 | PASS |
+| 12 | PUT `totalSlots=10` < 已约 14 | 400 | 400（消息含「已约 14」） | PASS |
+| 12b | 被拒后号源仍 30/16 | `[30,16]` | 同 | PASS |
+| 13 | PUT 不存在 → 2001 | 2001 | 2001 | PASS |
+| 14 | `DELETE ?reason=医生出差`（**中文 query 参数**） | 200 | 200（id=**28980**） | PASS |
+| 14b/14c | 软删 `deleted=1` + 号源归位 20/20 | 同 | 同 | PASS |
+| 14d | 患者端「可约时段数」立刻少一条 | 12 | 12（**13 → 12**） | PASS |
+| 14e | 中文 reason 原样落库（**比 HEX 绕开控制台编码**） | `E58CBBE7949FE587BAE5B7AE` | 同 | PASS |
+| 15 | DELETE 有 CONFIRMED 预约的种子排班 → 2007 | 2007 | 2007（seed_schedule_id=**18**） | PASS |
+| 15b | 消息与 `ErrorCode` 2007 逐字相等 | 该排班已有预约，请先退号后再取消 | 同 | PASS |
+| 15c | 种子排班一行不变（20/19/deleted=0） | 同 | 同 | PASS |
+| 15d | 审计一并回滚（同事务红线） | 1 | 1（1 → 1） | PASS |
+| 16 | 重排刚取消的槽位 → **复活同一行** | 28980 | 28980 | PASS |
+| 16b/16c/16d | 号源按新值覆盖 / `deleted` 回 0 / 全程只有一行 | 同 | 同 | PASS |
+| 17/18 | DELETE 不存在 / 已取消的第二次 | 2001 ×2 | 同 | PASS |
+| 19 | CREATE 审计行 operator/type/target_type | `[1,ADMIN,schedule]` | 同 | PASS |
+| 19b | 创建时 `target_id` 为 NULL | NULL | NULL | PASS |
+| 19c | detail `$.request.totalSlots` | 12 | 12 | PASS |
+| 20 | UPDATE 审计行 `target_id` + detail | `[28978,30]` | 同 | PASS |
+| 21 | **doctor 真 token** GET 列表 → 放行 | 200 | 200（role=doctor） | PASS |
+| 22–24.doctor/nurse | 无 `MANAGE_DOCTOR` → POST/PUT/DELETE | 4001 ×6 | 4001（message=权限不足） | PASS |
+| 25 | 6 次越权尝试都没改数据 | `[30,16,0]` | 同 | PASS |
+| 26.GET–DELETE | **患者 token** 打四动词 | `[403,4001]` ×4 | 同 | PASS |
+| 27.GET–DELETE | **匿名** 打四动词 | `[401,401]` ×4 | 同 | PASS |
+| 28.× 5 | 自净核查五张表回到基线 | 150/0/13/0/4 | 同 | PASS |
+
+14e 单独记一句：`audit_log.reason` 是 `VARCHAR(512) utf8mb4`，验收要证明「中文没被转坏」，最稳的办法是**比字节**而不是比打印结果——`SELECT HEX(reason)` 全是 ASCII，永不受控制台编码影响，与 Python 端 `'医生出差'.encode('utf-8').hex().upper()` 直接对齐。若走 `SELECT reason` 再打印，GBK 控制台会让它对不对都看不出。
+
+### 数据自净（脚本内前后对照 + 独立复核）
+
+脚本第 0 步在任何写操作前采基线，最后一步删净再逐项比对；比对完又用一条**独立只读 SQL** 复核，不依赖脚本自己的话：
+
+```
+MYSQL_PWD=123456 mysql -uroot -N -B hospital -e "SELECT (SELECT COUNT(*) FROM schedule), …"
+→ 150	0	13	0	4      （与脚本基线 150 / 0 / 13 / 0 / 4 逐项一致）
+```
+
+| 表 | 基线 | 验收中（峰值） | 收尾 | 清理语句与口径 |
+|---|---|---|---|---|
+| `schedule` | 150 | 153（3 条探针） | **150** | `DELETE FROM schedule WHERE date >= CURDATE() + INTERVAL 4 YEAR` |
+| `schedule` 中 `deleted=1` | 0 | 1–2（取消分支） | **0** | 同上（探针行一起带走） |
+| `appointment` | 13 | 13 | **13** | 一行未写（本卡不碰预约，只在守卫里**读**它） |
+| `audit_log`（`target_type='schedule'` 且三个 action） | 0 | 6（4 CREATE + 1 UPDATE + 1 CANCEL） | **0** | 按 `action IN ('CREATE_SCHEDULE','UPDATE_SCHEDULE','CANCEL_SCHEDULE')` 删 |
+| `user` | 4 | 5（`userId=499`） | **4** | `DELETE FROM user WHERE id = 499` |
+
+探针排班为什么用「今天 + 5 年」的日期做标记：`schedule` 表**没有 name/remark 列**，没法像 T09 那样往字符串字段里塞 `T11-XX` 前缀来认领自造数据。种子排班只覆盖 `CURDATE()−7 ~ +7`，5 年后的日期不可能与业务数据混淆，收尾一条 `date >= CURDATE() + INTERVAL 4 YEAR` 就能精确扫干净（种子那 150 行永远落在边界内，实测前后计数相等即证没误伤）。
+
+审计行为什么本卡**删掉**而 T04 决定「留」：审计日志按设计只增不减，每张卡的验收都跑就会无界增长；本卡按「`target_type='schedule'` + 那三个 action」精确删，T04/T05 的审计行一例未动。这是**有意的偏离**，写在 `ScheduleIntegrationTest.cleanupAndAssertSeedUntouched` 的注释里。
+
+### 附录 B · 全局红线检查表（14 条逐条扫）
+
+| # | 红线 | 本卡结论 |
+|---|---|---|
+| 1 | 金额有没有 FLOAT/DOUBLE | **N/A**：本卡零金额。`totalSlots`/`remainingSlots` 是号源**个数**，`INT` |
+| 2 | 护士视角新接口会不会吐金额 | **没有**：`ScheduleAdminResponse` 七字段无钱无费；且 doctor/nurse token 实测只读得到排班、写不进去（22–24 六步 4001） |
+| 3 | 新写操作有没有写 audit_log、同事务吗 | **是**：三个写方法各带 `@AuditLog`，`AuditLogAspect`(@Order 100) 在事务外层之内 proceed 前写 → 同事务。机械证明：15d「业务被拒 → 审计行数不变（1 → 1）」、`j26_cancelScheduleWithActiveAppointmentRejected` 同款断言 |
+| 4 | 跨表写入是否一个 `@Transactional`、外部调用是否 afterCommit | **不适用**：本卡只写 `schedule` 一张表；无微信/短信等外部调用。`list` 故意不加 `@Transactional`（纯读套事务只白占连接） |
+| 5 | 指标口径有没有在别处重算 | **没有，且本卡主动消除了一个**：时段排序权重原在 `CatalogService` 私有常量里，现收进 `TimeSlot.weight()`，患者端与后台共用单一出处 |
+| 6 | 权限判断是否只写在 UI | **不是**：读靠 `SecurityConfig` 的 `/admin/**`，写靠 `@RequireCap(MANAGE_DOCTOR)` 在 controller 上硬拦。真 HTTP 22–27 十步 + MockMvc 三例双重证明；本卡**根本没有 UI**，不存在「只在页面藏按钮」的可能 |
+| 7 | 自动派发的任务是否幂等 | **N/A**：本卡不派任务，`task` 一行未动 |
+| 8 | 小程序端新接口是否强制注入 userId 归属校验 | **N/A**：本卡零 `/user/**` 端点。`schedule` 表**没有 `user_id` 列**（全院公共目录），无归属可校 |
+| 9 | 金额用 `<Money>`、列表用 `<DataTable>`、状态用 `<StatusBadge>` | **N/A**：`admin/` 一行未动（后台排班页属 T25） |
+| 10 | 列表筛选/搜索/分页是否进 URL | **本卡为后端能力，页面属 T25**：三个筛选条件全走 query param（`doctorId/dateFrom/dateTo`），天然可序列化进 URL；T25 的 React 页只要把这三个 reflect 到地址栏即可，接口形状不拦这条路 |
+| 11 | 有没有多装 T01 清单外的三方库 | **没有**：`pom.xml` 未改；验收脚本只用 Python 标准库 |
+| 12 | 有没有实现附录 A「首版不做」的东西 | **没有**：取消排班**不发通知**（消息推送属附录 A 786 行，已写 TODO）；无真实微信支付、无多院区 |
+| 13 | 本卡测试场景（J 编号）是否逐条真实通过 | **是**：J24 9 例 + J25 6 例 + J26 7 例 + 修改 4 例 + 隔离 3 例 = 29 例，`mvn clean test` 实跑 146/146、`MVN_EXIT=0`，日志 `E:/qdspace/_mp-driver/t11-mvn.log`；另有真 HTTP 66/66 |
+| 14 | 身份证/手机号是否加密存储 | **N/A**：本卡不碰 `patient`/`user`，`ScheduleAdminResponse` 里最敏感的字段是医生姓名（`doctor.name`，明文列，V1 定义如此） |
+
+### 本卡有意未做的事（附录 D 第 3 条）
+
+| 未做 | 依据 |
+|---|---|
+| 后台排班管理**页面**（React） | 任务卡 701 行（T25「管理后台 - 预约管理」）+ `admin/src/App.tsx:37` 的 `card="T25"` → 归 T25 |
+| 批量排班、临时停诊、调班 | 卡片 701 行与 PRD §4.3.4（361 行「支持批量排班」）/ §9.2（630 行「停诊设置」）都明写在 T25；本卡只做单条 CRUD |
+| 取消排班时**自动退号** | 退号能力属 T13；且 T12 卡片 458 行红线「除本方法外禁止任何地方更新预约状态」→ 本卡改为 2007 拒绝，并留 TODO 在 T13 替换 |
+| 取消排班时**通知患者** | 附录 A 二期（786 行消息推送）→ TODO |
+| 排班的「状态」列（V4 迁移） | 复用 `deleted`；加 status 列会造出两个真相来源 |
+| 过去日期不可排班的校验 | 无规格来源；seed 自己在 `CURDATE()−7` 造历史排班 |
+| 出参加 `departmentName` | 卡片 430 行与 PRD §4.3.4 都未要求，T25 页面需要再加 |
+| 修改医生/日期/时段（真正的「改班」） | 卡片 433 行把「修改排班」定义为**调整号源数量**；改医生/日期就是调班，属 T25。且改 `doctorId` 会绕过 R2 的三重校验 |
+| `remainingSlots` 作为入参 | 收了就允许 `remaining > total` 的非法账本；剩余值是 T12 下单事务的派生结果（卡片 453 行第⑥条） |
+| 分页 | 规格未要求；后台排班页属 T25，等页面真起来再说（不做投机设计） |
+
+### 遗留 TODO（非本卡范围，记账不忘）
+
+- **`tinyint(1)` 的 `Boolean` 陷阱**值得进 `docs/CONVENTIONS.md`：凡 `SELECT *` 取回 `tinyint(1)` 列（`deleted`、各种 `is_*`）都不能当 `Number` 取。本卡 8 个用例一起翻车就是这个原因。
+- **`audit_log.detail` 是 JSON 列**：MySQL 会重新规范化输出（冒号后带空格），断言只能解析后按路径取，不能做字面量子串比对。
+- T13 落地退号后，回来把 `ScheduleService.cancel` 的 2007 守卫**换成**「同事务把这些预约置 CANCELLED + 生成退款记录」（代码里已留 TODO 行）。
+- T25 做后台排班页时，把 `dateFrom/dateTo/doctorId` 三个 query param reflect 进 URL（附录 B 第 10 条）。
+- 公开仓库历史里的默认凭据（`JWT_SECRET`、seed `admin123` 的 BCrypt 值、`MYSQL_PASSWORD:-123456`、`crypto.key` 默认值）——上线前必须轮换。
+- `HttpMessageNotReadableException` 仍落到通用处理，宜单独一张小卡改成 400 + 友好文案。
+- `admin/curl`（0 字节、未跟踪）仍在工作区，提交按显式清单绕开，**不用 `git add -A`**。
+- 仓库外 `E:\qdspace\_mp-driver` 驱动与验收脚本可视情况清理。
+
+### 当前状态
+
+- 后端 **146 例 / 17 类全绿**（+29 例 / +1 类，既有 117 例零回归）；真 HTTP **66/66 PASS**；五张表计数逐项回基线（`schedule` 150、`appointment` 13、`audit_log` 0、`user` 4），另有独立 SQL 复核；附录 B 14 条扫完。
+- T11 是**纯后端卡**：`admin/` 与 `miniprogram/` 一行未动，因此不触发 admin typecheck，也没有 `-M` 小程序 UI 验收项（页面属 T25）。
+- 后端进程**在后台运行**（PID **79244**，8080，context-path `/api`，日志 `E:/qdspace/_mp-driver/t11-backend.log`）；下次跑 `mvn clean test` 前必须先停它。
+- 提交按显式文件清单（10 个文件），**不推送**（下个推送点 T12 / 🚩M1）。下一张卡 T12 · 预约挂号 + 支付。
+
 
 
 

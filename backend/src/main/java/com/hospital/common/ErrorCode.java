@@ -22,6 +22,9 @@ public enum ErrorCode {
     APPOINTMENT_NOT_FOUND(2004, "预约不存在"),
     APPOINTMENT_DUPLICATE(2005, "重复预约"),
     APPOINTMENT_STATUS_ERROR(2006, "预约状态错误"),
+    // T11 取消排班的前置守卫（任务卡 437 行「排班取消时，已预约的记录需处理」）。
+    // 2001-2006 是 T02 建模时预留的排班/预约段，本码沿用同一段，编号接在 2006 后。
+    SCHEDULE_HAS_APPOINTMENTS(2007, "该排班已有预约，请先退号后再取消"),
 
     PAYMENT_FAILED(3001, "支付失败"),
     BALANCE_INSUFFICIENT(3002, "余额不足"),
