@@ -65,6 +65,42 @@ function weekdayLabel(dateStr) {
   return WEEKDAY_LABELS[d.getDay()]
 }
 
+// 预约状态码 → 中文标签。码值出处是后端 V1__init.sql:124 的列注释
+// 「PENDING_PAYMENT/CONFIRMED/CANCELLED/COMPLETED」，后端只回码不回中文（同 TIME_SLOT_LABELS）。
+const APPOINTMENT_STATUS_LABELS = {
+  PENDING_PAYMENT: '待支付',
+  CONFIRMED: '已确认',
+  CANCELLED: '已取消',
+  COMPLETED: '已完成',
+}
+
+function appointmentStatusLabel(status) {
+  return APPOINTMENT_STATUS_LABELS[status] || status || '—'
+}
+
+// 卡片 475 行把预约记录列表分成「待就诊 / 已完成 / 已取消」三组，但状态有四个值：
+// PRD 从没定义"待就诊"等于哪个 status，所以归类放在这里、只归一次，两个页面共用。
+// PENDING_PAYMENT 归进"待就诊"是因为它确实是一次还没发生的就诊；
+// 行内仍显示精确标签"待支付"，不把"还没付钱"这个事实藏掉
+// （超时自动取消是二期，卡片 458 行，所以待支付的单会长期停在这里）。
+const APPOINTMENT_GROUPS = {
+  pending: ['PENDING_PAYMENT', 'CONFIRMED'],
+  completed: ['COMPLETED'],
+  cancelled: ['CANCELLED'],
+}
+
+function appointmentGroup(status) {
+  if (APPOINTMENT_GROUPS.completed.indexOf(status) >= 0) return 'completed'
+  if (APPOINTMENT_GROUPS.cancelled.indexOf(status) >= 0) return 'cancelled'
+  return 'pending'
+}
+
+// 能不能退号：卡片 479 行红线「已就诊不可退号」。
+// 这只是按钮可见性，真正的兜底是后端 cancelIfActive 那条 SQL 的 WHERE。
+function appointmentCancellable(status) {
+  return status === 'PENDING_PAYMENT' || status === 'CONFIRMED'
+}
+
 module.exports = {
   formatMoney,
   formatDate,
@@ -74,4 +110,9 @@ module.exports = {
   TIME_SLOT_LABELS,
   timeSlotLabel,
   weekdayLabel,
+  APPOINTMENT_STATUS_LABELS,
+  appointmentStatusLabel,
+  APPOINTMENT_GROUPS,
+  appointmentGroup,
+  appointmentCancellable,
 }

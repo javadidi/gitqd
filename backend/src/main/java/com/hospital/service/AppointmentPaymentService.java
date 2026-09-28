@@ -58,8 +58,8 @@ public class AppointmentPaymentService {
 
     private static final Logger log = LoggerFactory.getLogger(AppointmentPaymentService.class);
 
-    static final String CONFIRMED = "CONFIRMED";
-    static final String CANCELLED = "CANCELLED";
+    /** 状态字面量不在这里重复定义，统一取自 {@link AppointmentService}（全仓唯一出处）。 */
+    private static final String CONFIRMED = AppointmentService.CONFIRMED;
     private static final String PAY_METHOD = "WECHAT";
     private static final String PAY_SUCCESS = "SUCCESS";
     /**

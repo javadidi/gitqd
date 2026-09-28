@@ -15,7 +15,9 @@
     "pages/appointment/notice",
     "pages/appointment/patient",
     "pages/appointment/confirm",
-    "pages/appointment/result"
+    "pages/appointment/result",
+    "pages/appointment/records",
+    "pages/appointment/record-detail"
   ],
   "window": {
     "navigationBarBackgroundColor": "#ffffff",

@@ -1,0 +1,32 @@
+<view class="page-apt-record-detail">
+  <view class="container">
+    <view wx:if="{{detail}}" class="card">
+      <view class="rd-head">
+        <text class="rd-doctor">{{detail.doctorName}}</text>
+        <text class="rd-status rd-status-{{detail.group}}">{{detail.statusLabel}}</text>
+      </view>
+      <view class="rd-row"><text class="rd-label">就诊人</text><text>{{detail.patientName}}</text></view>
+      <view class="rd-row"><text class="rd-label">科室</text><text>{{detail.departmentName}}</text></view>
+      <view class="rd-row"><text class="rd-label">就诊时间</text><text>{{detail.timeText}}</text></view>
+      <view class="rd-row"><text class="rd-label">挂号费</text><text class="rd-fee">{{detail.feeText}}</text></view>
+      <view class="rd-row"><text class="rd-label">预约单号</text><text class="rd-order">{{detail.orderNo}}</text></view>
+    </view>
+
+    <!-- 已就诊不可退号（卡片 479 行红线）：不给按钮，并说明为什么没有 -->
+    <view wx:if="{{detail && !canCancel && detail.group === 'cancelled'}}" class="rd-note">
+      该预约已取消，无需再次退号
+    </view>
+    <view wx:elif="{{detail && !canCancel}}" class="rd-note">
+      已就诊的预约不可退号
+    </view>
+
+    <button
+      wx:if="{{canCancel}}"
+      class="btn-outline rd-cancel"
+      loading="{{canceling}}"
+      disabled="{{canceling}}"
+      bindtap="onCancel"
+    >退号</button>
+    <button class="btn-primary rd-back" bindtap="onBack">返回记录列表</button>
+  </view>
+</view>

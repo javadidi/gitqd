@@ -74,7 +74,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class AppointmentIntegrationTest {
 
     private static final int PROBE_YEAR_OFFSET = 5;
-    private static final List<String> AUDIT_ACTIONS = List.of("CREATE_APPOINTMENT", "APPOINTMENT_PAID");
+    private static final List<String> AUDIT_ACTIONS =
+            List.of("CREATE_APPOINTMENT", "APPOINTMENT_PAID", "CANCEL_APPOINTMENT");
 
     @Autowired private MockMvc mockMvc;
     @Autowired private ObjectMapper objectMapper;
@@ -100,9 +101,13 @@ class AppointmentIntegrationTest {
 
     @AfterEach
     void cleanupAndAssertNothingLeaks() {
-        // 顺序有关：payment_record / appointment 都靠 patient_id 认，先把它们删了再删就诊人。
+        // 顺序有关：payment_record / refund_record 都靠 appointment 认，先把它们删了再删预约。
+        // refund_record 是 T13 退号才引入的——它和 payment_record 一样是财务单据、无 deleted 列，
+        // 漏清就是每跑一次测试往开发库多留一条假退款单，T26 的退款审核会被这些垃圾污染。
         for (Long patientId : createdPatientIds) {
             jdbcTemplate.update("DELETE FROM payment_record WHERE patient_id = ?", patientId);
+            jdbcTemplate.update("DELETE FROM refund_record WHERE related_type = 'APPOINTMENT' "
+                    + "AND related_id IN (SELECT id FROM appointment WHERE patient_id = ?)", patientId);
             jdbcTemplate.update("DELETE FROM appointment WHERE patient_id = ?", patientId);
             jdbcTemplate.update("DELETE FROM patient WHERE id = ?", patientId);
         }
@@ -514,21 +519,40 @@ class AppointmentIntegrationTest {
     }
 
     @Test
-    void j30_cancelledAppointmentStillBlocksRebooking_isT13sProblemNotOurs() throws Exception {
-        // 前置查不看 status（只被 @TableLogic 过滤掉软删行），唯一索引也不看 status，
-        // 所以已取消的单继续占着这个"人 + 班"。T12 没有任何入口能造出 CANCELLED，
-        // 这条是靠裸 SQL 造的，作用是把"退号后能不能重约同一班"这个问题显式钉给 T13。
+    void j30_rebookingAfterCancellation_revivesTheSameRowWithANewOrderNo() throws Exception {
+        // 这条测试是 T12 的 j30_cancelledAppointmentStillBlocksRebooking 被 T13-C 推翻后拆出来的。
+        // 原来它断言"已取消的行仍占 uk_patient_schedule → 再约拿 2005"，那是把索引行为当成了业务规则；
+        // PRD 86 行说的是"不得同时有两张有效预约"，不是"退号即永久拉黑这个班"。
+        // 覆盖面没有净减：仍持有有效单时再约被拒由
+        // j30_secondBookingRejectedWithoutTakingAnotherSlot 守着。
         long scheduleId = createSchedule(1L, probeDate(16), "MORNING", 5);
         long patientId = createPatient("T12-退", "SELF");
-        Map<?, ?> booked = bookOneOn(patientId, scheduleId);
-        jdbcTemplate.update("UPDATE appointment SET status = 'CANCELLED' WHERE id = ?",
-                ((Number) booked.get("id")).longValue());
+        Map<?, ?> first = bookOneOn(patientId, scheduleId);
+        long firstId = ((Number) first.get("id")).longValue();
+        String firstOrderNo = String.valueOf(first.get("orderNo"));
+        assertEquals(4, remainingSlotsOf(scheduleId), "第一次挂号扣掉一个号");
 
-        mockMvc.perform(post("/user/appointments")
-                        .header("Authorization", "Bearer " + patientToken)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(json(Map.of("patientId", patientId, "scheduleId", scheduleId))))
-                .andExpect(jsonPath("$.code").value(2005));
+        // 退号（T13-A）
+        mockMvc.perform(post("/user/appointments/" + firstId + "/cancel")
+                        .header("Authorization", "Bearer " + ensurePatientToken()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.status").value("CANCELLED"))
+                // 待支付的单从没收到过钱，退号不该生成退款单
+                .andExpect(jsonPath("$.data.refundRequired").value(false));
+        assertEquals(5, remainingSlotsOf(scheduleId), "退号把号还回去");
+
+        // 再约同一个班
+        Map<?, ?> second = expectData(postJson("/user/appointments", patientToken,
+                Map.of("patientId", patientId, "scheduleId", scheduleId)));
+
+        assertEquals(firstId, ((Number) second.get("id")).longValue(),
+                "复活的是原来那一行，id 不变（uk 只留得下一个位置）");
+        org.junit.jupiter.api.Assertions.assertNotEquals(firstOrderNo, second.get("orderNo"),
+                "必须换发新单号：旧单号已被 payment_record / refund_record 引用，复用会让两笔支付撞在同一个号上");
+        assertEquals("PENDING_PAYMENT", second.get("status"));
+        assertEquals(4, remainingSlotsOf(scheduleId), "重约再扣一次号");
+        assertEquals(1, appointmentCountOfSchedule(scheduleId), "全程这个「人+班」只有一行");
     }
 
     // ============================================================
@@ -898,6 +922,7 @@ class AppointmentIntegrationTest {
         snapshot.put("schedule", count("SELECT COUNT(*) FROM schedule"));
         snapshot.put("appointment", count("SELECT COUNT(*) FROM appointment"));
         snapshot.put("payment_record", count("SELECT COUNT(*) FROM payment_record"));
+        snapshot.put("refund_record", count("SELECT COUNT(*) FROM refund_record"));
         snapshot.put("patient", count("SELECT COUNT(*) FROM patient"));
         snapshot.put("user", count("SELECT COUNT(*) FROM `user`"));
         snapshot.put("audit_appointment", count(

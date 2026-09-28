@@ -2,13 +2,17 @@ package com.hospital.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hospital.annotation.AuditLog;
+import com.hospital.annotation.AuditReason;
+import com.hospital.annotation.AuditTarget;
 import com.hospital.common.ErrorCode;
+import com.hospital.dto.AppointmentCancelResponse;
 import com.hospital.dto.AppointmentCreateRequest;
 import com.hospital.dto.AppointmentResponse;
 import com.hospital.entity.Appointment;
 import com.hospital.entity.Department;
 import com.hospital.entity.Doctor;
 import com.hospital.entity.Patient;
+import com.hospital.entity.RefundRecord;
 import com.hospital.entity.Schedule;
 import com.hospital.enums.SerialType;
 import com.hospital.enums.TimeSlot;
@@ -17,6 +21,7 @@ import com.hospital.mapper.AppointmentMapper;
 import com.hospital.mapper.DepartmentMapper;
 import com.hospital.mapper.DoctorMapper;
 import com.hospital.mapper.PatientMapper;
+import com.hospital.mapper.RefundRecordMapper;
 import com.hospital.mapper.ScheduleMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -71,8 +76,19 @@ import java.time.LocalDateTime;
 @Service
 public class AppointmentService {
 
-    /** appointment.status 的四个取值见 V1:124 列注释；本类只写前两个，COMPLETED 属后续卡。 */
+    /**
+     * appointment.status 的四个取值见 V1:124 列注释。<b>全仓唯一出处</b>：
+     * 同包的 {@code AppointmentPaymentService}（支付推进）与 {@code AppointmentQueryService}
+     * 都从这里取，避免同一个状态码在两个类里各写一份字面量、改一处漏一处。
+     */
     static final String PENDING_PAYMENT = "PENDING_PAYMENT";
+    static final String CONFIRMED = "CONFIRMED";
+    static final String CANCELLED = "CANCELLED";
+    static final String COMPLETED = "COMPLETED";
+    /** appointment / refund_record.related_type 的取值见 V1:176 列注释。 */
+    private static final String RELATED_TYPE_APPOINTMENT = "APPOINTMENT";
+    /** 退款单初始状态：V1:179 的 PENDING/APPROVED/REJECTED/COMPLETED 之首。 */
+    private static final String REFUND_PENDING = "PENDING";
 
     private final AppointmentMapper appointmentMapper;
     private final PatientMapper patientMapper;
@@ -82,6 +98,7 @@ public class AppointmentService {
     private final AppointmentFeeService feeService;
     private final SerialNumberService serialNumberService;
     private final WechatPayService wechatPayService;
+    private final RefundRecordMapper refundRecordMapper;
 
     public AppointmentService(AppointmentMapper appointmentMapper,
                               PatientMapper patientMapper,
@@ -90,7 +107,8 @@ public class AppointmentService {
                               DepartmentMapper departmentMapper,
                               AppointmentFeeService feeService,
                               SerialNumberService serialNumberService,
-                              WechatPayService wechatPayService) {
+                              WechatPayService wechatPayService,
+                              RefundRecordMapper refundRecordMapper) {
         this.appointmentMapper = appointmentMapper;
         this.patientMapper = patientMapper;
         this.scheduleMapper = scheduleMapper;
@@ -99,6 +117,7 @@ public class AppointmentService {
         this.feeService = feeService;
         this.serialNumberService = serialNumberService;
         this.wechatPayService = wechatPayService;
+        this.refundRecordMapper = refundRecordMapper;
     }
 
     /**
@@ -117,38 +136,146 @@ public class AppointmentService {
         Schedule schedule = requireBookableSchedule(request.getScheduleId());           // ③
         Doctor doctor = requireDoctor(schedule.getDoctorId());
 
-        // J30 第一层：同一就诊人同一排班已有单（不管什么状态）→ 2005。
-        // 只看活行（@TableLogic 自动带 deleted = 0）；本卡从不软删预约，所以这里不存在
-        // T08/T11 那种"被软删行占着唯一索引"的信息缺口，也就不需要复活分支。
-        Long existing = appointmentMapper.selectCount(new LambdaQueryWrapper<Appointment>()
+        // J30 第一层：同一就诊人同一排班已有<b>有效</b>单 → 2005。
+        // T13-C 起，已取消（CANCELLED）的那条<b>不算占位</b>：它会被复活（见下方分支），
+        // 因为 uk_patient_schedule 不看 status，不复活就等于"退号即永久拉黑这个班"，
+        // 而 PRD 86 行要的是"不得同时有两张有效预约"。
+        Appointment existing = appointmentMapper.selectOne(new LambdaQueryWrapper<Appointment>()
                 .eq(Appointment::getPatientId, patient.getId())
                 .eq(Appointment::getScheduleId, schedule.getId()));
-        if (existing != null && existing > 0) {
+        if (existing != null && !CANCELLED.equals(existing.getStatus())) {
             throw new BizException(ErrorCode.APPOINTMENT_DUPLICATE);
         }
 
         long feeFen = feeService.feeFenOfDoctor(schedule.getDoctorId());                // 费用只从服务端算
+        LocalDateTime appointmentTime = LocalDateTime.of(
+                schedule.getDate(), TimeSlot.startTimeOf(schedule.getTimeSlot()));
 
         if (scheduleMapper.occupySlot(schedule.getId()) == 0) {                         // ⑥
             throw new BizException(ErrorCode.SCHEDULE_NO_SLOTS);
         }
 
-        Appointment appointment = new Appointment();
-        appointment.setOrderNo(serialNumberService.next(SerialType.YY));
-        appointment.setPatientId(patient.getId());
-        appointment.setDoctorId(schedule.getDoctorId());
-        appointment.setScheduleId(schedule.getId());
-        appointment.setStatus(PENDING_PAYMENT);                                          // ⑤
-        appointment.setAppointmentTime(LocalDateTime.of(
-                schedule.getDate(), TimeSlot.startTimeOf(schedule.getTimeSlot())));
-        appointment.setFeeFen(feeFen);
-        // ② 的 doctor_id 取自排班而不是取自入参：见 AppointmentCreateRequest 的注释，
-        // 入参根本没有 doctorId，这条记录上的医生永远与排班一致。
-        appointmentMapper.insert(appointment);                                            // J30 第二层由索引兜，异常外抛
+        String orderNo = serialNumberService.next(SerialType.YY);
+        Appointment appointment;
+        if (existing != null) {
+            // 复活那条已取消的行。返回 0 只可能是并发下它刚被别的请求改走状态 → 按重复预约拒掉，
+            // 此时上面扣的号随事务回滚一起还原。
+            if (appointmentMapper.reviveCancelled(existing.getId(), orderNo, feeFen, appointmentTime) == 0) {
+                throw new BizException(ErrorCode.APPOINTMENT_DUPLICATE);
+            }
+            appointment = appointmentMapper.selectById(existing.getId());
+        } else {
+            appointment = new Appointment();
+            appointment.setOrderNo(orderNo);
+            appointment.setPatientId(patient.getId());
+            appointment.setDoctorId(schedule.getDoctorId());
+            appointment.setScheduleId(schedule.getId());
+            appointment.setStatus(PENDING_PAYMENT);                                      // ⑤
+            appointment.setAppointmentTime(appointmentTime);
+            appointment.setFeeFen(feeFen);
+            // ② 的 doctor_id 取自排班而不是取自入参：见 AppointmentCreateRequest 的注释，
+            // 这条记录上的医生永远与排班一致。
+            appointmentMapper.insert(appointment);                                        // J30 第二层由索引兜，异常外抛
+        }
 
         String prepayId = wechatPayService.prepay(appointment.getOrderNo(), feeFen);      // ⑦ 见类注释：真实通道落地时要挪到 afterCommit
 
         return toResponse(appointment, patient.getName(), doctor, prepayId);
+    }
+
+    /**
+     * 退号（T13 卡片 477 行「取消预约 → 退还挂号费 → 恢复号源 → 审计」，J31/J32）。
+     *
+     * <h2>四步为什么必须在一个事务里</h2>
+     * 少任何一步都会留下错账：只改状态不还号 = 患者名额白白损失；只还号不改状态 =
+     * 一个名额被两个人占（原预约还在，别人又约进来）；改了状态也没还号但漏了退款单 =
+     * 患者付过的钱在医院账上凭空消失。所以这四步要么全成，要么全不回滚不了——
+     * 由 {@code @Transactional} 保证，中途任何一步抛异常都会把已做的部分一起还原。
+     *
+     * <h2>{@code PENDING_PAYMENT} 的单<b>不生成退款单</b>，这是本方法最容易写错的一处</h2>
+     * 卡片 477 行写的是「退还挂号费」，但待支付的那张单<b>从来没有收到过钱</b>——
+     * 给它建一条 {@code refund_record} 等于凭空造出一笔"应退给患者的钱"，
+     * 而 {@code refund_record} 是财务单据（V1:172-183，无 deleted 列，只增不删），
+     * 后台 T26 的费用管理与退款审核都会照单核算，假退款单会直接污染对账。
+     * 所以只有 {@code CONFIRMED}（真付过钱，{@code payment_record} 里有 SUCCESS 流水）才挂退款单。
+     * J31 用的是已支付的单，正好覆盖这条分支；待支付分支另有测试反向钉住。
+     *
+     * <h2>退款只到"挂单"为止</h2>
+     * 卡片 479 行红线「退款需审核（二期做）」，所以本方法只写一条 {@code status=PENDING} 的退款单，
+     * <b>不动 {@code payment_record}、不做任何真实出款</b>（真实微信支付本身也是附录 A 二期）。
+     * 审核动作在后台（T25/T26 的退款审核页），那里才有 {@code reviewer_id} 可填。
+     * 因此接口与 UI 的措辞必须是"退款申请已提交，等待审核"，不能写成"已退款"。
+     */
+    @AuditLog(action = "CANCEL_APPOINTMENT", targetType = "appointment")
+    @Transactional
+    public AppointmentCancelResponse cancel(Long userId, @AuditTarget Long appointmentId,
+                                            @AuditReason String reason) {
+        Appointment appointment = requireOwnedAppointment(userId, appointmentId);
+        String statusBefore = appointment.getStatus();
+
+        // J32：已就诊不可退号（卡片 479 行红线）。先在 Java 层判一次给准确文案，
+        // SQL 层的 WHERE 里还有一道（cancelIfActive 的状态集合不含 COMPLETED），双保险。
+        if (COMPLETED.equals(statusBefore)) {
+            throw new BizException(ErrorCode.APPOINTMENT_STATUS_ERROR.getCode(), "已就诊的预约不可退号");
+        }
+
+        if (appointmentMapper.cancelIfActive(appointmentId) == 0) {
+            // 并发下另一个请求已经取消过了。这里必须拒绝而不是静默成功，
+            // 否则会往下再还一次号、再挂一张退款单。
+            throw new BizException(ErrorCode.APPOINTMENT_STATUS_ERROR.getCode(), "该预约已取消，无需重复退号");
+        }
+
+        if (scheduleMapper.releaseSlot(appointment.getScheduleId()) == 0) {
+            // 号源加不回去（排班已被取消，或数据已经异常到 remaining=total）。
+            // 抛异常让上面那步取消一起回滚——宁可退号失败，也不能留下"取消了但名额没回来"的账。
+            throw new BizException(ErrorCode.SCHEDULE_NOT_FOUND);
+        }
+
+        AppointmentCancelResponse response = new AppointmentCancelResponse();
+        response.setId(appointment.getId());
+        response.setOrderNo(appointment.getOrderNo());
+        response.setStatus("CANCELLED");
+        response.setFeeFen(appointment.getFeeFen());
+
+        if (CONFIRMED.equals(statusBefore)) {
+            RefundRecord refund = new RefundRecord();
+            refund.setOrderNo(serialNumberService.next(SerialType.TK));
+            refund.setRelatedId(appointment.getId());
+            refund.setRelatedType(RELATED_TYPE_APPOINTMENT);
+            // 金额取预约账上的，不接受任何外部传入（T12 那条「支付金额禁篡改」在退款侧的同一半句）
+            refund.setAmountFen(appointment.getFeeFen());
+            refund.setStatus(REFUND_PENDING);
+            refund.setReason(reason);
+            // reviewer_id 留空：审核是二期的事，现在没有任何人审过这笔
+            refundRecordMapper.insert(refund);
+            response.setRefundNo(refund.getOrderNo());
+            response.setRefundFen(refund.getAmountFen());
+            response.setRefundStatus(refund.getStatus());
+            response.setRefundRequired(true);
+        } else {
+            // 待支付：没收过钱，无款可退
+            response.setRefundRequired(false);
+        }
+        return response;
+    }
+
+    /**
+     * 归属校验。{@code appointment} 表<b>没有 user_id 列</b>（V1:118-135），
+     * 所以"这张单是不是你的"必须经 {@code patient.user_id} 跳一次。
+     * 查不到与不是你的同回 2004，不给枚举机会（与 T08/T09/T12 一致）。
+     */
+    private Appointment requireOwnedAppointment(Long userId, Long appointmentId) {
+        Appointment appointment = appointmentMapper.selectById(appointmentId);
+        if (appointment == null) {
+            throw new BizException(ErrorCode.APPOINTMENT_NOT_FOUND);
+        }
+        Long owned = patientMapper.selectCount(new LambdaQueryWrapper<Patient>()
+                .eq(Patient::getId, appointment.getPatientId())
+                .eq(Patient::getUserId, userId));
+        if (owned == null || owned == 0) {
+            throw new BizException(ErrorCode.APPOINTMENT_NOT_FOUND);
+        }
+        return appointment;
     }
 
     /**

@@ -1,0 +1,39 @@
+<view class="page-apt-records">
+  <view class="container">
+    <view class="rec-tabs">
+      <view
+        wx:for="{{tabs}}"
+        wx:key="key"
+        class="rec-tab {{tab === item.key ? 'rec-tab-on' : ''}}"
+        data-key="{{item.key}}"
+        bindtap="onTabTap"
+      >{{item.label}}<text class="rec-tab-count">{{counts[item.key]}}</text></view>
+    </view>
+
+    <view wx:if="{{!loading && rows.length === 0}}" class="rec-empty">
+      <view class="empty-icon">📋</view>
+      <view class="empty-title">{{tab === 'all' ? '还没有预约挂号' : '这个分类下暂无预约'}}</view>
+      <view class="text-muted empty-desc">选好科室和医生就能在线挂号，支付后即刻确认</view>
+      <button class="btn-outline rec-empty-btn" bindtap="onGoAppointment">去预约挂号</button>
+    </view>
+
+    <view
+      wx:for="{{rows}}"
+      wx:key="id"
+      class="card rec-card"
+      data-id="{{item.id}}"
+      bindtap="onOpen"
+    >
+      <view class="rec-head">
+        <text class="rec-doctor">{{item.doctorName}}</text>
+        <text class="rec-status rec-status-{{item.group}}">{{item.statusLabel}}</text>
+      </view>
+      <view class="rec-sub">{{item.departmentName}}</view>
+      <view class="rec-line">就诊人 {{item.patientName}} · {{item.timeText}}</view>
+      <view class="rec-foot">
+        <text class="rec-order">{{item.orderNo}}</text>
+        <text class="rec-fee">{{item.feeText}}</text>
+      </view>
+    </view>
+  </view>
+</view>

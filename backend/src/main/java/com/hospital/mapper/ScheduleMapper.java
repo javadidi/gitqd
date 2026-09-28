@@ -72,4 +72,21 @@ public interface ScheduleMapper extends BaseMapper<Schedule> {
     @Update("UPDATE schedule SET remaining_slots = remaining_slots - 1 "
             + "WHERE id = #{scheduleId} AND deleted = 0 AND remaining_slots > 0")
     int occupySlot(@Param("scheduleId") Long scheduleId);
+
+    /**
+     * 退号还号（T13）：把剩余号源加回一个。返回 1 = 还号成功；0 = 这行已不存在/已取消，或号源已经满了。
+     *
+     * <p>{@code remaining_slots < total_slots} 这个上界条件是<b>必须</b>的，理由和
+     * {@link #occupySlot} 的 {@code remaining_slots > 0} 是对称的：没有它，
+     * 一句写错的 SQL 或一次重复执行就能让"剩余号源"超过"总号源"，
+     * 于是 {@code SeedCheckService} 的号源自检（{@code 号源 = 总 - 未取消预约数}）会失配，
+     * 而患者端看到的是一个个根本不存在的名额。宁可这次还号失败让事务回滚，
+     * 也不能让账本出现 {@code remaining > total} 这种状态。
+     *
+     * <p>调用方只在 {@code AppointmentMapper.cancelIfActive} 返回 1 之后才调本方法，
+     * 所以"重复退号导致重复还号"这条路已经被掐掉；这里的上界是第二道保险。
+     */
+    @Update("UPDATE schedule SET remaining_slots = remaining_slots + 1 "
+            + "WHERE id = #{scheduleId} AND deleted = 0 AND remaining_slots < total_slots")
+    int releaseSlot(@Param("scheduleId") Long scheduleId);
 }

@@ -4188,6 +4188,173 @@ MockMvc 175 例全绿之后仍要真跑一遍，是因为这一卡"能不能上�
 
 ---
 
+## T13 · 预约管理 + 退号（2026-09-28）
+
+### 任务卡原文 → 实现对照（472–485 行，**逐字**引用）
+
+| 卡片原文（逐字） | 实现 | 落点 |
+|---|---|---|
+| 475「预约记录列表：展示历史预约（待就诊/已完成/已取消）」 | `GET /user/appointments`（可选 `status` 参数）；**后端不做分组**，只回 `status` 原码 | `AppointmentQueryService.list` |
+| 476「预约详情：查看预约详细信息」 | `GET /user/appointments/{id}`，归属不过同回 2004 | `AppointmentQueryService.detail` |
+| 477「退号：取消预约 → 退还挂号费 → 恢复号源 → 审计」 | `POST /user/appointments/{id}/cancel`，一个事务里四步齐全 | `AppointmentService.cancel` |
+| **红线** 479「已就诊不可退号」 | Java 层判一次给准确文案，**SQL 层的 WHERE 里再钉一道**（`cancelIfActive` 的状态集合不含 `COMPLETED`） | `AppointmentMapper.cancelIfActive` |
+| **红线** 479「退款需审核（二期做）」 | 只写一条 `status=PENDING` 的退款单，`reviewer_id` 留 NULL，不动 `payment_record`、不出款 | `AppointmentService.cancel` |
+| 482「J31 退号 → 预约状态 CANCELLED + 号源恢复 + 退款记录」 | 4 例（含"待支付不挂退款单"的反向分支） | `AppointmentManageIntegrationTest` |
+| 483「J32 已就诊预约退号 → 被拒」 | 2 例（HTTP 层 + SQL 层各一） | 同上 |
+| **DoD** 485「预约管理通；退号流程通」 | 后端 185 例 + 真 HTTP 47 步 + UI 实测 11 项 | 见下三节 |
+
+### 范围判定：PRD §9.1 那一格的另外三项才刚开始
+
+T12 只做了 §9.1 第 610 行「创建预约、**取消预约、预约列表、预约详情**」的第一项，本卡补齐后三项，端点仍然只有患者侧的 `/user/**` 四个（`GET` 列表、`GET` 详情、`POST` 取消，加上 T12 的创建与支付）。**后台侧的预约管理页不在本卡**：那是 T25「管理后台 - 预约管理」（卡片 697 行「预约挂号列表：展示所有预约记录，支持筛选」）。
+
+### 六个实现判断（每一个都有出处，也每一个都可以被推翻）
+
+| 判断 | 做法 | 依据与反面 |
+|---|---|---|
+| **后端不返回 `group` 字段** | 只回 `status` 原码，"待就诊/已完成/已取消"的归类在前端 `utils/format.js` 一处定义 | 卡片 475 行给的三个词是**展示归类**，而 `appointment.status` 有四个值（V1:124；卡片 331 行的种子要求也明写四态），PRD 从没定义"待就诊"等于哪个码。后端替它猜就等于把规格没写的东西写成事实 |
+| **待支付的单退号不挂退款单** | 只有 `CONFIRMED` 才写 `refund_record`；`PENDING_PAYMENT` 只取消 + 还号 | 卡片 477 行字面写着"退还挂号费"，但待支付那张单**从没收到过钱**，挂一条退款单等于凭空造一笔医院该付的钱；`refund_record` 是无软删的财务单据表（V1:172-183），T26 对账会直接受害。J31 用已支付的单，正好覆盖真分支；反向分支另有测试 |
+| **退号后允许重约同一个班** | 复活那条 `CANCELLED` 行（id 不变）+ **换发新单号** | `uk_patient_schedule` 不看 status ⇒ 不复活就是"退号即永久拉黑这个班"。PRD 86 行原话是「同一就诊人同一时间段**不可重复预约**」，语义是不得同时持两张有效单。沿用 T08-G（就诊人同卡号复活）、T11（取消过的槽位重排）同一模式 |
+| **换发新单号而不是复用** | 复活时 `order_no` 一起换 | 旧单号已被 `payment_record`（靠 order_no 关联）和 `refund_record` 引用；复用会让第二次支付的流水和第一次撞在同一个号上，退款审核分不清哪笔对应哪次支付。真 HTTP 8f 步专门验旧流水仍完整可查 |
+| **还号 SQL 带上界** | `remaining_slots + 1 ... AND remaining_slots < total_slots` | 与 `occupySlot` 的 `> 0` 对称。没有它，一句错 SQL 或一次重复执行就能造出 `remaining > total`，`SeedCheckService` 的号源自检会失配、患者会看到不存在的名额 |
+| **状态常量收进一处** | `PENDING_PAYMENT/CONFIRMED/CANCELLED/COMPLETED` 只在 `AppointmentService` 定义，`AppointmentPaymentService` 引用它 | 写 T13 时发现两个类各有一份 `CONFIRMED` 字面量——同一规则两处出处正是会漂移的那种东西 |
+
+### 端点为什么是 `POST /{id}/cancel` 而不是 `DELETE /{id}`
+
+① 这是状态跃迁，`appointment` 行**必须留着**——`payment_record` 与 `refund_record` 都靠它做账，物理删会留下指向不存在预约的财务单据（V1 无外键，硬删不会报错只会静默留孤儿）；② T11 已经有一次"DELETE 的 body 会被部分代理丢掉"的教训，`reason` 只能走 query param；③ 再挂一个 DELETE 会让人误以为要删数据。
+
+### 跨卡改动与回归
+
+本卡改了 T12 的 `AppointmentService.create`（前置查从"有行就拒"改成"有**有效**行才拒，`CANCELLED` 行走复活分支）与 `AppointmentMapper`/`ScheduleMapper`（各加一条手写 SQL）。**按附录 C 第 825 行重跑了 T12 全部 J 测试**：`AppointmentIntegrationTest` 27 例、`AppointmentPayFailureTest` 2 例全绿，其中一条被本卡推翻前提：
+
+- 原 `j30_cancelledAppointmentStillBlocksRebooking_isT13sProblemNotOurs` 断言"已取消仍占索引 → 再约 2005"。那是把**索引行为当成了业务规则**。按 T08-G 的先例**拆**而不是删：改成 `j30_rebookingAfterCancellation_revivesTheSameRowWithANewOrderNo`（退号 → 再约 → id 不变 + 新单号 + 号源再扣一次 + 仍只有一行），而"仍持有效单时再约被拒"由原有的 `secondBookingRejectedWithoutTakingAnotherSlot` 继续守着，覆盖面没有净减。
+
+### 文件清单（新增 5 个 / 修改 9 个）
+
+**后端新增**：`service/AppointmentQueryService.java`（纯读、单独成类：那边是写路径带事务与审计，混在一起会让人分不清哪个方法在事务里）、`dto/AppointmentSummaryResponse.java`、`dto/AppointmentCancelResponse.java`、`test/.../AppointmentManageIntegrationTest.java`（10 例）。
+**后端修改**：`AppointmentService`（+`cancel`、+复活分支、状态常量收口）、`AppointmentMapper`（+`cancelIfActive`、+`reviveCancelled`）、`ScheduleMapper`（+`releaseSlot`）、`AppointmentController`（+列表/详情/取消三端点，类注释里"只有两个端点"那段随之改写）、`AppointmentPaymentService`（状态常量改为引用）。
+**小程序新增**：`pages/appointment/records.{js,wxml,wxss,json}`、`pages/appointment/record-detail.{js,wxml,wxss,json}`。
+**小程序修改**：`utils/format.js`（+状态标签/分组/可退号三个函数，两页共用单一出处）、`app.json`（+2 路由）、`pages/mine/mine.js`（「预约挂号记录」入口从 `''` 改成真路径）。
+**未新建迁移、未改 `ErrorCode`**（2004/2006 与 3001 够用）、**未改 `SecurityConfig`**（新路径全在 `/user/**` 下）。
+
+### 门禁证据：`mvn -o clean test` 全绿 185 例
+
+```
+[INFO] Tests run: 10, Failures: 0, Errors: 0 -- com.hospital.service.AppointmentManageIntegrationTest
+[INFO] Tests run: 185, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+基线：T12 收尾 175 例 / 19 类 → 本卡 +10 例 / +1 类 = **185 例 / 20 类**，既有 175 例一例未红。日志 `E:/qdspace/_mp-driver/t13-mvn6.log`。
+
+10 个新用例分派：J31 四例（三件套 + 审计 + 重复退号 + 待支付不挂退款单）、J32 两例（HTTP 拒绝 + SQL 层拒改已就诊行）、归属与角色隔离三例、列表/详情断言若干（倒序、字段齐、`status` 筛选、无就诊人回 `[]`、别人的单 2004）。
+
+写这一版测试时自查出四处自己的错，都修了：① 又给 `andExpect` 塞第二个参数当理由（`JsonPathResultMatchers` 没那重载，编译直接挂）——**这是 T12 踩过的同一个坑，第二次犯**；② 写了个"插一行再删掉、只断言删掉了"的废测试，**删掉而不是留着凑数**；③ 中文 `reason` 拼在 MockMvc 的 URL 模板里不会被百分号解码，`%E4%B8%B4…` 原样入库导致两条红——改用 `.param()`，并确认这是**测试通道差异不是业务缺陷**（真 HTTP 那边 Tomcat 正常解码，见下一步 6c）；④ 助手 `cancel()` 已返回 data，我又套一层 `expectData`。
+
+### 真 HTTP 验收：47 步 47/47 PASS
+
+脚本 `E:/qdspace/_mp-driver/t13_http.py`。这一卡必须走真 HTTP 的四件事：中文 `reason` 经 percent-encode → Tomcat 解码 → utf8mb4 落库的完整链路（MockMvc 恰恰不解码）；号源是否真的还回 `schedule`；退款单是否真的只 `PENDING` 且 `reviewer_id` 为 NULL；退号后重约的"复活 + 换单号"是否没把历史账弄丢。
+
+```
+3c  中文姓名/科室/医生原样返回                    ['退号甲','消化内科','张伟']  PASS
+3d  只回码不做分组（响应里没有 group 字段）        CONFIRMED                    PASS
+3f  ?status=PENDING_PAYMENT → 空数组不是 null     []                           PASS
+3g  另一个患者看自己的列表 → []                    []                           PASS
+5   POST /cancel 退号                            ['CANCELLED',True,'PENDING'] PASS
+5b  退款单号格式                                  TK20260928-0008              PASS
+6   号源还回去 4→5                                5                            PASS
+6b  退款单落库 PENDING / 5000 / reviewer_id NULL  PASS
+6c  中文 reason 原样入库（比 HEX）                 E4B8B4E697B6…                PASS
+6e  审计 PATIENT / appointment / target_id=本单 / reason 中文入库              PASS
+7   重复退号 → 2006；号源没被还第二次；退款单没第二条                          PASS
+8   退号后重约同一个班 → 200（不再吃 2005）                                     PASS
+8b  复活的是同一行（id 3179 不变）  8c 换发了新单号（…0268 → …0269）           PASS
+8f  旧单号的支付流水与退款单仍完整可查            [1, 1]                       PASS
+9   已就诊退号 → 2006「已就诊的预约不可退号」；状态/号源/退款单一字未动        PASS
+10  别人退我的号 2004；医生 token 403/4001；匿名 401                           PASS
+11  自净核查七张表回到基线                        150/13/4/2/10/4/0            PASS
+
+合计 47 步，PASS 47，FAIL 0        PY_EXIT=0
+```
+
+三轮才对，三轮的根因都记下来（都不是业务 bug）：
+
+| 轮次 | 现象 | 根因 |
+|---|---|---|
+| 起服务时 | `mvn spring-boot:run` 报 failed，但 `curl` 回 200 | **8080 上躺着 12:15 起的 T12 旧进程**，新代码根本没跑起来。若直接验收，`/cancel` 会 404 却"看起来测过了"。此后每次起后端都加一步"匿名打 `/cancel` 应 401 不是 404"来确认跑的是当前代码 |
+| 第 1 轮 | 3f/3g 期望 `[]` 实得 `{}` | 助手 `dat()` 写成 `.get('data') or {}`，**空列表是 falsy 被吞**。后端返回是对的。补了 `data_of()` 走原样返回 |
+| 第 1 轮 | 基线 `user=5`（应为 4） | 库里有一行 UI 验收残留的 mock 账号（id=1163、`MOCK_OPENID_c6576bdb89…`、nickname NULL）。查清身份后删除，基线回到诚实的 4 |
+
+`refund_record` 基线是 **2** 不是 0——种子本来就带两笔退款记录（`seed.sql` 第 11 节），这项必须按 2 核，按 0 核会误报。
+
+### 附录 B · 全局红线检查表（14 条逐条扫）
+
+| # | 红线 | 本卡结论 |
+|---|---|---|
+| 1 | 金额有没有 FLOAT/DOUBLE | **没有**：读的是 `appointment.fee_fen`、写的是 `refund_record.amount_fen`，都是 `BIGINT` 分 |
+| 2 | 护士视角新接口会不会吐金额 | **N/A**：三个端点都在 `/user/**`，员工 token 实测 403/4001（真 HTTP 10b/10d） |
+| 3 | 新写操作有没有写审计、同事务吗 | **是**：退号带 `@AuditLog(CANCEL_APPOINTMENT)`，`target_id` 指向被退的预约、`reason` 入库；J27 那套"业务失败审计一起回滚"由 `j31` 的重复退号用例侧面证明 |
+| 4 | 跨表写入是否一个事务、外部调用是否 afterCommit | **是**：改状态 + 还号 + 写退款单 + 审计四步一个 `@Transactional`；本卡**没有任何外部调用**（退款不出款，按红线留给审核二期） |
+| 5 | 指标口径有没有在别处重算 | **消除了两处**：状态字面量原本在两个 service 各一份，收进 `AppointmentService`；小程序状态标签/分组/可退号三个函数收进 `utils/format.js` 一处，两页共用 |
+| 6 | 权限判断是否只写在 UI | **不是**：已取消/已就诊的单前端不渲染退号按钮，但绕过去直接 POST 会被 `cancelIfActive` 的 WHERE 拦成 2006（真 HTTP 第 7 步、J32 两处实测） |
+| 7 | 自动派发的任务是否幂等 | **N/A**：本卡不派任务 |
+| 8 | 小程序端新接口是否强制注入 userId 归属校验 | **是**：三个端点的 userId 全部只从 token 取；`appointment` 表没有 `user_id`，所以归属一律经 `patient.user_id` 跳一次，别人的单与没这条单同回 2004 |
+| 9 | 金额用 `<Money>`、列表用 `<DataTable>` | **N/A**：`admin/` 一行未动 |
+| 10 | 列表筛选/搜索/分页是否进 URL | **本卡为后端能力**：`status` 是 query 参数，天然可进 URL；页面在小程序（无地址栏），后台预约列表页属 T25 |
+| 11 | 有没有多装 T01 清单外的三方库 | **没有**：`pom.xml` 未改；小程序零依赖；脚本只用 Python 标准库 |
+| 12 | 有没有实现附录 A「首版不做」的东西 | **没有**：退款审核（卡片 479 行标二期）只挂单不审核；消息推送、真实退款出款一行未碰 |
+| 13 | 本卡 J 编号是否逐条真实通过 | **是**：J31 4 例 + J32 2 例 + 归属隔离 3 例 + 列表详情若干 = 10 例，`mvn -o clean test` 实跑 **185/185**；另有真 HTTP 47 步、UI 实测 11 项 |
+| 14 | 身份证/手机号是否加密存储 | **N/A**：本卡不碰加密列，出参最敏感的是就诊人姓名（PRD 80/293 行要求展示） |
+
+### T13-M · 个人中心两页 UI 自动化验收（skill-cli）
+
+链路：登录 → 走一遍 T12 挂号支付（顺带回归）→ 个人中心真点「预约挂号记录」→ tab 分组 → 详情 → 退号二次确认 → 回列表看归零 → 已取消单只读态 → 库侧对账。分三段脚本 `t13_ui.sh` / `t13_ui2.sh` / `t13_ui3.sh`。
+
+| # | 项 | 实测 | 结果 |
+|---|---|---|---|
+| 1 | 真实点击登录（`.login-btn`） | token present，栈回 `pages/index/index` | ✅ |
+| 2 | T12 链路回归（选号→须知→加就诊人→确认→支付） | 一路到 `pages/appointment/result`，库里 `apt=3180 CONFIRMED` + 支付流水 1 条 | ✅ |
+| 3 | 个人中心入口真点进记录页 | 栈顶 `pages/appointment/records` | ✅ |
+| 4 | 列表首屏与计数 | `counts={pending:1,completed:0,cancelled:0,all:1}`，行 `3180｜张伟｜已确认｜pending｜¥50.00｜2026-09-28 上午` | ✅ |
+| 5 | 三个 tab 切换的条数 | 待就诊 1 → 已取消 0 → 全部 1 | ✅ |
+| 6 | DOM 真实文本 | `.rec-doctor`=「张伟」、`.rec-status`=「已确认」、`.rec-fee`=「¥50.00」 | ✅ |
+| 7 | 详情页可退号态 | `canCancel=true`、`.rd-status`=「已确认」、`.rd-fee`=「¥50.00」 | ✅ |
+| 8 | 退号二次确认弹窗原文 | `{title:确认退号, content:退号后本次预约取消，挂号费将提交退款审核（到账时间以医院审核为准）。确定退号？, confirmText:确认退号, cancelText:再想想}` | ✅ |
+| 9 | 确认后状态与提示 | `.rd-status`=「已取消」、`canCancel=false`、`.rd-note`=「该预约已取消，无需再次退号」、toast=「已退号，退款申请已提交」 | ✅ |
+| 10 | 回列表 `onShow` 是否真重拉 | 待就诊归 0、已取消变 1（不是停在旧数据上） | ✅ |
+| 11 | 库侧对账 + 控制台 | `status=CANCELLED`、退款单 1 条 `PENDING`/`reviewer=NULL`/`amount=5000`、号源回到 `20/20`、`console.error count=0` | ✅ |
+
+**一处要如实记下的差异**：UI 上点退号**没有填原因**（详情页 `doCancel` 只发空 body，`reason` 是选填），所以这条 `refund_record.reason` 是 NULL。带中文原因的入库由真 HTTP 第 6c 步（`HEX()` 比对）证过，两者不冲突，但**UI 目前没有"退号原因"输入框**——PRD 与卡片都没要求，所以没自作主张加，记在这里。
+
+**本轮新增的驱动陷阱**（补进清单）：① `lib.sh` 的 `nav` 只支持 `(action, url)` 两个参数且动作表里没有 `navigateBack`，在 `set -u` 下少传一个参数会让整段脚本当场终止——返回上一页要用 `fn/back.js`；② 菜单入口用 `fn/menutap.js` 时，args 文件同样必须是 JSON **数组**（第四次踩这条，已经写进记忆还是又踩）。
+
+### 本卡有意未做的事（附录 D 第 3 条）
+
+| 未做 | 依据 |
+|---|---|
+| 退款审核与真实出款 | 卡片 479 行明写「退款需审核（二期做）」；审核页属 T25/T26 |
+| 后台预约管理列表（按日期/科室/医生/状态筛全院） | 卡片 697 行属 **T25** |
+| 待支付单超时自动取消 | 卡片 458 行「定时任务，二期做」 |
+| 退号原因输入框 | PRD 与卡片都没要求；后端 `reason` 选填已就绪，加输入框属于凭空发明 |
+| 排班取消时自动退号（替换 T11 的 2007 守卫） | 我上一轮给自己留的 TODO，但 T13「要做什么」里没有它，而「临时停诊/调班」明写在 T25（卡片 701 行）→ **改记给 T25**，T11 的 2007 保持原样 |
+| 预约列表分页 / 搜索 | 规格未要求；当前数据量下不做投机设计 |
+| `appointment` 加"退号时间/退款状态"列 | 无规格来源，`refund_record` + `audit_log` 已能还原全过程 |
+
+### 遗留 TODO
+
+- **T25 落地"临时停诊"时**：要把 `ScheduleService.cancel` 的 2007 守卫换成"同事务把这些预约置 CANCELLED + 生成退款单"，代码里的 TODO 已指向这里。
+- **T26 费用管理**：`refund_record.status` 从 `PENDING` 推进到 `APPROVED/COMPLETED` 的审核动作在那里，届时 `reviewer_id` 才有人填。
+- 老账未清：公开仓历史里的默认凭据、`HttpMessageNotReadableException → 400` 的小卡、`?? admin/curl` 仍未跟踪。
+- 值得进 `docs/CONVENTIONS.md`：**"起后端之后必须验证跑的是当前代码"**——`mvn spring-boot:run` 端口被占时会启动失败，但旧进程仍让 `curl` 回 200，验收会静默测到旧版本。本次的解法是探一个只在新代码里存在的路径（401 = 在跑，404 = 旧进程）。
+
+### 当前状态
+
+- 后端 **185 例 / 20 类全绿**（+10 例 / +1 类，T12 的 29 例含被本卡推翻后重拆的那条全部回归）；真 HTTP **47/47 PASS**；UI 实测 **11 项全过**；附录 B 14 条扫完。
+- 库里没有脏数据：`schedule=150 appointment=13 payment=4 refund=2 patient=10 user=4 audit_apt=0`，被真实点击用掉的种子排班 `id=20` 号源已回到 `20/20`。
+- 小程序两页 + 入口写完，`node --check` 与 JSON 解析全过。
+- **T13 至此全卡收口，P2（T10–T13）四张卡全部完成。** 下一个里程碑推送点是 🚩 M2 = T28。
+- 后端进程仍在后台运行（日志 `E:/qdspace/_mp-driver/t13-backend.log`）；下次跑 `mvn clean test` 前先停，且停完要用"新路径探活"确认起的是新代码。
+
+---
+
 ## T12-M · 预约挂号四页 UI 自动化验收（2026-09-28）
 
 ### 通道与前置

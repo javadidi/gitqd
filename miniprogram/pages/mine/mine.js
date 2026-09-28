@@ -21,7 +21,7 @@ Page({
         { label: '住院人管理', icon: '🏥', url: '/pages/inpatient/list' },
       ]},
       { group: '预约记录', items: [
-        { label: '预约挂号记录', icon: '📋', url: '' },
+        { label: '预约挂号记录', icon: '📋', url: '/pages/appointment/records' },
         { label: '核酸预约记录', icon: '🧪', url: '' },
         { label: '体检预约记录', icon: '❤️', url: '' },
       ]},

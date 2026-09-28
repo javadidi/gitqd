@@ -1,0 +1,124 @@
+.rec-tabs {
+  display: flex;
+  background: #ffffff;
+  border-radius: 12rpx;
+  margin-bottom: 20rpx;
+  overflow: hidden;
+}
+
+.rec-tab {
+  flex: 1;
+  text-align: center;
+  padding: 22rpx 0;
+  font-size: 26rpx;
+  color: #6b7280;
+}
+
+.rec-tab-on {
+  color: #2563eb;
+  font-weight: 600;
+  border-bottom: 4rpx solid #2563eb;
+  background: #eff6ff;
+}
+
+.rec-tab-count {
+  margin-left: 6rpx;
+  font-size: 22rpx;
+  color: #9ca3af;
+}
+
+.rec-card {
+  padding: 24rpx;
+}
+
+.rec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rec-doctor {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+/* 三色对应任务卡 92-96 行的状态色语义：信息=待就诊、灰=已完成、危险=已取消 */
+.rec-status {
+  font-size: 22rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+}
+
+.rec-status-pending {
+  color: #0284c7;
+  background: #e0f2fe;
+}
+
+.rec-status-completed {
+  color: #71717a;
+  background: #f4f4f5;
+}
+
+.rec-status-cancelled {
+  color: #e11d48;
+  background: #ffe4e6;
+}
+
+.rec-sub {
+  margin-top: 6rpx;
+  font-size: 26rpx;
+  color: #2563eb;
+}
+
+.rec-line {
+  margin-top: 10rpx;
+  font-size: 26rpx;
+  color: #4b5563;
+}
+
+.rec-foot {
+  margin-top: 16rpx;
+  padding-top: 16rpx;
+  border-top: 1rpx solid #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rec-order {
+  font-size: 22rpx;
+  color: #9ca3af;
+}
+
+.rec-fee {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.rec-empty {
+  padding: 80rpx 0;
+  text-align: center;
+}
+
+.rec-empty .empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.rec-empty .empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.rec-empty .empty-desc {
+  font-size: 24rpx;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.rec-empty-btn {
+  width: 60%;
+}
