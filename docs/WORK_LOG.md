@@ -4184,7 +4184,60 @@ MockMvc 175 例全绿之后仍要真跑一遍，是因为这一卡"能不能上�
 - 后端 **175 例 / 19 类全绿**（+29 / +2 类，既有 146 例零回归，含 T04 切面与 T10 契约两处跨卡改动的回归）；真 HTTP **40/40 PASS**；六张表计数回到基线（`payment_record` 4→4 是本卡特有的证据）；附录 B 14 条扫完，第 4 条记了一处**已知偏离**（J27 vs afterCommit）。
 - 小程序四页 + 医生信息页入口写完，`node --check` 5 个 JS 全过、`app.json` 与 4 个页面 json 解析全过。
 - **待做**：skill-cli 驱动四页 UI 链路实测（结果补进「T12-M」节，另一次提交）→ 然后才是 🚩 **M1 推送**（推送前扫凭据、推送后 `git ls-remote` 与 `git rev-parse HEAD` 逐字符比对）。UI 验收做完之前不推。
-- 后端进程**在后台运行**（8080，日志 `E:/qdspace/_mp-driver/t12-backend.log`），UI 验收要复用；下次跑 `mvn clean test` 前必须先停它。
+- 后端进程**已停**（8080 无监听）。下次真 HTTP / UI 验收都要重新启动它：`cd backend && mvn -o spring-boot:run > E:/qdspace/_mp-driver/t12-backend.log 2>&1`（后台），起完探 `http://127.0.0.1:8080/api/auth/captcha` 拿 200 才算就绪；跑 `mvn clean test` 前也记得先停（`clean` 会被活进程锁住 `target/`）。
+
+---
+
+## T12-M · 预约挂号四页 UI 自动化验收（2026-09-28）
+
+### 通道与前置
+
+依旧走 skill-cli（`wechatide -c qoder`，驱动代码在仓库外 `E:\qdspace\_mp-driver`，`miniprogram/` 零改动）。本轮新写 `fn/t12-page.js`（读栈顶页的预约相关 data）、`fn/t12-count.js` + `fn/t12-read.js`（节点计数，见陷阱 14）、`fn/t12-err.js` + `fn/t12-errs.js`（`console.error` 挂钩计数）、`fn/t12-logout.js`（清 `globalData.token` + storage）、三个批次脚本 `t12_ui_1.sh` / `t12_ui_2.sh` / `t12_ui_3.sh`（+ `3b` 补测）。
+
+登录必须走真实点击：`el tap .login-btn` → `wx.login` → mock 后端建账号，token 解出 `sub=1162`、`openid=MOCK_OPENID_ddc00fba…`；因为没绑手机号会弹「绑定手机号 / 去绑定 / 稍后再说」，用录制器 `cfg '[{"passthrough":false,"answer":{"confirm":false}}]'` 让它自动选「稍后再说」（挂号不需要手机号）。
+
+### 12 项结果：11 项确凿通过，1 项降级
+
+| # | 项 | 手段 | 实测 | 结果 |
+|---|---|---|---|---|
+| 1 | 医生页出现挂号入口与费用 | 真点 `el tap .schedule-book-btn` + `el text .schedule-fee` | 跳转成功进 `pages/appointment/notice`；`.schedule-fee`=「¥50.00」 | ✅ |
+| 2 | 约满行**不显示按钮但仍可见** | 数据层 + DOM 文本 + 透明度 | 探针满号行渲染为 `2031-09-28 周日 上午 BOOKED ¥50.00`（行没被藏）；`.schedule-slots-booked`=「已约满」；`.schedule-row-booked` `opacity=0.45` | ⚠️ 部分（见陷阱 14） |
+| 3 | 须知页四条规则 + 上下文回显 | `evalfn t12-page` + `el text` | `rules` 四条齐；`.apt-slot-title`=「张伟 · 消化内科」、`.apt-slot-line`=「2026-09-28 上午」、`.notice-item-title`=「同一就诊人同一时段只能挂一个号」、`.notice-item-desc`=「重复提交会被拒绝，不会多占号源」 | ✅ |
+| 4 | 无就诊人命中空态且四元素齐 | `el text` ×3 | `.empty-title`=「还没有添加就诊人」、`.empty-desc`=「挂号前需要先有一位就诊人，添加完回来继续」、`.apt-add-btn`=「去添加就诊人」 | ✅ |
+| 5 | 空态按钮真跳添加页 | 真点 `.apt-add-btn` + state | 栈顶 `pages/patient/edit` | ✅ |
+| 6 | 添加后返回列表能立刻看到新人 | `fn/fill.js` 四字段 + `fn/submit.js`，回退后读 data | `patients=["…:验收甲:本人"]`、`.patient-row-name`=「验收甲」——证明加载确实写在 `onShow` 而不是 `onLoad` | ✅ |
+| 7 | 确认页五项齐、金额是元不是分 | 真点 `.patient-row` + `el text` | `patientName`=「验收甲」（query 里是 percent-encoded，`decodeURIComponent` 后 data 正确）、`departmentName`=消化内科、`doctorName`=张伟、`date`+`slotLabel`、`.cf-fee`=「¥50.00」、`.cf-tip`=「首版为模拟支付通道，不会产生真实扣款」 | ✅ |
+| 8 | 提交并支付 → 成功页 | 真点 `.cf-submit` + `el text` ×4 | 栈 `[index, …, result]`（深 5）；`.res-title`=「预约成功」、`.res-order`=「YY20260928-0124」、`.res-status`=「已确认」、`.res-fee`=「¥50.00」；`isConfirmed=true`、`timeText`=「2026-09-28 08:30」（**上午 08:30 这个值在 UI 上可见，正是第 2 阶段修掉的 `MORNING(0,30)` bug 的正证**） | ✅ |
+| 9 | 未登录访问四页跳登录 | `t12-logout` + 直连四个 URL + 三次读数 | 四个页面栈顶均为 `pages/login/login`；notice 页三次读数一致 | ✅（中途一次误判见陷阱 13） |
+| 10 | 挂号真的落账 | MySQL 读回 | `apt_id=2551 status=CONFIRMED fee=5000 order=YY20260928-0124`、`pay_rows=1`、`seed_row_rem_now=19`（原 20）、`doctor1_today_morning_apt=1` | ✅ |
+| 11 | 号源扣减传导回 UI | 重启页面栈再进医生页 | 第一行变 `2026-09-28 周一 上午 left=19 ¥50.00`，其余行不受影响 | ✅ |
+| 12 | 无多余 toast、无控制台 error | 录制器 + `console.error` 钩子 | `toast: []`（成功路径不弹 toast，页面也不与 `request.js` 双弹）、`errs count=0` | ✅ |
+
+### 收尾自净（含一处必须还原的种子行）
+
+第 8 项是**真实点击**第一个按钮，挂的是医生 1 今天的上午班——那是种子排班 `id=20`。所以收尾必须先还原再删自建数据（先记下 `seed_id=20 rem_before=20 total=20`）：
+
+```
+id20_rem_now=20 total=20
+leftover_apt2551=0 leftover_pay=0 leftover_probe_sched=0 leftover_mock_user=0
+schedule=150 appointment=13 payment_record=4 patient=10 user=4 audit_apt=0 id20=20
+```
+六表逐项回到基线，`id=20` 的 `remaining_slots` 逐值还原。探针排班（今天 + 5 年）按日期边界删；本轮就诊人/账号/审计按 `name='验收甲'` / `MOCK_OPENID_%` / 两个 action 精确删。
+
+### 本轮新增的三个驱动陷阱（补进「十二个陷阱」清单）
+
+| # | 陷阱 | 症状 | 解法 |
+|---|---|---|---|
+| 13 | **`state` 读到的是上一帧** | 循环里第 2 次导航后打印的栈仍是第 1 个页面；更糟的是它让我一度判定「须知页没跳登录」= 一条假的安全缺陷 | 任何"跳转是否发生"的断言必须 `sleep ≥ 3` 后**连读三次取一致**；单次读数一律不作证据。这也是 T10 陷阱「异步 refresh」的加强版 |
+| 14 | `--args-file` 的 JSON **必须是数组** | 传 `{"sel":"..."}` → `MCP error -32602: expected array, received object`，且**只在 stdout 里以一行错误串出现**，脚本照样 exit 0 | 一律写成 `[{...}]`（`args/nav.json` 本来就是这个形状，照它抄）。同时：驱动脚本必须 grep 输出里的 `MCP error` 才算真绿，不能只看 exit code |
+| 15 | `createSelectorQuery().exec()` 的回调在 evaluate 沙箱里不返回 | `t12-count` 写回全局、隔 1~2 秒读回，三次全是 `"n": "pending"` | 节点计数这条走不通。**降级方案**：改用 `el text` / `el style --name opacity`（这两个工具的返回值是真实同步的）+ 数据层断言；因此「约满行没有按钮」这一条本轮只有源码 `wx:if="{{!booked}}"` 与数据断言为证，**没有 DOM 级证据**——记在这里，不留成"看起来验过了" |
+
+### 结论
+
+- 卡片 466 行的完整人工验收链路（选择就诊人 → 选科室 → 选医生 → 确认 → 支付 → 预约成功）**由机器实测通过**，且第 10、11 项把 UI 操作与库里的账对上了账。
+- 一处诚实的未取证项：约满行"不渲染按钮"的 DOM 级证据（陷阱 15）。**不影响安全性**（后端对约满的判定是 `occupySlot` 返回值，前端按钮只是省一次注定失败的请求，绕开前端直接 POST 会拿 2003，已由 MockMvc 与真 HTTP 各自证明）。
+- 本轮不改动任何产品代码（驱动脚本全在仓库外），故未触发后端门禁；库里六表逐项回基线，种子行 `schedule.id=20` 已还原。
+- **T12 至此全卡收口**：后端 175 例 + 真 HTTP 40 步 + UI 12 项（11 确凿 + 1 降级）。下一步是 🚩 **M1 推送**，之后开 T13。
 
 
 
