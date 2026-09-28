@@ -14,7 +14,7 @@
         <view class="empty-icon">🧑</view>
         <view class="empty-title">还没有添加就诊人</view>
         <view class="text-muted empty-desc">挂号前需要先有一位就诊人，添加完回来继续</view>
-        <button class="btn-outline" bindtap="onAddPatient">去添加就诊人</button>
+        <button class="btn-outline apt-add-btn" bindtap="onAddPatient">去添加就诊人</button>
       </view>
 
       <view

@@ -25,7 +25,7 @@
       <view class="res-row"><text class="res-label">挂号费</text><text class="res-fee">{{feeText}}</text></view>
     </view>
 
-    <button class="btn-primary res-btn" bindtap="onBackHome">继续预约</button>
-    <button class="btn-outline res-btn" bindtap="onGoMine">去我的页面</button>
+    <button class="btn-primary res-btn res-btn-home" bindtap="onBackHome">继续预约</button>
+    <button class="btn-outline res-btn res-btn-mine" bindtap="onGoMine">去我的页面</button>
   </view>
 </view>
