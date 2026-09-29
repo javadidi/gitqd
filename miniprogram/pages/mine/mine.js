@@ -26,7 +26,7 @@ Page({
         { label: '体检预约记录', icon: '❤️', url: '' },
       ]},
       { group: '缴费记录', items: [
-        { label: '门诊缴费记录', icon: '💳', url: '' },
+        { label: '门诊缴费记录', icon: '💳', url: '/pages/payment/records' },
         { label: '门诊充值记录', icon: '💰', url: '/pages/recharge/records' },
         { label: '住院充值记录', icon: '🏦', url: '' },
       ]},

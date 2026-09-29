@@ -1,0 +1,35 @@
+<view class="page-payment-detail">
+  <view class="container">
+    <view wx:if="{{detail}}" class="card">
+      <view class="pdt-head">
+        <text class="pdt-title">门诊缴费</text>
+        <text class="pdt-status pdt-status-{{detail.tone}}">{{detail.statusLabel}}</text>
+      </view>
+
+      <view class="pdt-amount">{{detail.amountText}}</view>
+
+      <view class="pdt-items">
+        <view wx:for="{{detail.items}}" wx:key="name" class="pdt-item-line">
+          <text class="pdt-item-name">{{item.name}}</text>
+          <text class="pdt-item-amount">{{item.amountText}}</text>
+        </view>
+      </view>
+
+      <view class="pdt-row"><text class="pdt-label">就诊人</text><text>{{detail.patientName}}</text></view>
+      <view class="pdt-row"><text class="pdt-label">支付方式</text><text>{{detail.payMethodText}}</text></view>
+      <view class="pdt-row"><text class="pdt-label">当前卡内余额</text><text class="pdt-balance">{{detail.balanceText}}</text></view>
+      <view class="pdt-row"><text class="pdt-label">单据时间</text><text>{{detail.timeText}}</text></view>
+      <view class="pdt-row"><text class="pdt-label">缴费单号</text><text class="pdt-order">{{detail.orderNo}}</text></view>
+      <view class="pdt-row"><text class="pdt-label">第三方交易号</text><text class="pdt-order">{{detail.tradeNo}}</text></view>
+    </view>
+
+    <view wx:if="{{detail && detail.status === 'PENDING'}}" class="pdt-note">
+      这一单还没缴；可在首页「自助缴费」里缴掉它
+    </view>
+    <view wx:elif="{{detail && detail.payMethodText === '就诊卡余额'}}" class="pdt-note">
+      余额支付没有第三方交易号，这一栏空着是正常的
+    </view>
+
+    <button class="btn-primary pdt-back-btn" bindtap="onBack">返回记录列表</button>
+  </view>
+</view>

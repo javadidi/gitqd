@@ -1,0 +1,82 @@
+.prd-empty {
+  padding: 80rpx 0;
+  text-align: center;
+}
+
+.prd-empty .empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.prd-empty .empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.prd-empty .empty-desc {
+  font-size: 24rpx;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.prd-empty-btn {
+  width: 60%;
+}
+
+.prd-card {
+  padding: 24rpx;
+}
+
+.prd-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.prd-patient {
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+/* 三色对应任务卡 92-96 行：绿=已缴、蓝=待缴、红=已退 */
+.prd-status {
+  font-size: 22rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+}
+
+.prd-status-ok {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.prd-status-pending {
+  color: #0284c7;
+  background: #e0f2fe;
+}
+
+.prd-status-refunded {
+  color: #e11d48;
+  background: #ffe4e6;
+}
+
+.prd-amount {
+  margin-top: 12rpx;
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.prd-foot {
+  margin-top: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 24rpx;
+}
+
+.prd-arrow {
+  color: #cbd5e1;
+  font-size: 34rpx;
+}

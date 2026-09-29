@@ -4644,6 +4644,191 @@ J33（卡片 501 行）要求「就诊卡余额增加」，但把三处规格要
 - 跨卡缺陷（流水表主键策略）已修 + 已加两道闸门，T12/T13 全链路重跑无红。
 - 下一个推送点仍是 🚩 **M2 = T28**，本卡只提交不推送。
 
+---
+
+## T15 · 自助缴费（2026-09-29）
+
+### 任务卡原文 → 实现对照（508–522 行，**逐字**引用）
+
+| 行号 | 卡片原文 | 落点 |
+|---|---|---|
+| 511 | `- 待缴费项目列表：展示待缴费项目。` | `pages/payment/confirm.*` 的列表区 + `GET /api/user/payments/pending` |
+| 512 | `- 确认缴费信息：展示项目明细及金额。` | **同一页**（PRD 115 行明写这一页展示的就是待缴费项目列表，见下节） |
+| 513 | `- 缴费：使用就诊卡余额支付 → 扣减余额 → 写缴费记录 → 审计。` | `POST /api/user/payments/{id}/pay`，一个事务四步 |
+| 514 | `- 缴费记录：查看缴费历史。` | `pages/payment/records.*` + `GET /api/user/payments` |
+| 516 | `**红线**：余额不足拒绝缴费；不做发票（T19）。` | `balance_fen >= ?` 下界守卫 + `3002`；全卡没有任何 invoice 相关代码 |
+| 519 | `- J35 缴费 → 余额扣减 + 缴费记录。` | MockMvc 5 例 + 真 HTTP 第 3–5 组 |
+| 520 | `- J36 余额不足 → 被拒。` | MockMvc 3 例（含并发）+ 真 HTTP 第 6–7 组 |
+| 522 | `**DoD**：缴费流程通。` | 三层证据：214 例门禁 / 真 HTTP 56 步 / UI 16 步 |
+
+### 范围判定：卡片四条功能，PRD 只给两页，最终交付四页
+
+- PRD §3.3.4（114–116 行）的页面流程只有两条：
+  - `1. **确认缴费信息** — 展示待缴费项目列表及金额`
+  - `2. **缴费信息** — 缴费成功页，展示缴费明细`
+- PRD §6.1 第 514 行逐字：`| 门诊服务-自助缴费 | 确认缴费信息、缴费信息 |` —— 同样两页。
+- 但 §3.11.3（287–289 行）在**个人中心**名下另列两条：
+  - `1. **缴费记录列表** — 展示门诊缴费历史`
+  - `2. **缴费详情** — 查看单笔缴费明细`
+  并且 §6.1 第 527 行的个人中心清单里逐字含 `门诊缴费记录、缴费详情`。
+
+结论：**卡片 511 与 512 是同一页的两件事**（115 行把「待缴费项目列表」写成「确认缴费信息」这一页的内容，而不是第三个页面），加上个人中心那两页，本卡共 **4 页**：`confirm / pay / records / detail`。这与 T14 的教训同源——**范围要同时读卡片动词、DoD、PRD §3.x 功能点、§6.1 页面清单、§9.1 接口概览**，只看其中一张表必然漏或多。
+
+### 十个实现判断（每一个都有出处，也每一个都可以被推翻）
+
+| # | 判断 | 出处 / 理由 |
+|---|---|---|
+| ① | **本卡不建新单、不发单号** | 待缴费单是医院推来的账（`payment_record` 的 PENDING 行，本项目来自 `seed.sql:212-220`，真实部署来自 HIS）。T15 只做"推进状态 + 扣余额"，所以 `SerialType.JF` 在本卡用不上 |
+| ② | 待缴单 = `payment_record WHERE status='PENDING'`，且**不会被未支付的挂号污染** | 读过代码：`AppointmentPaymentService.bookPayment` 只在支付成功后写流水（直接 `SUCCESS`），从不写 PENDING。这条判断在写卡前是猜的，读完 `:164-179` 才是事实 |
+| ③ | 支付方式写 `BALANCE`，**沿用单据上原来的 WECHAT 就是记假账** | V1:162 的 `pay_method` 注释只有「支付方式」四个字、没有封闭值域，所以"余额支付"这个事实必须有值可表达；真 HTTP `6c` 反向证明：被拒时 `pay_method` 必须还是 `WECHAT` |
+| ④ | `trade_no` **留 NULL**，不自造流水号 | V1:164 列名就叫「第三方交易号」，而余额支付全程不出本院系统。T14 充值好歹是模拟微信通道才给 `MOCK_TXN_RC_*`；这里编一个号会让财务对账误以为存在可查的通道交易 |
+| ⑤ | 事务里**先推进单据、再扣余额** | 患者连点两次 / 双设备同时点时，输家会在第一道 `WHERE status='PENDING'` 就被挡下拿 3004，而不是先扣了钱再发现单据不对。扣不动则两条 UPDATE 一起回滚（真 HTTP `6b/6c/6d` 三连证明） |
+| ⑥ | 新增 `3004 PAYMENT_STATUS_ERROR`，不复用 `3001 支付失败` | 3001 的文案会诱导患者"再试一次"，而"这一单早就缴过了"恰恰要让他别再试。编号沿用 T02 预留的 3xxx 支付段，与 T11 加 2007 同一条规矩 |
+| ⑦ | `3002 BALANCE_INSUFFICIENT` **早就存在**，本卡零新增支付码之外的码 | `ErrorCode.java:30` 是 T02 建模时留的空位，J36 直接落在上面 |
+| ⑧ | 归属校验跳 `patient.user_id`，越权与不存在**同回 5001** | `payment_record` 没有 `user_id` 列。沿用 T14 详情端点口径：一张别人的缴费单与一张不存在的缴费单，在业务上没有可区分的意义，给 403 等于允许枚举 |
+| ⑨ | 待缴列表带 `items`，**缴费记录列表既不带 `items` 也不带余额** | 与 T14 判断⑤同一条纪律：实时余额在历史行里重复一遍，会被读成"当时扣完剩多少"。真 HTTP `8c` 实测记录列表 keys 无 `items`/`balanceFen`；详情/确认页才给余额（`3` 步：¥100 余额要先给患者看，他才知道够不够） |
+| ⑩ | **不做批量缴费** | 卡片 511/512 是"列表 + 一张单的确认"，PRD 从没写过"一键缴清"。批量会让"余额不足"变成部分成功部分失败，规格里不存在这个语义 |
+
+另外两点跨卡事实值得钉住：
+
+- **`SecurityConfig` 一行没改**：四个端点全在 `/user/**` 下，天然继承 T07 的 `hasRole("patient")`（真 HTTP `9d–9g` 证明医生 403、匿名 401）。
+- **`payment_record` 是三张卡共用的表**：T04 的金额裁剪靶接口读的是它（`/payments/{id}`，返回 mock，路径不同不冲突）、T12 的挂号费流水写的是它、本卡推进的是它。所以"缴费记录"列表里天然混着微信缴的挂号费与余额缴的门诊费——真 HTTP `8d` 断言两种 `pay_method` 都出得来，`8e` 断言探针患者没有 `YY` 前缀的流水（不串味）。
+
+### 门禁证据：`mvn -o clean test` 全绿 214 例
+
+```
+[INFO] Tests run: 16, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.815 s -- in com.hospital.service.PaymentIntegrationTest
+[INFO] Tests run: 214, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+22 个测试类分项计数（逐条抄自 `t15-mvn1.log`，合计 214）：
+
+| 类 | 例 | 类 | 例 | 类 | 例 |
+|---|---|---|---|---|---|
+| AuditFieldFillTest | 3 | CatalogIntegrationTest | 19 | **PaymentIntegrationTest** | **16** |
+| AuditLogTest | 3 | CaptchaIntegrationTest | 8 | PermissionServiceTest | 9 |
+| AuthIntegrationTest | 7 | CaptchaServiceTest | 5 | RechargeIntegrationTest | 13 |
+| AppointmentIntegrationTest | 27 | FlywayMigrationTest | 1 | ScheduleIntegrationTest | 29 |
+| AppointmentManageIntegrationTest | 10 | InpatientIntegrationTest | 11 | SerialNumberServiceTest | 3 |
+| AppointmentPayFailureTest | 2 | MoneyMaskingTest | 7 | UserAuthIntegrationTest | 9 |
+| SeedCheckTest | 4 | PatientIntegrationTest | 17 | TaskKernelTest | 7 |
+| SeedConstraintTest | 4 | | | | |
+
+`PaymentIntegrationTest` 的 16 例分组：J35 五例（扣减+记录、明细从 JSON 列还原、两笔累加、记录列表字段、id 回传闭环）、J36 三例（余额不足不动单据也不动钱、零余额、**并发两笔只够一笔**）、幂等两例（重复缴 3004 只扣一次、body 里塞 `amountFen=1` 改不动账单）、归属三例（别人缴/别人看/别人看列表）、角色一例（医生 403 + 匿名 401 四路径）、待缴列表一例、审计 `target_id` 一例。收尾比对**七项**计数（含 `balance_total`）回基线。
+
+**并发用例的证据不在"绿"这个字上，在 SQL 日志里**：`t15-mvn1.log:12939` 赢家 `Updates: 1` → `12951` 回读余额 `4000` → `12954` commit；输家在 `12957` 拿到 `Updates: 0` → `12959` 只 deregister 不 commit → `12961` 抛 `code=3002`，线程名 `pool-6-thread-1`。读这份交错日志时我一度把 `12945` 的 `Updates: 1` 错配给 `12944`，判成"守卫没拦住"——**并发日志的 `Preparing/Parameters/Updates` 三段必须按 SqlSession 句柄对齐读，不能按行相邻读**。
+
+### 真 HTTP 验收：56 步 56/56 PASS，`PYTHON_EXIT=0`
+
+第一版跑出 55/56 + 一次 `TypeError` 中断，三处都是脚本自己的错，逐条留档：
+
+| 编号 | 症状 | 根因 | 处理 |
+|---|---|---|---|
+| 崩溃 | `TypeError: record(2b): ok 参数必须是 bool，实际是 'str'` | `record()` 的判定位又落了 note 字符串（T14 同型错误的第四次复发）。**类型闸门把它变成硬失败而不是假 PASS**，这是它该有的样子 | 逐条审完全部 35 处 `record()` 调用，修 `2b/8d` 两处（`10` 我一度误判为错、重数参数后确认正确——**"以为自己发现了 bug"也要验证**） |
+| `7e` | `expect=[200, 3002] actual=[3002, 200]` 判 FAIL | 我用了 `sorted(codes, reverse=True)`，而 3002 数值比 200 大，降序把拒的那笔排前面。业务结果本来就是"一成一拒" | 改 `sorted(codes2) == [200, 3002]`，并在注释里写下这个坑 |
+| 收尾 | **表格写着 `FAIL 1`，脚本却打印「退出码 0」** | 我写的是 `${PIPESTATUS[1]}`，那是 `tee` 的退出码；上一版用 `${PIPESTATUS[0]}` 是对的，加了 `py_compile &&` 之后我改错了位 | 弃掉管道，改 `python … > 文件 2>&1; echo $?`——**报告退出码的那条命令里不许有第二个程序** |
+
+分组结果（共 56 步）：
+
+| 组 | 步数 | 内容 | 关键读数 |
+|---|---|---|---|
+| 1–2 | 8 | 待缴单裸插 + 待缴列表 | `2c` items 两项解析成功；`2d` 中文名往返；**`2d2` 入库字节 = `"血常规"` 的 UTF-8 hex**（证明走的是文件管道而非 GBK 命令行）；`2e` 明细合计=单据金额；`2f` 列表不带余额 |
+| 3–4 | 8 | J35 缴费 | `4` 出参 `['SUCCESS',4000,6000,'BALANCE']`；`4b` `tradeNo` NULL；`4c` 库里同值；`4d` 余额 6000；`4e` `JSON_LENGTH(items)=2` 没被动；`4f` 审计 `['PATIENT','payment_record','112']` |
+| 5 | 3 | 幂等 | 重复缴 → `3004`，余额仍 6000，审计仍 1 条 |
+| 6 | 5 | **J36 拒绝** | `3002`+「余额不足」；`6b` 单据仍 PENDING；**`6c` `pay_method` 仍 WECHAT**；`6d` 余额没动；**`6e` 没留审计（同事务的回滚反面证明）** |
+| 7 | 6 | 并发与地板 | 两张 3000 都成 → 余额 `0`；再缴 6000 → `3002`；补满 10000 后两张 6000 → **`7e` 一成一拒、`7f` 收在 4000、`7g` 库里只有一条 SUCCESS** |
+| 8 | 7 | 缴费记录列表 | 7 条、倒序 `ids=[118…112]`、`8c` 不带 items/余额、`8d` BALANCE+WECHAT+PENDING 都在、`8e` 无 `YY` 串味、**`8f` 种子 `SEED-PY-0002` 仍是 PENDING** |
+| 9 | 7 | 越权与角色 | 别人看/别人缴 → 5001；别人待缴列表 `[]`；医生 403+4001（列表与 POST）；匿名 401（列表与 POST） |
+| 10 | 3 | id 量级与编码 | `10` id=`118` 在 2^53 内；`10b` 用它直查详情命中；`10c` 就诊人名 HEX 正确 |
+| 11 | 7 | 自净核查 | 七项全回基线，含 `balance_total=10000` 与 `seed_pending=1` |
+
+**开局预清（步骤 -1）是这轮新加的**：上一种中途崩掉的运行会在库里留下探针行，而基线是在预清之后才采的——所以"回到基线"这条断言始终只对本轮负责，不会替上一轮背锅，也不会把残留抬进基线让后续卡误判。
+
+### 附录 B · 全局红线检查表（14 条逐条扫）
+
+| # | 检查项 | 本卡结论 |
+|---|---|---|
+| 1 | 严禁前端隐藏金额 | ✅ 账单金额、明细、扣费后余额全部明文；`items` 明细是后端解析成强类型给的，前端不做 `JSON.parse` |
+| 2 | 金额裁剪层是否被绕过 | ✅ 只对 `nurse` 生效，本组接口只有患者 token 进得来（`9d/9e` 实测 403） |
+| 3 | 审计必须同事务 | ✅ `@AuditLog` 走切面同事务；**`6e` 是反面证明**：业务被 3002 拒掉时审计行一起回滚，库里一条不多 |
+| 4 | 外部通道用 afterCommit | N/A：本卡没有外部通道，余额支付不出系统（因此 `trade_no` 留 NULL） |
+| 5 | 权限判断是否只写在 UI | ✅ 归属在 SQL（`patient.user_id`）+ 状态守卫在 `WHERE status='PENDING'` + 余额地板在 `WHERE balance_fen >= ?`；前端按钮只是省一次注定失败的请求 |
+| 6 | 小程序新接口是否强制注入 userId 归属校验 | ✅ 四个端点都没有 userId 入参，一律 `SecurityUtils.currentUserId()`；`pay` 连请求体都没有（`pay_sendingAmountInBodyCannotChangeTheBill` 证明塞 `amountFen=1` 也改不动账单） |
+| 7 | 身份证/手机号是否加密存储 | N/A（本卡不写这两列） |
+| 8 | 有没有多装 T01 清单外的三方库 | ✅ 零新增依赖（`pom.xml` 与两个 `package.json` 一行未动） |
+| 9 | 落地/跳转目标是否白名单 | ✅ 成功页只跳 `/pages/payment/records`（`redirectTo`）与 `switchTab` 首页；详情只 `navigateBack`；不据 query 参数跳任意页 |
+| 10 | 列表筛选/搜索/分页是否进 URL | N/A：PRD 288 行只写「展示门诊缴费历史」，没要求筛选或分页，本卡一律不做（记入遗留 TODO） |
+| 11 | 是否越界做别的卡的活 | ✅ 不做发票（卡片 516 行红线）、不做退款（T19）、不做住院缴费（T23）、不做门诊费用明细页（§3.3.5，页面清单里属"费用详情"，没有任务卡承接，见遗留 TODO） |
+| 12 | 是否写了规格里没有的实体/表/字段 | ✅ 零迁移、零新列；`BALANCE` 这个 `pay_method` 值是列语义允许的取值（列注释没给封闭值域），理由记在 `OutpatientPaymentService` 注释③ |
+| 13 | 是否自造了数字或规则 | ✅ 无单笔上限、无每日缴费次数、无最小余额——三条都是"看起来该有但规格没写"的候选，一律没编 |
+| 14 | 前端可复核性（唯一类名） | ✅ 四页各自前缀 `pm-* / ps-* / prd-* / pdt-*`，验收要点的按钮都有独立类名（`.pm-pay-btn` `.ps-records-btn` `.prd-card` `.pdt-back-btn`） |
+
+### 本卡有意未做的事（附录 D 第 3 条）
+
+- 不做批量/合并缴费（判断⑩）。
+- 不做缴费记录的分页、筛选、按日期搜索（PRD 288 行没要求）。
+- 不做发票与退款（卡片 516 行红线）。
+- 不做住院缴费、不做 §3.3.5「门诊费用 - 费用详情」独立页（后者在 PRD 里没有任务卡承接，已列入下面的遗留清单）。
+- 不给前端返回第三方流水号占位值（判断④）。
+- 详情页不放"缴费"按钮：缴费只从待缴列表进去，历史单据的详情页是凭证，不是一个可再次扣钱的入口。
+
+### 遗留 TODO
+
+| 归属 | 事项 |
+|---|---|
+| T19 | 缴费单被退款时 `status` 会走 `REFUNDED`（V1:163 的值域），届时 `markPaidByBalance` 的 `WHERE status='PENDING'` 天然挡住"退过的单再缴一次"——这一条守卫现在就已经兜住，无需改动 |
+| T15 之后 | 若产品要"一键缴清"，必须先有规格出处；实现上会变成多笔扣减 + 部分失败的语义问题（本卡判断⑩说的就是这个坑） |
+| 无卡承接 | PRD §3.3.5「门诊费用 - 费用详情」（122–127 行）与 §3.3.7「在线退款」在本轮 28 张卡里没有明确归属，T19 只接电子发票；需要在 T28 收口时确认落点 |
+| 真实化 | HIS 推单落地后，`payment_record` 的 PENDING 行由外部写入；本卡的待缴列表与扣减守卫不用改 |
+
+### T15-M · 小程序四页 UI 自动化验收（skill-cli，16 步全过）
+
+前置说明：**待缴单是 SQL 裸插的探针**（T15 没有建单端点，真实来源是 HIS），中文项目名走 UTF-8 文件 + stdin 管道（命令行会以 GBK 到达 `mysql.exe`，T08 踩过）。这与"产品代码不写这张表"的红线不冲突——写库的是取证脚本，不是 `OutpatientPaymentService`。
+
+| # | 验收项 | 证据（抄自 `t15-ui.log`） | 判定 |
+|---|---|---|---|
+| 1 | 首页「自助缴费」入口真接上 | `el tap .qe-payment` → `route: pages/payment/confirm`（此前 `url: ''` 只会 toast 即将开放） | 确凿 |
+| 2 | 空态文案 | `el text .empty-title` → `暂无待缴费项目` + 截图 `t15-1-confirm-empty` | 确凿 |
+| 3 | 表单页建就诊人后回到本页 | `route: pages/patient/edit` → 提交 → `route: pages/payment/confirm`，`rowCount: 0`（单还没插） | 确凿（顺带证明空态与 `onShow` 重拉） |
+| 4 | **跨卡链路：用 T14 的充值页把卡喂满** | 成功页 `CF20260929-0107|缴验甲|¥100.00|¥100.00`；库里 `after recharge bal=10000` | 确凿（T14 出口在 T15 场景下复用无碍） |
+| 5 | 待缴费列表：两张单 + 明细 + 金额 | `rowCount: 2`，`rows: 127~缴验甲~¥40.00~2~血常规=¥12.00+胃镜检查=¥28.00 ;; 126~缴验甲~¥90.00~1~儿童腹泻口服补液=¥90.00` | 确凿（**插队顺序刻意让 ¥40 那张排最前**，`el tap` 才打得中目标） |
+| 6 | 列表**不显示任何余额** | `rows` 里只有金额与明细，页面也无余额行 | 确凿（判断⑨的前端一侧） |
+| 7 | 二次确认弹窗文案 | `lastModal: 确认缴费||缴验甲 的 2 项费用共 ¥40.00，将从就诊卡余额中扣除。余额不足会提示先充值。||确认缴费||再想想` | 确凿（录制器记的是 `showModal` 原始入参） |
+| 8 | **取消分支不落账** | 取消后 `route` 仍是 confirm、`payingId: null`、库里 `cancel_branch rows=2 succ=0` | 确凿 |
+| 9 | 确认分支 → 缴费成功页 | `route: pages/payment/pay`；`el text .ps-amount` → `¥40.00`；**`.ps-balance` → `¥60.00`（扣费后余额）**；`.ps-item-name` → `血常规`；`.ps-order` → 单号；截图 `t15-3-paid-success` | 确凿 |
+| 10 | 成功页 → 缴费记录列表 | `route: pages/payment/records`，`rowCount: 2`，两条分别是 `已缴费~ok~就诊卡余额` 与 `待缴费~pending~微信支付`；`.prd-status-ok` → `已缴费` | 确凿（**同一张表里两种支付来源共存且标签各自正确**） |
+| 11 | 缴费详情：`trade_no` 空要显示成 `—` | `detail: T15UI40T15UI2424|已缴费|¥40.00|¥60.00|就诊卡余额|2026-09-29 11:24:57|—|血常规=¥12.00+胃镜检查=¥28.00` | 确凿（判断④的前端一侧：余额支付没有第三方交易号，渲染成 `—` 而不是 0 或空串） |
+| 12 | 详情页标签是「当前卡内余额」不是「扣费后余额」 | `.pdt-balance` → `¥60.00`，同一次成功页则写「扣费后余额」 | 确凿（T14 定下的同一纪律，两个页面两处标签） |
+| 13 | **J36 在手指下成立** | 回到确认缴费页只剩 ¥90 那张（`rowCount: 1`）→ 点缴费 → `toasts: ['余额不足']`、`route` 停在 confirm、`payingId` 已解除 | 确凿（本轮 `clearlog` 在点之前执行过，所以这条 toast 台账**只属于本轮**） |
+| 14 | 个人中心「门诊缴费记录」入口 | `fn/menutap.js` → `route: pages/payment/records`、`rowCount: 2` | 确凿 |
+| 15 | 前端与库对账 | `rows=2 succ=1 pend=1`；`bal=6000`；`orders=…90:PENDING:WECHAT, …40:SUCCESS:BALANCE`；`audit=1 types=PATIENT targets=127` | 确凿 |
+| 16 | 控制台 error / 自净 | `errs count: 0`；清理后七项计数回基线 `payment=4 recharge=3 user=6 patient=10 bal_total=10000 audit_pay=0 seed_pending=1` | 确凿 |
+
+**一处必须如实记为未取证的项**：第 6 步原本还有一条「中文项目名的入库字节 = UTF-8」的 `HEX(JSON_EXTRACT(...))` 校验，因为我把聚合列 `COUNT(*)` 和非聚合列 `items` 放进同一个无 `GROUP BY` 的查询，MySQL 直接回 `ERROR 1140 (only_full_group_by)`，**这条字节级证据本轮没拿到**。已把脚本拆成两条 SELECT 修正；修完又发现第二个坑——`SUM(...)` 在零行时是 NULL，`CONCAT` 沾 NULL 整体变 NULL，读数会凭空消失，所以聚合一律套 `IFNULL`（这次验证时输出正是光秃秃一个 `NULL`，就是这么暴露的）。本轮编码正确性的实际依据是第 5/9/10 步模拟器里渲染出的 `血常规 / 胃镜检查 / 儿童腹泻口服补液`（GBK 错码不可能显示成这样），字节级证据则由真 HTTP 那轮的 `2d2` 提供——**两者互补，不能混着说成"字节校验过了"**。
+
+另一处诚实说明：基线里 `user=6` 而不是 4，因为上一轮真 HTTP 中途崩掉时留下的两个 mock 用户已被"开局预清"之后的基线吸收；本轮清理后仍是 6，说明本轮自己的两个用户删干净了，这正预清设计想要的语义（**本轮不替上一轮背锅，也不把残留抬进基线**）。
+
+### 文件清单（新增 24 个 / 修改 6 个）
+
+| 层 | 新增 | 修改 |
+|---|---|---|
+| 后端 main | `OutpatientPaymentResponse`、`OutpatientPaymentService`、`OutpatientPaymentController`（3） | `PatientMapper`（`deductBalance`）、`PaymentRecordMapper`（`markPaidByBalance`）、`ErrorCode`（+3004）（3） |
+| 后端 test | `PaymentIntegrationTest`（1，16 例） | — |
+| 小程序 | `pages/payment/{confirm,pay,records,detail}.{js,wxml,wxss,json}`（16） | `app.json`（4 条路由）、`pages/index/index.js`（自助缴费入口）、`pages/mine/mine.js`（门诊缴费记录入口）、`utils/format.js`（`PAYMENT_STATUS_LABELS` + `PAY_METHOD_LABELS.BALANCE`）（4） |
+| 文档 | — | `docs/WORK_LOG.md`（1） |
+| 数据库 | **零迁移**（`payment_record` V1 已建齐、`balance_fen` 由 V4 提供） | — |
+| 三方依赖 | **零新增** | — |
+
+### 当前状态
+
+- **T15 收口**：后端 **214 例全绿**（198 + 16）、真 HTTP **56/56 PASS**、UI **16 步全过**（1 项字节级校验因脚本 SQL 写错未取证，已修脚本并说明实际依据）、库里七项计数逐项回基线、种子 `SEED-PY-0002` 未被触碰。
+- `SecurityConfig`、`pom.xml`、两个 `package.json` 一行未动；零迁移、零新列。
+- 下一个推送点仍是 🚩 **M2 = T28**，本卡只提交不推送。
+
+
+
+
 
 
 

@@ -21,7 +21,11 @@
     "pages/recharge/recharge",
     "pages/recharge/result",
     "pages/recharge/records",
-    "pages/recharge/detail"
+    "pages/recharge/detail",
+    "pages/payment/confirm",
+    "pages/payment/pay",
+    "pages/payment/records",
+    "pages/payment/detail"
   ],
   "window": {
     "navigationBarBackgroundColor": "#ffffff",

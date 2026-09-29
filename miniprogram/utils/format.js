@@ -117,15 +117,33 @@ function rechargeStatusLabel(status) {
 // 支付方式码 → 中文标签。码值出处 V1__init.sql:146「WECHAT/ALIPAY/CASH/CARD」。
 // 首版真实通道只有微信（卡片 494 行括号写死，后端也固定写 WECHAT），
 // ALIPAY/CASH 只会出现在种子数据里。
+// BALANCE 是 T15 缴费引入的第四个值：payment_record.pay_method（V1:162）的注释只有
+// 「支付方式」四个字、没有封闭值域，而余额支付这个事实必须在财务表里留得下；
+// 沿用单据上原有的 WECHAT 就等于记一笔假账，所以后端写死 BALANCE、前端在这里翻译。
 const PAY_METHOD_LABELS = {
   WECHAT: '微信支付',
   ALIPAY: '支付宝',
   CASH: '现金',
   CARD: '刷卡',
+  BALANCE: '就诊卡余额',
 }
 
 function payMethodLabel(method) {
   return PAY_METHOD_LABELS[method] || method || '—'
+}
+
+// 缴费状态码 → 中文标签，码值出处 V1__init.sql:163「PENDING/SUCCESS/REFUNDED」。
+// 与充值的三个值同名但语义不同：这里 PENDING 是「待缴费」（医院推过来的账，等患者付），
+// 充值那边 PENDING 是「待支付」（患者刚点充值，通道还没回来），所以两套标签分开写，
+// 合成一套就会有一边说出另一边的假话。
+const PAYMENT_STATUS_LABELS = {
+  PENDING: '待缴费',
+  SUCCESS: '已缴费',
+  REFUNDED: '已退款',
+}
+
+function paymentStatusLabel(status) {
+  return PAYMENT_STATUS_LABELS[status] || status || '—'
 }
 
 module.exports = {
@@ -146,4 +164,6 @@ module.exports = {
   rechargeStatusLabel,
   PAY_METHOD_LABELS,
   payMethodLabel,
+  PAYMENT_STATUS_LABELS,
+  paymentStatusLabel,
 }

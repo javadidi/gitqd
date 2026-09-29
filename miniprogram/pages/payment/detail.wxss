@@ -1,0 +1,109 @@
+.pdt-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 16rpx;
+  border-bottom: 2rpx solid #f5f5f5;
+}
+
+.pdt-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.pdt-status {
+  font-size: 22rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+}
+
+.pdt-status-ok {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.pdt-status-pending {
+  color: #0284c7;
+  background: #e0f2fe;
+}
+
+.pdt-status-refunded {
+  color: #e11d48;
+  background: #ffe4e6;
+}
+
+.pdt-amount {
+  padding: 28rpx 0;
+  font-size: 56rpx;
+  font-weight: 600;
+  color: #dc2626;
+  text-align: center;
+}
+
+.pdt-items {
+  margin-bottom: 8rpx;
+  padding: 16rpx;
+  background: #f9fafb;
+  border-radius: 12rpx;
+}
+
+.pdt-item-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6rpx 0;
+  font-size: 26rpx;
+}
+
+.pdt-item-name {
+  color: #4b5563;
+}
+
+.pdt-item-amount {
+  color: #1f2937;
+}
+
+.pdt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+.pdt-row:last-child {
+  border-bottom: none;
+}
+
+.pdt-label {
+  color: #9ca3af;
+  font-size: 26rpx;
+}
+
+.pdt-balance {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.pdt-order {
+  font-size: 26rpx;
+  letter-spacing: 1rpx;
+}
+
+.pdt-note {
+  margin-top: 24rpx;
+  padding: 20rpx 24rpx;
+  background: #f9fafb;
+  border-radius: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #9ca3af;
+  text-align: center;
+}
+
+.pdt-back-btn {
+  margin-top: 32rpx;
+}

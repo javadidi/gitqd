@@ -29,6 +29,10 @@ public enum ErrorCode {
     PAYMENT_FAILED(3001, "支付失败"),
     BALANCE_INSUFFICIENT(3002, "余额不足"),
     REFUND_NOT_ALLOWED(3003, "不允许退款"),
+    // T15 重复缴费（已缴过/已退的单再点一次）。沿用 T02 预留的 3xxx 支付段，接在 3003 之后，
+    // 与 T11 加 2007 的做法同一条规矩。必须与 3001「支付失败」分开：3001 会诱导患者再试一次，
+    // 而"这一单早就缴过了"恰恰要让他别再试。
+    PAYMENT_STATUS_ERROR(3004, "该缴费单已缴过或状态不允许缴费"),
 
     PERMISSION_DENIED(4001, "权限不足"),
     ROLE_NOT_FOUND(4002, "角色不存在"),

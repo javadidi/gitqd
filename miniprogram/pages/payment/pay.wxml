@@ -1,0 +1,28 @@
+<view class="page-payment-pay">
+  <view class="container">
+    <view class="card ps-head">
+      <view class="ps-icon">✓</view>
+      <view class="ps-title">缴费成功</view>
+      <view wx:if="{{detail}}" class="ps-sub">{{detail.patientName}} 的费用已从就诊卡余额扣除</view>
+    </view>
+
+    <view wx:if="{{detail}}" class="card">
+      <view class="ps-items">
+        <view wx:for="{{detail.items}}" wx:key="name" class="ps-item-line">
+          <text class="ps-item-name">{{item.name}}</text>
+          <text class="ps-item-amount">{{item.amountText}}</text>
+        </view>
+      </view>
+
+      <view class="ps-row"><text class="ps-label">缴费金额</text><text class="ps-amount">{{detail.amountText}}</text></view>
+      <view class="ps-row"><text class="ps-label">扣费后余额</text><text class="ps-balance">{{detail.balanceText}}</text></view>
+      <view class="ps-row"><text class="ps-label">支付方式</text><text>{{detail.payMethodText}}</text></view>
+      <view class="ps-row"><text class="ps-label">单据号</text><text class="ps-order">{{detail.orderNo}}</text></view>
+    </view>
+
+    <view class="ps-note">余额可在「我的 - 门诊充值」继续充值；本单凭证见「缴费记录 - 缴费详情」</view>
+
+    <button class="btn-primary ps-records-btn" bindtap="onGoRecords">查看缴费记录</button>
+    <button class="btn-outline ps-home-btn" bindtap="onBackHome">返回首页</button>
+  </view>
+</view>

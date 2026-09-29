@@ -1,0 +1,112 @@
+.pm-empty {
+  padding: 80rpx 0;
+  text-align: center;
+}
+
+.pm-empty .empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.pm-empty .empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.pm-empty .empty-desc {
+  font-size: 24rpx;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.pm-empty-btn,
+.pm-records-btn {
+  width: 60%;
+}
+
+.pm-records-btn {
+  margin-top: 20rpx;
+}
+
+.pm-card {
+  padding: 24rpx;
+}
+
+.pm-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pm-patient {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.pm-count {
+  font-size: 24rpx;
+  color: #2563eb;
+}
+
+.pm-items {
+  margin-top: 16rpx;
+  padding: 16rpx;
+  background: #f9fafb;
+  border-radius: 12rpx;
+}
+
+.pm-item-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6rpx 0;
+  font-size: 26rpx;
+}
+
+.pm-item-name {
+  color: #4b5563;
+}
+
+.pm-item-amount {
+  color: #1f2937;
+}
+
+.pm-total {
+  margin-top: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.pm-total-label {
+  font-size: 26rpx;
+  color: #9ca3af;
+}
+
+.pm-amount {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.pm-order {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  letter-spacing: 1rpx;
+}
+
+.pm-pay-btn {
+  margin-top: 20rpx;
+}
+
+.pm-tip {
+  margin-top: 24rpx;
+  padding: 20rpx 24rpx;
+  background: #f9fafb;
+  border-radius: 12rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #9ca3af;
+}

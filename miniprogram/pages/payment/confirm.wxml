@@ -1,0 +1,44 @@
+<view class="page-payment-confirm">
+  <view class="container">
+    <view wx:if="{{!loading && rows.length === 0}}" class="pm-empty">
+      <view class="empty-icon">🧾</view>
+      <view class="empty-title">暂无待缴费项目</view>
+      <view class="text-muted empty-desc">医院没有推来欠费单据时就是空的；余额不足可先充值</view>
+      <button class="btn-outline pm-empty-btn" bindtap="onGoRecharge">去充值</button>
+      <button class="btn-outline pm-records-btn" bindtap="onRecords">看缴费记录</button>
+    </view>
+
+    <view wx:for="{{rows}}" wx:key="id" class="card pm-card">
+      <view class="pm-head">
+        <text class="pm-patient">{{item.patientName}}</text>
+        <text class="pm-count">{{item.itemCount}} 项</text>
+      </view>
+
+      <view class="pm-items">
+        <view wx:for="{{item.items}}" wx:for-item="line" wx:key="name" class="pm-item-line">
+          <text class="pm-item-name">{{line.name}}</text>
+          <text class="pm-item-amount">{{line.amountText}}</text>
+        </view>
+      </view>
+
+      <view class="pm-total">
+        <text class="pm-total-label">合计</text>
+        <text class="pm-amount">{{item.amountText}}</text>
+      </view>
+
+      <view class="text-muted pm-order">单据号 {{item.orderNo}}</view>
+
+      <button
+        class="btn-primary pm-pay-btn"
+        data-id="{{item.id}}"
+        loading="{{payingId === item.id}}"
+        disabled="{{!!payingId}}"
+        bindtap="onPay"
+      >余额缴费</button>
+    </view>
+
+    <view wx:if="{{rows.length > 0}}" class="pm-tip">
+      缴费从就诊卡余额扣除，余额不足请先充值；每一单单独缴，不做合并
+    </view>
+  </view>
+</view>

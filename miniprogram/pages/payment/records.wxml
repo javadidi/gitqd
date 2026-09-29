@@ -1,0 +1,28 @@
+<view class="page-payment-records">
+  <view class="container">
+    <view wx:if="{{!loading && rows.length === 0}}" class="prd-empty">
+      <view class="empty-icon">🧾</view>
+      <view class="empty-title">还没有缴费记录</view>
+      <view class="text-muted empty-desc">缴费成功后这里会有单据；也可以先看有没有待缴项目</view>
+      <button class="btn-outline prd-empty-btn" bindtap="onGoPay">去缴费</button>
+    </view>
+
+    <view
+      wx:for="{{rows}}"
+      wx:key="id"
+      class="card prd-card"
+      data-id="{{item.id}}"
+      bindtap="onOpen"
+    >
+      <view class="prd-head">
+        <text class="prd-patient">{{item.patientName}}</text>
+        <text class="prd-status prd-status-{{item.tone}}">{{item.statusLabel}}</text>
+      </view>
+      <view class="prd-amount">{{item.amountText}}</view>
+      <view class="prd-foot">
+        <text class="text-muted">{{item.payMethodLabel}} · {{item.timeText}}</text>
+        <text class="prd-arrow">›</text>
+      </view>
+    </view>
+  </view>
+</view>

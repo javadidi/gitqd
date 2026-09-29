@@ -51,4 +51,23 @@ public interface PatientMapper extends BaseMapper<Patient> {
             + "WHERE id = #{patientId} AND user_id = #{userId} AND deleted = 0")
     int addBalance(@Param("patientId") Long patientId, @Param("userId") Long userId,
                    @Param("amountFen") long amountFen);
+
+    /**
+     * 缴费扣减（T15 J36）：余额够才扣。返回 1 = 扣成功；0 = 没扣成。
+     *
+     * <p><b>{@code balance_fen >= #{amountFen}} 是这张卡的地板</b>，它把"够不够"放进 UPDATE 自己的
+     * 判定条件里。若改成"先读余额、在 Java 里比大小、再写回差额"，两笔并发缴费会各自看到同一个
+     * 充足余额、各自扣一笔，余额就成负数——这正是 T14 否决派生余额时预留的半个句号。
+     * 与 {@link #addBalance} / {@code ScheduleMapper.occupySlot} 同族：<b>账本的增减只在数据库里做一次算术</b>。
+     *
+     * <p><b>返回 0 的三种原因里只有第一种需要在乎</b>：余额不足（业务拒绝）、卡被并发删除、
+     * 卡不属于这个人。调用方（{@code OutpatientPaymentService}）在同一事务里已按
+     * {@code (id, user_id, deleted=0)} 读过一次就诊人，后两种到这里几乎不可能发生；
+     * 真发生时报"余额不足"也不会多扣钱，失败方向是安全的。
+     */
+    @Update("UPDATE patient SET balance_fen = balance_fen - #{amountFen} "
+            + "WHERE id = #{patientId} AND user_id = #{userId} AND deleted = 0 "
+            + "AND balance_fen >= #{amountFen}")
+    int deductBalance(@Param("patientId") Long patientId, @Param("userId") Long userId,
+                      @Param("amountFen") long amountFen);
 }
