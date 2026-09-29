@@ -1,0 +1,60 @@
+.page-cd-detail {
+  min-height: 100vh;
+}
+
+.cdd-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.cdd-row:last-child {
+  border-bottom: none;
+}
+
+.cdd-label {
+  font-size: 26rpx;
+  color: #64748b;
+  flex-shrink: 0;
+  margin-right: 24rpx;
+}
+
+.cdd-value {
+  font-size: 26rpx;
+  color: #1f2937;
+  text-align: right;
+  flex: 1;
+}
+
+.cdd-addr {
+  line-height: 1.6;
+}
+
+.cdd-mono {
+  font-family: Menlo, Consolas, monospace;
+  font-size: 24rpx;
+  color: #1f2937;
+  text-align: right;
+}
+
+.cdd-status {
+  font-size: 26rpx;
+  color: #d97706;
+}
+
+.cdd-note {
+  margin: 24rpx 8rpx 0;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.cdd-empty {
+  text-align: center;
+  padding: 60rpx 24rpx;
+}
+
+.cdd-back-btn {
+  margin-top: 32rpx;
+}

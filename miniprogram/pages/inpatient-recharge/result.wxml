@@ -1,0 +1,23 @@
+<view class="page-ir-result">
+  <view class="container">
+    <view class="card irr-head">
+      <view class="irr-icon">✓</view>
+      <view class="irr-title">充值成功</view>
+      <view class="text-muted irr-sub">{{inpatientName || '—'}} 的住院充值已受理</view>
+    </view>
+
+    <view class="card">
+      <view class="irr-row"><text class="irr-label">充值金额</text><text class="irr-amount">{{amountText}}</text></view>
+      <view class="irr-row"><text class="irr-label">充值单号</text><text class="irr-mono">{{orderNo || '—'}}</text></view>
+      <view class="irr-row"><text class="irr-label">当前状态</text><text class="irr-status">{{statusLabel}}</text></view>
+    </view>
+
+    <view class="text-muted irr-note">
+      这笔流水记在住院人的充值记录里，不影响到诊卡余额；住院费用清单由医院出具，本版本暂不提供
+    </view>
+
+    <button class="btn-primary irr-btn irr-detail-btn" bindtap="onGoDetail">查看账单详情</button>
+    <button class="btn-outline irr-btn irr-records-btn" bindtap="onGoRecords">查看住院充值记录</button>
+    <button class="btn-outline irr-btn irr-home-btn" bindtap="onBackHome">返回首页</button>
+  </view>
+</view>

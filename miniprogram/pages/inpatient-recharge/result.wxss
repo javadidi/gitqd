@@ -1,0 +1,74 @@
+.page-ir-result {
+  min-height: 100vh;
+}
+
+.irr-head {
+  text-align: center;
+  padding: 40rpx 24rpx;
+}
+
+.irr-icon {
+  width: 88rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  margin: 0 auto 20rpx;
+  border-radius: 50%;
+  background: #ecfdf5;
+  color: #059669;
+  font-size: 44rpx;
+}
+
+.irr-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.irr-sub {
+  margin-top: 10rpx;
+  font-size: 26rpx;
+}
+
+.irr-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.irr-row:last-child {
+  border-bottom: none;
+}
+
+.irr-label {
+  font-size: 26rpx;
+  color: #64748b;
+}
+
+.irr-amount {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.irr-mono {
+  font-family: Menlo, Consolas, monospace;
+  font-size: 26rpx;
+  color: #1f2937;
+}
+
+.irr-status {
+  font-size: 26rpx;
+  color: #059669;
+}
+
+.irr-note {
+  margin: 24rpx 8rpx 0;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.irr-btn {
+  margin-top: 24rpx;
+}

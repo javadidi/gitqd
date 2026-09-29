@@ -1,0 +1,84 @@
+.page-ir-records {
+  min-height: 100vh;
+}
+
+.irp-head {
+  padding: 24rpx;
+}
+
+.irp-head-name {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.irp-head-line {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+}
+
+.irp-count {
+  font-size: 24rpx;
+  margin-bottom: 12rpx;
+}
+
+.irp-row {
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.irp-row:last-child {
+  border-bottom: none;
+}
+
+.irp-row-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.irp-order {
+  font-family: Menlo, Consolas, monospace;
+  font-size: 26rpx;
+  color: #1f2937;
+}
+
+.irp-amount {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.irp-row-mid {
+  margin-top: 8rpx;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.irp-inpatient {
+  font-size: 24rpx;
+}
+
+.irp-status {
+  font-size: 24rpx;
+  color: #059669;
+}
+
+.irp-row-bottom {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+}
+
+.irp-empty {
+  padding: 40rpx 0 20rpx;
+  text-align: center;
+}
+
+.irp-empty-btn {
+  margin-top: 24rpx;
+}
+
+.irp-recharge-btn {
+  margin-top: 32rpx;
+}

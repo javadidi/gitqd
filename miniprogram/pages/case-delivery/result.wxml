@@ -1,0 +1,25 @@
+<view class="page-cd-result">
+  <view class="container">
+    <view class="card cdr-head">
+      <view class="cdr-icon">✓</view>
+      <view class="cdr-title">病案邮寄申请已提交</view>
+      <view class="text-muted cdr-sub">医院受理后会在申请详情里填写快递单号</view>
+    </view>
+
+    <view wx:if="{{detail}}" class="card">
+      <view class="cdr-row"><text class="cdr-label">住院人</text><text class="cdr-value">{{detail.inpatientName}}</text></view>
+      <view class="cdr-row"><text class="cdr-label">住院号</text><text class="cdr-mono">{{detail.inpatientNo}}</text></view>
+      <view class="cdr-row"><text class="cdr-label">收件人</text><text class="cdr-value">{{detail.recipientName}}</text></view>
+      <view class="cdr-row"><text class="cdr-label">收件地址</text><text class="cdr-value cdr-addr">{{detail.address}}</text></view>
+      <view class="cdr-row"><text class="cdr-label">当前状态</text><text class="cdr-status">{{detail.statusLabel}}</text></view>
+      <view class="cdr-row"><text class="cdr-label">提交时间</text><text class="cdr-value">{{detail.timeText}}</text></view>
+    </view>
+
+    <view class="text-muted cdr-note">
+      首版为申请流程演示：不寄出真实病案、不收取配送费，也不影响任何其他账单
+    </view>
+
+    <button class="btn-primary cdr-btn cdr-list-btn" bindtap="onGoList">查看我的申请</button>
+    <button class="btn-outline cdr-btn cdr-home-btn" bindtap="onBackHome">返回首页</button>
+  </view>
+</view>

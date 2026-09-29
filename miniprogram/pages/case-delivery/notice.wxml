@@ -1,0 +1,21 @@
+<view class="page-cd-notice">
+  <view class="container">
+    <view class="card">
+      <view class="section-title">病案配送须知</view>
+      <view
+        wx:for="{{items}}"
+        wx:key="index"
+        class="cdn-item"
+      >
+        <view class="cdn-index">{{index + 1}}</view>
+        <view class="cdn-body">
+          <view class="cdn-item-title">{{item.title}}</view>
+          <view class="text-muted cdn-item-desc">{{item.desc}}</view>
+        </view>
+      </view>
+    </view>
+
+    <button class="btn-primary cdn-next" bindtap="onNext">已阅读，填写申请</button>
+    <button class="btn-outline cdn-back" bindtap="onBackList">返回申请记录</button>
+  </view>
+</view>

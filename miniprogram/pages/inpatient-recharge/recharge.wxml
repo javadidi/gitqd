@@ -1,0 +1,68 @@
+<view class="page-inpatient-recharge">
+  <view class="container">
+    <view class="card">
+      <view class="section-title">选择住院人</view>
+
+      <view wx:if="{{!loading && inpatients.length === 0}}" class="ir-empty">
+        <view class="empty-icon">🏥</view>
+        <view class="empty-title">还没有绑定住院人</view>
+        <view class="text-muted empty-desc">住院充值需要先绑定住院号</view>
+        <button class="btn-outline ir-empty-btn" bindtap="onBindInpatient">去绑定住院号</button>
+      </view>
+
+      <view
+        wx:for="{{inpatients}}"
+        wx:key="id"
+        class="ir-inpatient {{selectedInpatientId === item.id ? 'ir-inpatient-on' : ''}}"
+        data-id="{{item.id}}"
+        bindtap="onPickInpatient"
+      >
+        <view class="ir-inpatient-main">
+          <text class="ir-inpatient-name">{{item.name}}</text>
+          <text class="text-muted ir-inpatient-no">住院号 {{item.inpatientNo || '—'}}</text>
+        </view>
+        <view class="text-muted ir-inpatient-ward">{{item.department}} · {{item.bedNo}}</view>
+        <view wx:if="{{selectedInpatientId === item.id}}" class="ir-inpatient-check">✓</view>
+      </view>
+
+      <view wx:if="{{inpatients.length > 0}}" class="ir-more" bindtap="onBindInpatient">+ 绑定其他住院号</view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">充值金额</view>
+      <view class="ir-amount-row">
+        <text class="ir-amount-unit">¥</text>
+        <input
+          class="ir-amount-input"
+          type="digit"
+          placeholder="请输入金额"
+          value="{{amountYuan}}"
+          bindinput="onAmountInput"
+        />
+      </view>
+      <view class="text-muted ir-amount-tip">
+        这笔钱记在住院人的充值流水里，不影响到诊卡余额（住院预交金账户不在本系统）
+      </view>
+    </view>
+
+    <!-- PRD 560 行住院充值流程写的是微信支付，后端也不收 payMethod 入参，
+         所以这是一行信息而不是选择器（与 T14 同一条取舍） -->
+    <view class="card">
+      <view class="section-title">支付方式</view>
+      <view class="ir-pay-row">
+        <text class="ir-pay-name">微信支付</text>
+        <text class="ir-pay-check">✓</text>
+      </view>
+      <view class="text-muted ir-pay-tip">首版为模拟支付通道，不会产生真实扣款</view>
+    </view>
+
+    <button
+      class="btn-primary ir-submit"
+      loading="{{submitting}}"
+      disabled="{{submitting}}"
+      bindtap="onSubmit"
+    >立即充值</button>
+
+    <view class="ir-records-link" bindtap="onGoRecords">查看住院充值记录</view>
+  </view>
+</view>

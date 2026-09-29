@@ -1,0 +1,32 @@
+<view class="page-cd-list">
+  <view class="container">
+    <view class="card">
+      <view class="section-title">病案邮寄申请</view>
+      <view class="text-muted cdl-count" wx:if="{{!loading}}">共 {{rows.length}} 份</view>
+
+      <view wx:if="{{!loading && rows.length === 0}}" class="cdl-empty">
+        <view class="empty-icon">📦</view>
+        <view class="empty-title">还没有病案邮寄申请</view>
+        <view class="text-muted empty-desc">申请后可在这里查看处理状态与快递单号</view>
+        <button class="btn-outline cdl-empty-btn" bindtap="onGoApply">发起病案邮寄申请</button>
+      </view>
+
+      <view
+        wx:for="{{rows}}"
+        wx:key="id"
+        class="cdl-row"
+        data-id="{{item.id}}"
+        bindtap="onOpen"
+      >
+        <view class="cdl-row-top">
+          <text class="cdl-inpatient">{{item.inpatientName}} · {{item.inpatientNo}}</text>
+          <text class="cdl-status cdl-status-{{item.statusTone}}">{{item.statusLabel}}</text>
+        </view>
+        <view class="text-muted cdl-row-mid">收件人 {{item.recipientName}}</view>
+        <view class="text-muted cdl-row-bottom">提交于 {{item.timeText}}</view>
+      </view>
+    </view>
+
+    <button wx:if="{{rows.length > 0}}" class="btn-primary cdl-apply-btn" bindtap="onGoApply">再发起一份申请</button>
+  </view>
+</view>

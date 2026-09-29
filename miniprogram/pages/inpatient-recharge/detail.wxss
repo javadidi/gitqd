@@ -1,0 +1,62 @@
+.page-ir-detail {
+  min-height: 100vh;
+}
+
+.ird-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.ird-row:last-child {
+  border-bottom: none;
+}
+
+.ird-label {
+  font-size: 26rpx;
+  color: #64748b;
+  flex-shrink: 0;
+  margin-right: 24rpx;
+}
+
+.ird-value {
+  font-size: 26rpx;
+  color: #1f2937;
+  text-align: right;
+}
+
+.ird-mono {
+  font-family: Menlo, Consolas, monospace;
+  font-size: 24rpx;
+  color: #1f2937;
+  text-align: right;
+  word-break: break-all;
+}
+
+.ird-amount {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.ird-status {
+  font-size: 26rpx;
+  color: #059669;
+}
+
+.ird-note {
+  margin: 24rpx 8rpx 0;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.ird-empty {
+  text-align: center;
+  padding: 60rpx 24rpx;
+}
+
+.ird-back-btn {
+  margin-top: 32rpx;
+}

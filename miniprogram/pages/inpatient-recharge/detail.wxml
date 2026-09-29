@@ -1,0 +1,27 @@
+<view class="page-ir-detail">
+  <view class="container">
+    <view wx:if="{{detail}}" class="card">
+      <view class="section-title">账单详情</view>
+      <view class="ird-row"><text class="ird-label">充值单号</text><text class="ird-mono">{{detail.orderNo}}</text></view>
+      <view class="ird-row"><text class="ird-label">住院人</text><text class="ird-value">{{detail.inpatientName}}</text></view>
+      <view class="ird-row"><text class="ird-label">住院号</text><text class="ird-mono">{{detail.inpatientNo}}</text></view>
+      <view class="ird-row"><text class="ird-label">充值金额</text><text class="ird-amount">{{detail.amountText}}</text></view>
+      <view class="ird-row"><text class="ird-label">支付方式</text><text class="ird-value">{{detail.payMethodLabel}}</text></view>
+      <view class="ird-row"><text class="ird-label">当前状态</text><text class="ird-status">{{detail.statusLabel}}</text></view>
+      <view class="ird-row"><text class="ird-label">第三方流水号</text><text class="ird-mono">{{detail.tradeNo}}</text></view>
+      <view class="ird-row"><text class="ird-label">充值时间</text><text class="ird-value">{{detail.timeText}}</text></view>
+    </view>
+
+    <view wx:if="{{!loading && !detail}}" class="card ird-empty">
+      <view class="empty-icon">🧾</view>
+      <view class="empty-title">读不到这笔账单</view>
+      <view class="text-muted empty-desc">账单不存在，或它属于另一位就诊人</view>
+    </view>
+
+    <view wx:if="{{detail}}" class="text-muted ird-note">
+      住院充值只生成这一张单据，不影响到诊卡余额；住院费用清单由医院出具，本版本暂不提供
+    </view>
+
+    <button wx:if="{{detail}}" class="btn-outline ird-back-btn" bindtap="onBackRecords">返回记录列表</button>
+  </view>
+</view>

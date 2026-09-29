@@ -1,0 +1,117 @@
+.page-inpatient-recharge {
+  min-height: 100vh;
+}
+
+.ir-inpatient {
+  position: relative;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.ir-inpatient:last-of-type {
+  border-bottom: none;
+}
+
+.ir-inpatient-on {
+  background: #f8fbff;
+}
+
+.ir-inpatient-main {
+  display: flex;
+  align-items: baseline;
+}
+
+.ir-inpatient-name {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+  margin-right: 16rpx;
+}
+
+.ir-inpatient-no,
+.ir-inpatient-ward {
+  font-size: 24rpx;
+}
+
+.ir-inpatient-ward {
+  margin-top: 6rpx;
+}
+
+.ir-inpatient-check {
+  position: absolute;
+  right: 8rpx;
+  top: 24rpx;
+  color: #2563eb;
+  font-size: 32rpx;
+}
+
+.ir-more {
+  margin-top: 20rpx;
+  font-size: 26rpx;
+  color: #2563eb;
+}
+
+.ir-empty {
+  padding: 40rpx 0 20rpx;
+  text-align: center;
+}
+
+.ir-empty-btn {
+  margin-top: 24rpx;
+}
+
+.ir-amount-row {
+  display: flex;
+  align-items: center;
+  border-bottom: 1rpx solid #f0f0f0;
+  padding-bottom: 16rpx;
+}
+
+.ir-amount-unit {
+  font-size: 40rpx;
+  color: #1f2937;
+  margin-right: 12rpx;
+}
+
+.ir-amount-input {
+  flex: 1;
+  font-size: 40rpx;
+}
+
+.ir-amount-tip {
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.ir-pay-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ir-pay-name {
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+.ir-pay-check {
+  color: #2563eb;
+  font-size: 32rpx;
+}
+
+.ir-pay-tip {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+}
+
+.ir-submit {
+  margin-top: 40rpx;
+}
+
+.ir-records-link {
+  margin-top: 28rpx;
+  text-align: center;
+  font-size: 26rpx;
+  color: #2563eb;
+}

@@ -1,0 +1,82 @@
+.page-cd-result {
+  min-height: 100vh;
+}
+
+.cdr-head {
+  text-align: center;
+  padding: 40rpx 24rpx;
+}
+
+.cdr-icon {
+  width: 88rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  margin: 0 auto 20rpx;
+  border-radius: 50%;
+  background: #ecfdf5;
+  color: #059669;
+  font-size: 44rpx;
+}
+
+.cdr-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.cdr-sub {
+  margin-top: 10rpx;
+  font-size: 26rpx;
+}
+
+.cdr-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.cdr-row:last-child {
+  border-bottom: none;
+}
+
+.cdr-label {
+  font-size: 26rpx;
+  color: #64748b;
+  flex-shrink: 0;
+  margin-right: 24rpx;
+}
+
+.cdr-value {
+  font-size: 26rpx;
+  color: #1f2937;
+  text-align: right;
+  flex: 1;
+}
+
+.cdr-addr {
+  line-height: 1.6;
+}
+
+.cdr-mono {
+  font-family: Menlo, Consolas, monospace;
+  font-size: 24rpx;
+  color: #1f2937;
+  text-align: right;
+}
+
+.cdr-status {
+  font-size: 26rpx;
+  color: #d97706;
+}
+
+.cdr-note {
+  margin: 24rpx 8rpx 0;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.cdr-btn {
+  margin-top: 24rpx;
+}

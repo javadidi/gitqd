@@ -1,0 +1,26 @@
+<view class="page-cd-detail">
+  <view class="container">
+    <view wx:if="{{detail}}" class="card">
+      <view class="section-title">申请详情</view>
+      <view class="cdd-row"><text class="cdd-label">住院人</text><text class="cdd-value">{{detail.inpatientName}}</text></view>
+      <view class="cdd-row"><text class="cdd-label">住院号</text><text class="cdd-mono">{{detail.inpatientNo}}</text></view>
+      <view class="cdd-row"><text class="cdd-label">收件人</text><text class="cdd-value">{{detail.recipientName}}</text></view>
+      <view class="cdd-row"><text class="cdd-label">收件地址</text><text class="cdd-value cdd-addr">{{detail.address}}</text></view>
+      <view class="cdd-row"><text class="cdd-label">当前状态</text><text class="cdd-status">{{detail.statusLabel}}</text></view>
+      <view class="cdd-row"><text class="cdd-label">快递单号</text><text class="cdd-mono">{{detail.trackingNo}}</text></view>
+      <view class="cdd-row"><text class="cdd-label">提交时间</text><text class="cdd-value">{{detail.timeText}}</text></view>
+    </view>
+
+    <view wx:if="{{!loading && !detail}}" class="card cdd-empty">
+      <view class="empty-icon">📦</view>
+      <view class="empty-title">读不到这份申请</view>
+      <view class="text-muted empty-desc">申请不存在，或它属于另一位住院人</view>
+    </view>
+
+    <view wx:if="{{detail}}" class="text-muted cdd-note">
+      快递单号由医院寄出后填写；本系统不对接承运商，无法查询物流轨迹
+    </view>
+
+    <button wx:if="{{detail}}" class="btn-outline cdd-back-btn" bindtap="onBackList">返回申请记录</button>
+  </view>
+</view>

@@ -11,7 +11,7 @@ Page({
       { id: 'report', label: '报告查询', icon: 'file-text', url: '/pages/report/type' },
       { id: 'record', label: '病历查询', icon: 'book', url: '/pages/record/list' },
       { id: 'followup', label: '复诊配药', icon: 'pill', url: '/pages/followup/apply' },
-      { id: 'physical', label: '体检服务', icon: 'heart', url: '' },
+      { id: 'physical', label: '体检服务', icon: 'heart', url: '/pages/physical/packages' },
     ],
     notices: [],
     healthArticles: [],

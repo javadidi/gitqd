@@ -1,0 +1,61 @@
+<view class="page-cd-apply">
+  <view class="container">
+    <view class="card">
+      <view class="section-title">病案所属住院人</view>
+
+      <view wx:if="{{!loading && inpatients.length === 0}}" class="cda-empty">
+        <view class="empty-icon">🏥</view>
+        <view class="empty-title">还没有绑定住院人</view>
+        <view class="text-muted empty-desc">申请病案邮寄需要先绑定住院号</view>
+        <button class="btn-outline cda-empty-btn" bindtap="onBindInpatient">去绑定住院号</button>
+      </view>
+
+      <view
+        wx:for="{{inpatients}}"
+        wx:key="id"
+        class="cda-inpatient {{selectedInpatientId === item.id ? 'cda-inpatient-on' : ''}}"
+        data-id="{{item.id}}"
+        bindtap="onPickInpatient"
+      >
+        <view class="cda-inpatient-main">
+          <text class="cda-inpatient-name">{{item.name}}</text>
+          <text class="text-muted cda-inpatient-no">住院号 {{item.inpatientNo || '—'}}</text>
+        </view>
+        <view class="text-muted cda-inpatient-ward">{{item.department}} · {{item.bedNo}}</view>
+        <view wx:if="{{selectedInpatientId === item.id}}" class="cda-inpatient-check">✓</view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">邮寄信息</view>
+      <view class="cda-field">
+        <text class="cda-label">收件人</text>
+        <input
+          class="cda-input"
+          placeholder="请输入收件人姓名"
+          value="{{recipientName}}"
+          bindinput="onRecipientInput"
+        />
+      </view>
+      <view class="cda-field cda-field-last">
+        <text class="cda-label">收件地址</text>
+        <textarea
+          class="cda-textarea"
+          placeholder="请输入详细收件地址"
+          value="{{address}}"
+          bindinput="onAddressInput"
+        />
+      </view>
+      <view class="text-muted cda-tip">
+        本版本不上传证件照片，也不收取配送费；申请提交后由医院后台处理
+      </view>
+    </view>
+
+    <button
+      class="btn-primary cda-submit"
+      loading="{{submitting}}"
+      disabled="{{submitting}}"
+      bindtap="onSubmit"
+    >提交申请</button>
+  </view>
+</view>

@@ -325,6 +325,33 @@ function physicalStatusTone(status) {
   return PHYSICAL_STATUS_TONES[status] || 'pending'
 }
 
+// 病案配送状态（T23）。三个取值全部出自 V1:334 那一列的注释
+// 「PENDING/SHIPPED/DELIVERED」——一次给全，但首版只会出现 PENDING：
+// T23 写死它，而「已寄出/已送达」的前提是医院填了快递单号
+// （V1:335 tracking_no），那件事的生产者是后台的病案配送记录页（卡片 720 行，属 T26）。
+// 「待处理」而不是「待寄出」：患者提交后医院先要审核病案申请，寄出只是其中一步，
+// 规格没有把这一段拆开，标签就不替它拆。
+const DELIVERY_STATUS_LABELS = {
+  PENDING: '待处理',
+  SHIPPED: '已寄出',
+  DELIVERED: '已送达',
+}
+
+function deliveryStatusLabel(status) {
+  return DELIVERY_STATUS_LABELS[status] || status || '—'
+}
+
+// 配色键沿用充值/体检那一套（pending/confirmed/done），不新造 tone 名。
+const DELIVERY_STATUS_TONES = {
+  PENDING: 'pending',
+  SHIPPED: 'confirmed',
+  DELIVERED: 'done',
+}
+
+function deliveryStatusTone(status) {
+  return DELIVERY_STATUS_TONES[status] || 'pending'
+}
+
 module.exports = {
   formatMoney,
   formatDate,
@@ -369,4 +396,8 @@ module.exports = {
   physicalStatusLabel,
   PHYSICAL_STATUS_TONES,
   physicalStatusTone,
+  DELIVERY_STATUS_LABELS,
+  deliveryStatusLabel,
+  DELIVERY_STATUS_TONES,
+  deliveryStatusTone,
 }

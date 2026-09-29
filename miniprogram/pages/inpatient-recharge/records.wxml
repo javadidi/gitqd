@@ -1,0 +1,43 @@
+<view class="page-ir-records">
+  <view class="container">
+    <view wx:if="{{inpatient}}" class="card irp-head">
+      <view class="irp-head-name">{{inpatient.name}}</view>
+      <view class="text-muted irp-head-line">住院号 {{inpatient.inpatientNo}}</view>
+      <view class="text-muted irp-head-line">{{inpatient.department}} · {{inpatient.bedNo}}</view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">充值记录</view>
+      <view class="text-muted irp-count" wx:if="{{!loading}}">共 {{rows.length}} 笔</view>
+
+      <view wx:if="{{!loading && rows.length === 0}}" class="irp-empty">
+        <view class="empty-icon">🧾</view>
+        <view class="empty-title">还没有住院充值记录</view>
+        <view class="text-muted empty-desc">住院充值后可在这里查看每一笔账单</view>
+        <button class="btn-outline irp-empty-btn" bindtap="onGoRecharge">去住院充值</button>
+      </view>
+
+      <view
+        wx:for="{{rows}}"
+        wx:key="id"
+        class="irp-row"
+        data-id="{{item.id}}"
+        bindtap="onOpen"
+      >
+        <view class="irp-row-top">
+          <text class="irp-order">{{item.orderNo}}</text>
+          <text class="irp-amount">{{item.amountText}}</text>
+        </view>
+        <view class="irp-row-mid">
+          <text class="text-muted irp-inpatient">{{item.inpatientName}} · {{item.inpatientNo}}</text>
+          <text class="irp-status">{{item.statusLabel}}</text>
+        </view>
+        <view class="text-muted irp-row-bottom">
+          {{item.payMethodLabel}} · {{item.dateText}}
+        </view>
+      </view>
+    </view>
+
+    <button wx:if="{{rows.length > 0}}" class="btn-primary irp-recharge-btn" bindtap="onGoRecharge">再充一笔</button>
+  </view>
+</view>

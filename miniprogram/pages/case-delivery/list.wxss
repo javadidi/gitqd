@@ -1,0 +1,67 @@
+.page-cd-list {
+  min-height: 100vh;
+}
+
+.cdl-count {
+  font-size: 24rpx;
+  margin-bottom: 12rpx;
+}
+
+.cdl-row {
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.cdl-row:last-child {
+  border-bottom: none;
+}
+
+.cdl-row-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.cdl-inpatient {
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+.cdl-status {
+  font-size: 24rpx;
+}
+
+.cdl-status-pending {
+  color: #d97706;
+}
+
+.cdl-status-confirmed {
+  color: #2563eb;
+}
+
+.cdl-status-done {
+  color: #059669;
+}
+
+.cdl-row-mid,
+.cdl-row-bottom {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+}
+
+.cdl-row-bottom {
+  font-size: 22rpx;
+}
+
+.cdl-empty {
+  padding: 40rpx 0 20rpx;
+  text-align: center;
+}
+
+.cdl-empty-btn {
+  margin-top: 24rpx;
+}
+
+.cdl-apply-btn {
+  margin-top: 32rpx;
+}

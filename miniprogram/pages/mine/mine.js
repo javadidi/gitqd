@@ -30,10 +30,10 @@ Page({
       { group: '缴费记录', items: [
         { label: '门诊缴费记录', icon: '💳', url: '/pages/payment/records' },
         { label: '门诊充值记录', icon: '💰', url: '/pages/recharge/records' },
-        { label: '住院充值记录', icon: '🏦', url: '' },
+        { label: '住院充值记录', icon: '🏦', url: '/pages/inpatient-recharge/records', key: 'inpatientRecharge' },
       ]},
       { group: '其他', items: [
-        { label: '病案邮寄记录', icon: '📦', url: '' },
+        { label: '病案邮寄记录', icon: '📦', url: '/pages/case-delivery/list', key: 'caseDelivery' },
         { label: '问题反馈', icon: '💬', url: '' },
         { label: '消息通知', icon: '🔔', url: '' },
       ]},

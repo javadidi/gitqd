@@ -50,7 +50,16 @@
     "pages/physical/confirm",
     "pages/physical/notice",
     "pages/physical/result",
-    "pages/physical/list"
+    "pages/physical/list",
+    "pages/inpatient-recharge/recharge",
+    "pages/inpatient-recharge/result",
+    "pages/inpatient-recharge/records",
+    "pages/inpatient-recharge/detail",
+    "pages/case-delivery/notice",
+    "pages/case-delivery/apply",
+    "pages/case-delivery/result",
+    "pages/case-delivery/list",
+    "pages/case-delivery/detail"
   ],
   "window": {
     "navigationBarBackgroundColor": "#ffffff",
