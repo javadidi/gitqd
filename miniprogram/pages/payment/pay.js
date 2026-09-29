@@ -55,6 +55,14 @@ Page({
     wx.redirectTo({ url: '/pages/payment/records' })
   },
 
+  // 申请电子发票（T19 的入口，出处是 PRD §7.2「门诊缴费流程」第 554 行那条主流程：
+  // 「… → 缴费成功 → 查看缴费记录/申请电子发票」。这是规格里唯一给发票指路的一句，
+  // 首页八个快捷入口（§3.2）里没有发票，个人中心清单（§6.1 527 行）也没有，
+  // 所以不在那里另开一个入口——那会是第二个出处。）
+  onGoInvoice() {
+    wx.navigateTo({ url: '/pages/invoice/pending' })
+  },
+
   onBackHome() {
     wx.switchTab({ url: '/pages/index/index' })
   },

@@ -1,0 +1,31 @@
+<view class="page-invoice-detail">
+  <view class="container">
+    <view wx:if="{{detail}}" class="card">
+      <view class="ivd-head">
+        <text class="ivd-title">电子票据</text>
+        <text class="ivd-status ivd-status-{{detail.tone}}">{{detail.statusLabel}}</text>
+      </view>
+
+      <view class="ivd-amount">{{detail.amountText}}</view>
+
+      <view class="ivd-items">
+        <view wx:for="{{detail.items}}" wx:key="name" class="ivd-item-line">
+          <text class="ivd-item-name">{{item.name}}</text>
+          <text class="ivd-item-amount">{{item.amountText}}</text>
+        </view>
+      </view>
+
+      <view class="ivd-row"><text class="ivd-label">发票编号</text><text class="ivd-mono">{{detail.invoiceNo}}</text></view>
+      <view class="ivd-row"><text class="ivd-label">发票代码</text><text class="ivd-mono">{{detail.invoiceCode}}</text></view>
+      <view class="ivd-row"><text class="ivd-label">就诊人</text><text>{{detail.patientName}}</text></view>
+      <view class="ivd-row"><text class="ivd-label">关联缴费单</text><text class="ivd-mono">{{detail.paymentOrderNo}}</text></view>
+      <view class="ivd-row"><text class="ivd-label">开票时间</text><text>{{detail.timeText}}</text></view>
+    </view>
+
+    <view wx:if="{{detail}}" class="ivd-note">
+      本票据由系统模拟开具，用于流程演示；正式财政票据由医院开票系统出具。
+    </view>
+
+    <button class="btn-primary ivd-back-btn" bindtap="onBack">返回发票列表</button>
+  </view>
+</view>

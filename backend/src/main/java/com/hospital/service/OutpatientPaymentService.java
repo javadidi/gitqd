@@ -196,7 +196,12 @@ public class OutpatientPaymentService {
      * 列的形状没有任何约束（不是生成列、没有 CHECK），多出键时绑类会直接抛
      * {@code UnrecognizedPropertyException}，表现为"一条脏数据让整页 500"。
      */
-    private List<OutpatientPaymentResponse.Item> parseItems(String json) {
+    /**
+     * 包级可见而不是 private：T19 的票据详情要显示"这张票开的是哪几项"，
+     * 明细必须与缴费详情走<b>同一个解析路径</b>（同一套键名、同一套跳过规则），
+     * 否则两处显示会漂移。与 T16 复用 {@code AppointmentQueryService.namesOf} 同一条理由。
+     */
+    List<OutpatientPaymentResponse.Item> parseItems(String json) {
         if (json == null || json.isBlank()) {
             return List.of();
         }

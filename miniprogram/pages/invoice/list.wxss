@@ -1,0 +1,103 @@
+.ivl-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 20rpx 24rpx;
+}
+
+.ivl-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.ivl-sub {
+  font-size: 22rpx;
+}
+
+.ivl-empty {
+  padding: 80rpx 0;
+  text-align: center;
+}
+
+.ivl-empty .empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.ivl-empty .empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.ivl-empty .empty-desc {
+  font-size: 24rpx;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.ivl-pending-btn {
+  width: 60%;
+}
+
+.ivl-card {
+  padding: 24rpx;
+}
+
+.ivl-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ivl-patient {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.ivl-status {
+  font-size: 22rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+}
+
+.ivl-status-ok {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.ivl-status-pending {
+  color: #d97706;
+  background: #fef3c7;
+}
+
+.ivl-amount {
+  margin-top: 12rpx;
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.ivl-no {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  font-family: Menlo, Consolas, monospace;
+}
+
+.ivl-foot {
+  margin-top: 10rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ivl-time {
+  font-size: 22rpx;
+}
+
+.ivl-arrow {
+  font-size: 36rpx;
+  color: #9ca3af;
+}

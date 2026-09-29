@@ -23,6 +23,7 @@
     <view class="ps-note">余额可在「我的 - 门诊充值」继续充值；本单凭证见「缴费记录 - 缴费详情」</view>
 
     <button class="btn-primary ps-records-btn" bindtap="onGoRecords">查看缴费记录</button>
+    <button class="btn-outline ps-invoice-btn" bindtap="onGoInvoice">申请电子发票</button>
     <button class="btn-outline ps-home-btn" bindtap="onBackHome">返回首页</button>
   </view>
 </view>

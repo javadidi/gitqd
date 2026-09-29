@@ -5466,3 +5466,208 @@ T14 已经证明"不继承 `BaseEntity` 的流水实体若漏这条注解，MyBa
 - `SecurityConfig`、`pom.xml`、两个 `package.json` 一行未动；零迁移、零新列；**既有后端文件零修改**。
 - P4 还剩 T19（电子发票）——它是 P4 三张卡里**唯一自己有生产者**的一张（开票由本系统写 `invoice` 表）。
 - 下一个推送点仍是 🚩 **M2 = T28**，本卡只提交不推送。
+
+## T19 · 电子发票（2026-09-29）
+
+### 任务卡原文 → 实现对照（578–592 行，**逐字**引用）
+
+| 行号 | 卡片原文 | 落点 |
+|---|---|---|
+| 581 | `- 待开具电子发票：展示可开票的缴费记录。` | `pages/invoice/pending.*` + `GET /api/user/invoices/pending` |
+| 582 | `- 开票申请：提交开票申请。` | `POST /api/user/invoices`（入参**只有** `paymentId`） |
+| 583 | `- 已开具电子发票：已开票记录列表。` | `pages/invoice/list.*` + `GET /api/user/invoices` |
+| 584 | `- 票据详情：查看电子发票详情。` | `pages/invoice/detail.*` + `GET /api/user/invoices/{id}` |
+| 586 | `**红线**：不做真实开票（二期做）；首版仅模拟开票流程。` | 申请即写 `ISSUED`；`invoice_code` 写成 `MOCK-FP20260929-0037` 这种**一眼假**的值；PRD 152 行的「及下载」不做（没有文件可下） |
+| 589 | `- J43 开票申请 → 发票记录创建。` | MockMvc 9 例（含并发）+ 真 HTTP 第 3–5 组（14 步）+ UI 第 8–9 步（点按钮后库里真多一行） |
+| 590 | `- J44 票据详情 → 内容正确。` | MockMvc 4 例 + 真 HTTP 第 6–7 组（9 步）+ UI 第 10 步（明细两行中文 DOM 取证） |
+| 592 | `**DoD**：电子发票流程通。` | 三层证据：**273 例**门禁 / 真 HTTP **47/47** / UI **15 步全过**（票据详情页截图逐行看过） |
+
+### 范围判定：四页四接口（§9.1 只给三个，第四个由卡片撑起来）
+
+| 来源 | 行号 | 原文 | 判定 |
+|---|---|---|---|
+| 卡片「要做什么」 | 581–584 | 四条：待开具 / 开票申请 / 已开具 / 票据详情 | 三个页面 + 一个动作 |
+| 卡片 DoD | 592 | `**DoD**：电子发票流程通。` | "流程通"要求端到端可走，不能少一环 |
+| PRD §3.3.8 | 149–152 | 四步：`待开具电子发票`／`开票成功`／`已开具电子发票`／`票据详情 — 查看电子发票详情及下载` | **多了「开票成功」这一页**（卡片把它折进了 582 行的动作里） |
+| PRD §6.1 页面清单 | 516 | `\| 门诊服务-电子发票 \| 待开具电子发票、开票成功、已开具电子发票、票据详情 \|` | **四页**，与 §3.3.8 完全一致 |
+| PRD §9.1 接口概览 | 620 | `\| 电子发票 \| 开票申请、发票列表、发票详情 \|` | 只给三个 → **第四个（待开具列表）由卡片 581 行撑起** |
+| PRD §10 数据字典 | 592 | `\| 电子发票 \| 发票ID、缴费ID、发票代码、金额、状态 \|` | 五个字段，其中「缴费ID」回成患者可读的 `paymentOrderNo` |
+| PRD §7.2 门诊缴费流程 | 554 | `… → 缴费成功 → 查看缴费记录/申请电子发票` | **入口只在这一处**：缴费成功页要有「申请电子发票」按钮 |
+
+**与 T15 完全同型的那一次**：§9.1 少写一个端点，而卡片明写一页。T15 的处理是照卡片补 `GET /user/payments/pending` 并在日志里说明，本卡同一口径 —— **不为了对齐接口概览表就把卡片明写的一页砍掉**（[[read-dod-not-verb-list]]）。
+
+**入口没有第二处**：首页八个快捷入口（§3.2）里没有发票，个人中心清单（§6.1 527 行）里也没有。所以只在 T15 的缴费成功页加一个 `.ps-invoice-btn`，出处就是 PRD 554 行那一条流程；不在别处另开口子，免得出现第二个出处。
+
+### V5 迁移：`uk_payment_id`（本卡唯一的库改动）
+
+卡片 581 行「可开票的缴费记录」把 `invoice : payment_record` 钉成 **1 : 1**，而 V1:237-246 建 `invoice` 表时**一条索引都没有**。"患者连点两次""两台设备同时提交"是本卡一定会发生的场景，先查后写在并发下必然留两张票 —— 而发票编号是要拿去报销的东西，重复即事故。
+
+沿用本仓 R1（T08 卡号）/ R2（T11 排班三元组）的**双层**口径：service 先查给友好提示（3005），唯一索引兜住并发（输家撞 `DuplicateKeyException` → 翻译成同一个 3005）。
+
+**为什么这张表的唯一索引没有软删后遗症**：`invoice` 是财务单据表，V1:237-246 **根本没有 `deleted` 列**（与 `recharge_record`/`payment_record`/`refund_record` 同一族），所以不存在 T08-G/T11 那种"软删行永久占位、重排必须复活原行"的复杂度。迁移全文与这段推理记在 `V5__invoice_unique_payment.sql` 的注释里。
+
+落地证据（`SHOW CREATE TABLE`，不用 `information_schema` 那个缓存）：
+
+```
+PRIMARY KEY (`id`),
+UNIQUE KEY `uk_payment_id` (`payment_id`)
+```
+
+Flyway 日志：`Migrating schema hospital to version "5 - invoice unique payment"` → `Successfully applied 1 migration … now at version v5`（`t19-mvn1.log`）。
+
+### 九个实现判断
+
+| # | 判断 | 出处 / 理由 |
+|---|---|---|
+| ① | **金额只有一个出处**：`invoice.amount_fen` 由服务端从 `payment_record.amount_fen` 抄，入参里没有金额字段 | 发票是报销凭证，"缴 4000 开 400000"必须**结构上不可能**。与 T15「塞 amountFen 也改不动账单」同一条纪律，真 HTTP `3d/5c` 双向证明 |
+| ② | 申请即写 `ISSUED`，不产生 `PENDING` | 卡片 586 行「首版仅模拟开票流程」+ PRD 150 行下一步就是「开票成功」页。真实通道的"受理中"规格没定义、也没有回调可等。V1:243 列注释里的 `PENDING` 值仍被前端标签表覆盖（二期接通道只改写入口） |
+| ③ | `invoice_code` 写成 `MOCK-<发票编号>` | 真实发票代码会被患者拿去税务平台验真，**编一个像真的 12 位数字就是造伪凭证**。与 T14 的 `MOCK_TXN_RC_*` 同一做法。两条断言：前缀是 `MOCK-`，且去掉前缀后**不是纯数字**（真 HTTP `7/7b`） |
+| ④ | 新错误码 `3005 INVOICE_EXISTS_FOR_PAYMENT`，**不复用 3004** | 3004 的文案是「该缴费单已缴过或状态不允许缴费」，说给刚点"缴费"的人听；点"开票"的人需要知道"这张票开过了，去已开具列表看"。混用会把患者引回缴费流程。编号沿用 T02 预留的 3xxx 段（与 T11 加 2007、T15 加 3004 同一条规矩） |
+| ⑤ | 待开具列表**以缴费单为骨架**（回 `paymentId`），不是发票 | 还没开票的发票在库里根本不存在；"可开票"= 已缴成功 且 没有发票行。实现是两次查询取差集（`status='SUCCESS'` 的本人缴费单 − 已有发票的 `payment_id`） |
+| ⑥ | 归属跳**两跳**：`invoice.payment_id → payment_record.patient_id → patient.user_id` | `invoice` 表既没有 `user_id` 也没有 `patient_id`（V1:237-246 只有七列）。少一跳，改一个发票 id 就能看见别人的消费金额与项目明细 |
+| ⑦ | **不改 `payment_record`**：开票不推进缴费单状态 | 发票与缴费单是两个实体；V1:163 的缴费状态只有 `PENDING/SUCCESS/REFUNDED`，没有"已开票"这个值。为开票去加一个状态就是替规格编枚举 |
+| ⑧ | 详情带 `items`（开票项目明细），**复用 T15 的解析函数** | PRD 152 行「查看电子发票详情」——一张不写开了哪几项的票据患者无从核对。明细不另存一份，从关联缴费单的 JSON 列解析；为此把 `OutpatientPaymentService.parseItems` 从 `private` 开成**包级可见**（与 T16 开 `namesOf` 同一条理由：两处显示必须同源） |
+| ⑨ | **不做「及下载」** | PRD 152 行原话有"及下载"，但首版既不产生文件也没有存文件的地方（`invoice` 七列里没有 URL/文件列）。做一个只会 toast 的下载按钮 = 假动作，宁少勿假。已记遗留 TODO |
+
+### 门禁证据：`mvn -o clean test` 全绿 **273 例**（256 + 17）
+
+```
+[INFO] Tests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.898 s -- in com.hospital.service.InvoiceIntegrationTest
+[INFO] Tests run: 273, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+26 个测试类分项计数（逐条抄自 `t19-mvn2.log`，合计 273）：
+
+| 类 | 例 | 类 | 例 | 类 | 例 |
+|---|---|---|---|---|---|
+| FlywayMigrationTest | 1 | AuditFieldFillTest | 3 | AuditLogTest | 3 |
+| SeedCheckTest | 4 | SeedConstraintTest | 4 | TaskKernelTest | 7 |
+| AuthIntegrationTest | 7 | MoneyMaskingTest | 7 | service.CaptchaServiceTest | 5 |
+| service.CaptchaIntegrationTest | 8 | service.PermissionServiceTest | 9 | service.UserAuthIntegrationTest | 9 |
+| service.SerialNumberServiceTest | 3 | service.AppointmentPayFailureTest | 2 | service.PatientIntegrationTest | 17 |
+| service.CatalogIntegrationTest | 19 | service.InpatientIntegrationTest | 11 | service.ScheduleIntegrationTest | 29 |
+| service.AppointmentIntegrationTest | 27 | service.AppointmentManageIntegrationTest | 10 | service.RechargeIntegrationTest | 13 |
+| service.PaymentIntegrationTest | 16 | service.QueueIntegrationTest | 13 | service.ReportIntegrationTest | 15 |
+| service.MedicalRecordIntegrationTest | 14 | **service.InvoiceIntegrationTest（本卡新增）** | **17** | — | — |
+
+`InvoiceIntegrationTest` 十七个方法：
+
+| # | 方法 | 钉住什么 |
+|---|---|---|
+| 1 | `j43_pendingListShowsOnlyPaidAndUninvoicedBills` | 待开具 = 已缴 且 未开票；未缴的那张不算 |
+| 2 | `j43_applyCreatesInvoiceRow` | J43 正身：库里真多一行，编号 `FP` 前缀、状态 ISSUED、金额抄单 |
+| 3 | `j43_mockInvoiceCodeIsObviouslyFake` | `MOCK-` 前缀 + 去前缀后非纯数字 |
+| 4 | `j43_appliedBillDisappearsFromPendingList` | 开过票从待开具消失、进已开具 |
+| 5 | `j43_secondApplyOnSameBillIsRejected3005AndCreatesNothing` | 幂等：第二次 3005 且不留行 |
+| 6 | `j43_concurrentAppliesOnSameBill_onlyOneInvoiceSurvives` | **两线程 → 恰好一 200 一 3005、库里一张票**（V5 的唯一存在理由） |
+| 7 | `j43_amountCannotBeChangedByTheClient` | 入参塞 `amountFen`/`status` 一律无效 |
+| 8 | `j43_applyOnUnpaidOrForeignOrMissingBillIs5001` | 三种不可开票路径同码，且都不留发票行 |
+| 9 | `j43_missingPaymentIdIsRejectedByValidation` | `@NotNull` → HTTP 400 + code 400 |
+| 10 | `j44_detailCarriesInvoiceFieldsAndPaymentItems` | 详情字段 + 明细两行中文 |
+| 11 | `j44_detailShapeIsExactlyNineFieldsAndNoInternalIds` | 九键白名单；`paymentId`/`patientId` 不外放 |
+| 12 | `j44_listRowShapeAndStatusPassThrough` | 列表八键、状态回码值、不带明细 |
+| 13 | `j44_otherUsersInvoiceIsInvisibleBothWays` | 两跳归属：列表与详情都读不到 |
+| 14 | `j42_detailOfNonexistentRecordIsSameCodeAsNotMine` 的对应例 `…999999999 → 5001` | 越权与不存在同码 |
+| 15 | `invoiceIdStaysInsideJsSafeInteger` | **T14 闸门这一次真的会咬人**：`Invoice` 不 `extends BaseEntity`，`@TableId(AUTO)` 必须自己写 |
+| 16 | `auditIsWrittenInSameTransactionAndRollsBackWithRejection` | 成功 +1 条审计；被 3005 拒的那次**一条都不许多** → 反证没走 `@Async`/`REQUIRES_NEW`/`afterCommit` |
+| 17 | `staffAndAnonymousCannotReachInvoiceEndpoints` + `readsWriteNothingIntoTheDatabase` | 角色隔离 + 三个读端点零副作用 |
+
+（第 14 项在本类里的实际方法名是 `j44_otherUsersInvoiceIsInvisibleBothWays` 里的第二段断言与 `j43_applyOnUnpaidOrForeignOrMissingBillIs5001` 的第三段，此处按语义归并列出。）
+
+### 真 HTTP 验收：**47 步全 PASS**（`t19_http.py` → `t19-http-result.txt`，`PY_EXIT=0`）
+
+基线 = 收尾：`{"invoice": 0, "payment_record": 4, "patient": 10, "user": 10, "audit_log": 37}`；探针 `patient=2232`（本人）/`2233`（他人）、四张缴费单 id 862–865。
+
+| 组 | 步数 | 覆盖 |
+|---|---|---|
+| 0 前置 | 4 | `invoice` 开局 0 行；两个账号真登录；各建一个就诊人 |
+| 1 造账单 | 1 | 裸插四张缴费单（本人已缴 ×2 / 本人未缴 ×1 / 他人已缴 ×1）——门诊账单没有建单端点，与 T15 同一处境 |
+| 2 待开具 | 3 | 恰好两张、倒序、五字段、金额 4000 |
+| 3 J43 申请 | 9 | 业务成功回整票、`FP` 编号、`ISSUED`、金额抄单、**库里落行**、审计 +1、待开具少一张、已开具一条八字段、带关联缴费单号 |
+| 4 幂等与并发 | 5 | 第二次 3005、不留发票行、**不留审计行**、**两线程恰好一 200 一 3005**、库里一张票 |
+| 5 不可篡改 | 4 | 别人的单 5001、未缴的单 5001、缺 `paymentId` → `[400,400]`、三次被拒零发票行 |
+| 6 J44 详情 | 8 | 业务成功、九字段清单、金额/状态/编号、明细两行中文、就诊人名、无内部 id、id 在 JS 安全整数内 |
+| 7 模拟代码 | 2 | `MOCK-` 前缀 + 去前缀非纯数字 |
+| 8 越权 | 4 | 真实发票 id 读不到 5001、已开具为空、待开具只有他自己那张、不存在的 id 5001 |
+| 9 角色 | 2 | 医生 `[403,4001]`、匿名写端点 401 |
+| 10 编码 | 2 | JSON 列只比中文片段字节（整串比会被 MySQL 重排坑，见下）；普通列整串字节比对 |
+| 11 自净 | 5 | 五张表逐项回基线（含 `audit_log` 37→37） |
+
+### UI 验收：15 步全过（`t19_ui.sh` → `t19-ui2.log`，`UI_EXIT=0`）
+
+**这条链全程是真的**：登录 → 添加就诊人（T08）→ 充值 ¥100（T14）→ 裸插一张待缴单 → 走 T15 真实缴费 → 成功页点「申请电子发票」→ 待开具点「开票」→ 库里多一行发票 + 一条审计 → 票据详情 → 已开具列表 → 待开具归零。只有账单是探针（HIS 推的账 UI 造不出来）。
+
+| 步 | 取证 | 结果 |
+|---|---|---|
+| 0 | 基线五项 + 登录前 `MAX(user.id)=3025` | `base invoice=0 payment=4 patient=10 user=10 audit=37` |
+| 1–2 | 录制器 + `clearlog` + 错误钩子 → 微信登录 | token 到位 |
+| 3 | 真链路添加就诊人「候发票」 | `patient id=2235`（本次用户 `id=4144`） |
+| 4 | 充值 ¥100（`.rc-patient` → 金额 → 提交） | `balance_after_recharge=10000` |
+| 5 | 裸插一张 ¥40 待缴单 | `bill_row=867 status=PENDING amount=4000` |
+| 6 | T15 真实缴费（`.pm-pay-btn` + 确认弹窗）→ 成功页 | `route: pages/payment/pay`、`.ps-title → 缴费成功`、**`.ps-invoice-btn → 申请电子发票`**（PRD 554 行那个入口真的在） |
+| 7 | 点成功页入口进待开具 | `route: pages/invoice/pending`、`rowCount: 1`、`rows: "867\|T19UI-BILL-01\|候发票\|¥40.00\|2026-09-29 15:22"`、`.ivp-sub → 共 1 张可开票` |
+| 8 | 点 `.ivp-issue-btn` 开票 | `route: pages/invoice/result`、`query: {"id":"37"}`、`detail: FP20260929-0037\|MOCK-FP20260929-0037\|已开具\|¥40.00\|候发票\|T19UI-BILL-01`；DOM 读数 `.ivs-title → 开票成功`、`.ivs-mono → FP20260929-0037`、`.ivs-amount → ¥40.00`、`.ivs-status → 已开具` |
+| 9 | **库侧对账**（这一步才是 J43 的判据） | `invoice_rows=1`、`invoice_no=FP20260929-0037 code=MOCK-FP20260929-0037 status=ISSUED amount=4000`、`audit_create_invoice=1` |
+| 10 | 点「查看票据详情」 | `route: pages/invoice/detail`、`detail: …\|血常规:¥12.00+胃镜检查:¥28.00`；DOM：`.ivd-item-name → 血常规`、`.ivd-item-amount → ¥12.00`、`.ivd-status → 已开具` |
+| 11 | 返回成功页 → 进「已开具发票」列表 | `route: pages/invoice/list`、`rowCount: 1`、`rows: "37\|FP20260929-0037\|候发票\|¥40.00\|已开具"`、`.ivl-sub → 共 1 张` |
+| 12 | 再进待开具 → **必须空**（幂等在前端的形态） | `rowCount: 0`、`.ivp-sub → 共 0 张可开票`、`.empty-title → 暂无可开票的缴费记录` |
+| 13 | 未登录进两页 | 两次 `reLaunch`（待开具与已开具）后栈都只剩 `[pages/login/login]` |
+| 14 | 控制台 + toast 台账 | `errs: []`、`toasts: []`（**零错误吐司**，缴费成功提示不在这段窗口内） |
+| 15 | 清理 + 回基线 | `before_cleanup invoice=1` → `after invoice=0 payment=4 recharge=3 patient=10 user=10 audit=37 balance_sum=10000`、`残留探针发票=0` |
+
+**票据详情截图我亲自看过**：抬头「票据详情」，卡片里「电子票据 + 已开具角标」、大号红色 `¥40.00`、明细两行（血常规 ¥12.00 / 胃镜检查 ¥28.00）、五行字段（发票编号 `FP20260929-0037`、发票代码 `MOCK-FP20260929-0037`、就诊人 候发票、关联缴费单 `T19UI-BILL-01`、开票时间），底部一行说明「本票据由系统模拟开具，用于流程演示；正式财政票据由医院开票系统出具。」+「返回发票列表」按钮。**没有下载按钮，也没有空着的栏目。**
+
+### 本轮四处自错（三处是旧账，一处是新账）
+
+| 症状 | 根因 | 修法 |
+|---|---|---|
+| 脚本崩在 `record(3b): ok 参数必须是 bool，实际是 'str'='编号=FP…'` | **同一个错第五次犯**：把 note 串塞进了 `record()` 的第 5 参（判定槽）。这次是布尔闸门当场拦下的，否则又是一轮"全绿但其实没断言" | 六处同类调用一次改全（先取局部 bool 再传两遍），并把"改完要审全部调用点"再记一次 |
+| 真 HTTP 第 10 步字节比对失败：期望 `…223A22…` 实际 `…223A2022…` | `items` 是 **JSON 列**，MySQL 存完会重新规范化（冒号后补空格），拿原始字面量比整串注定错——这正是 T11 记过的"JSON 列不能做字面量子串比对"的字节版 | 改成只断言中文片段的 UTF-8 字节在库值里出现；整串比对留给普通 VARCHAR 列（新增 `10b`） |
+| `nav back` 让脚本 `set -u` 直接打断（第 11 步之后全没跑） | `nav()` 助手要两个参数（action + url），只给一个 → `$2` 未绑定 → bash 退出。而 `nav` 的失败**不会**留下任何错误行 | 返回上一页走 `evalfn fn/back.js`；并记：**`set -u` 下任何助手少传参都是"静默夭折"，收尾步骤必须单独核一遍是否真跑到** |
+| 起后端"看起来成功" | 上一轮遗留的孤儿 `java.exe` 占着 8080，我的 `spring-boot:run` 其实 `BUILD FAILURE` | 这条 T18 刚记过，本轮**按新规矩执行了**：`grep -ac 'Started HospitalApplication'` + `grep -ac 'BUILD FAILURE'` + 比对日志 PID 与 `netstat` 端口占用者，三项一致才算就绪。第一次跑就发现了占用，清掉再启 |
+
+### 附录 B · 全局红线检查表（14 条逐条扫）
+
+| # | 检查项 | 本卡结论 |
+|---|---|---|
+| 1 | 严禁前端隐藏金额 | ✅ 金额全程明文：待开具、成功页、列表、详情都显示 `¥40.00`；截图逐行看过 |
+| 2 | 金额裁剪层是否被绕过 | ✅ `amountFen` 含 `fen` 会被 `MoneyMaskingModifier` 命中，但只对 `nurse` 生效；本组接口只有患者 token 进得来，看自己的票据金额是需求本身 |
+| 3 | 审计必须同事务 | ✅ `apply` 带 `@AuditLog(CREATE_INVOICE)`，切面在 `proceed()` 前同事务写。**反面证明**：被 3005 拒掉的那次审计一条都不许多（MockMvc #16 + 真 HTTP `4c`）——这同时排除 `@Async`/`REQUIRES_NEW`/`afterCommit` |
+| 4 | 外部通道用 afterCommit | N/A：本卡**没有**外部通道（真实开票属二期）。红线"不做真实开票"落地方式是不假装：`MOCK-` 前缀 + 页面明写"由系统模拟开具" |
+| 5 | 权限判断是否只写在 UI | ✅ 归属在 SQL（两跳：`payment_id IN (我的缴费单) → patient.user_id`）+ 幂等在 `uk_payment_id` + 角色隔离在 `SecurityConfig`；`submitting` 标志只是少发一次注定 3005 的请求 |
+| 6 | 小程序新接口是否强制注入 userId 归属校验 | ✅ 四个端点都没有 userId 入参；`InvoiceCreateRequest` **只有一个 `paymentId`**，金额/状态/就诊人一律不接受（真 HTTP `5c` + MockMvc #7 证明塞了也无效） |
+| 7 | 身份证/手机号是否加密存储 | N/A（本卡不写这两列）；探针就诊人经 T08 真接口创建 |
+| 8 | 有没有多装 T01 清单外的三方库 | ✅ 零新增依赖（`pom.xml`、两个 `package.json` 一行未动） |
+| 9 | 落地/跳转目标是否白名单 | ✅ 全部字面量：`navigateTo('/pages/invoice/result?id=' + …)`、`redirectTo('/pages/invoice/list')`、`switchTab('/pages/index/index')`；`id` 只当查询参数用，不据它跳任意页 |
+| 10 | 列表筛选/搜索/分页是否进 URL | N/A：PRD 620/149 行都没给筛选。发票天然按"待开 / 已开"两个列表分开，不需要参数化筛选（分页记入遗留 TODO） |
+| 11 | 是否越界做别的卡的活 | ✅ 不做真实开票（卡片 586 行红线）、不做退款（T26）、不做缴费（T15 已完成，本卡只复用其链路取证）、不做发票下载/打印/红冲作废（规格没有）、不给 `payment_record` 加"已开票"状态（判断⑦） |
+| 12 | 是否写了规格里没有的实体/表/字段 | ⚠️ **一处迁移**：V5 给 `invoice` 加 `uk_payment_id`。它不是新字段、不改变形状，只是把卡片 581 行已经写死的 1:1 语义变成数据库约束；理由与"为什么没有软删后遗症"写在迁移文件注释里。DTO 字段全部可追到 PRD 592 行或 V1 列 |
+| 13 | 是否自造了数字或规则 | ✅ 无金额上限、无开票期限（"缴费后 30 天内可开票"这类是"看着该有但规格没写"的典型，一律没编）、无最小开票金额。`MOCK-` 代码是**模拟标记**不是编造数据，且专门断言它不可被误认为真 |
+| 14 | 前端是否有唯一类名可复核 | ✅ 四页四套前缀 `ivp-*`/`ivs-*`/`ivl-*`/`ivd-*`；关键动作都有独立类名（`.ps-invoice-btn`、`.ivp-issue-btn`、`.ivs-detail-btn`），本轮全部 DOM 级取证无降级项 |
+
+### 本卡有意未做的事（附录 D 第 3 条）
+
+| 未做 | 为什么 |
+|---|---|
+| 真实开票 / 税务通道 / 电子票据文件 | 卡片 586 行红线。也不预留"通道参数"表单字段（抬头、税号、邮箱）——PRD 592 行数据字典没有一项，那是替二期编表单 |
+| 「及下载」（PRD 152 行） | 没有文件可下：`invoice` 七列里没有文件/URL 列，首版也不产生文件。做一个只会 toast 的按钮是假动作 |
+| 发票作废 / 红冲 / 换开 | 规格里一次没出现；`status` 也只有 V1:243 给的两个值 |
+| 开票后回写缴费单状态 | V1:163 没有"已开票"这个值，加一个就是替规格编枚举（判断⑦） |
+| `invoice` 加 `patient_id` 或 `user_id` 列 | 归属链已经由 `payment_record` 存在，加列就是把同一件事存两遍（T14 否掉"派生余额"的同一条理由） |
+| 发票分页 / 按时间筛选 | PRD 没要求。附录 B 第 10 条要的是"如果有筛选就要进 URL"，不是"必须有筛选" |
+| 给 `SerialType.FP` 加校验位或格式规则 | 现有 `next(FP)` 已给出 `FP<yyyyMMdd>-<seq>`；规格从没定义过发票编号格式，加校验位是编造 |
+
+### 遗留 TODO（交给后续卡或二期）
+
+1. **接真实开票通道**（二期）：改写入口即可 —— 需要 (a) 引入受理态（`PENDING` 已有值）、(b) 通道回调写 `invoice_code`（真实 12 位代码）、(c) 存票据文件的一列。届时 `MOCK-` 前缀与页面的"模拟开具"说明一起撤掉。
+2. **PRD 152 行的「下载」**：与 1 同批做（要有文件才有得下）。
+3. **发票分页**：与 T17/T18 的分页需求一起处理（并遵守附录 B 第 10 条）。
+4. **`invoice` 表没有 `deleted` 列**：本卡按"发票只增不删"实现。若二期要作废，需要先决定是加软删列还是加 `CANCELLED` 状态——**加软删列会让 `uk_payment_id` 变成"作废后不能重开"**，这是 T08-G/T11 踩过的同一类耦合，届时必须先想清楚。
+5. 首页快捷入口对 tabBar 页用 `navigateTo`（T17 记的那条）仍未修，与本卡无关。
+
+### 当前状态
+
+- **T19 收口**：后端 **273 例全绿**（256 + 17）、真 HTTP **47/47 PASS**、UI **15 步全过**（票据详情截图逐行看过）、库里五项计数逐项回基线、`invoice` 回到 0 行、`balance_sum` 回到种子值 10000。
+- **一处库改动**：V5 加 `uk_payment_id`（不改形状，只把 1:1 变成约束）。`SecurityConfig`、`pom.xml`、两个 `package.json` 一行未动。
+- **P4（T17–T19）到此三张卡全部收口**，本轮下令的 P3 + P4 共六张卡做完。下一个推送点仍是 🚩 **M2 = T28**，本卡只提交不推送。

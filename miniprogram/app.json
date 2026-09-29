@@ -31,7 +31,11 @@
     "pages/report/list",
     "pages/report/detail",
     "pages/record/list",
-    "pages/record/detail"
+    "pages/record/detail",
+    "pages/invoice/pending",
+    "pages/invoice/result",
+    "pages/invoice/list",
+    "pages/invoice/detail"
   ],
   "window": {
     "navigationBarBackgroundColor": "#ffffff",

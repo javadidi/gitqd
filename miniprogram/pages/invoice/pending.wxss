@@ -1,0 +1,86 @@
+.ivp-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 20rpx 24rpx;
+}
+
+.ivp-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.ivp-sub {
+  font-size: 22rpx;
+}
+
+.ivp-empty {
+  padding: 80rpx 0;
+  text-align: center;
+}
+
+.ivp-empty .empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.ivp-empty .empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.ivp-empty .empty-desc {
+  font-size: 24rpx;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.ivp-pay-btn,
+.ivp-issued-btn {
+  width: 60%;
+}
+
+.ivp-issued-btn {
+  margin-top: 20rpx;
+}
+
+.ivp-card {
+  padding: 24rpx;
+}
+
+.ivp-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ivp-patient {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.ivp-amount {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.ivp-no {
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  font-family: Menlo, Consolas, monospace;
+}
+
+.ivp-foot {
+  margin-top: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ivp-time {
+  font-size: 22rpx;
+}

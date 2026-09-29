@@ -235,6 +235,18 @@ function reportItemsText(items) {
   }).join('、')
 }
 
+// 发票状态码 → 中文标签。码值出处 V1__init.sql:243 的列注释「PENDING/ISSUED」。
+// 首版只会出现 ISSUED（T19 是模拟开票，申请即成功，见 InvoiceService 类注释），
+// PENDING 一并给出是因为列注释把它写成了合法值，二期接真实通道时不必再回来补。
+const INVOICE_STATUS_LABELS = {
+  PENDING: '开票中',
+  ISSUED: '已开具',
+}
+
+function invoiceStatusLabel(status) {
+  return INVOICE_STATUS_LABELS[status] || status || '—'
+}
+
 module.exports = {
   formatMoney,
   formatDate,
@@ -265,4 +277,6 @@ module.exports = {
   reportTypeLabel,
   REPORT_QUERY_TYPES,
   reportItemsText,
+  INVOICE_STATUS_LABELS,
+  invoiceStatusLabel,
 }

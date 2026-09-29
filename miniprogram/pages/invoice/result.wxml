@@ -1,0 +1,26 @@
+<view class="page-invoice-result">
+  <view class="container">
+    <view class="card ivs-head">
+      <view class="ivs-icon">✓</view>
+      <view class="ivs-title">开票成功</view>
+      <view wx:if="{{detail}}" class="ivs-sub">{{detail.patientName}} 的 {{detail.amountText}} 已开具电子票据</view>
+    </view>
+
+    <view wx:if="{{detail}}" class="card">
+      <view class="ivs-row"><text class="ivs-label">发票编号</text><text class="ivs-mono">{{detail.invoiceNo}}</text></view>
+      <view class="ivs-row"><text class="ivs-label">发票代码</text><text class="ivs-mono">{{detail.invoiceCode}}</text></view>
+      <view class="ivs-row"><text class="ivs-label">开票金额</text><text class="ivs-amount">{{detail.amountText}}</text></view>
+      <view class="ivs-row"><text class="ivs-label">状态</text><text class="ivs-status">{{detail.statusLabel}}</text></view>
+      <view class="ivs-row"><text class="ivs-label">关联缴费单</text><text class="ivs-mono">{{detail.paymentOrderNo}}</text></view>
+      <view class="ivs-row"><text class="ivs-label">开票时间</text><text>{{detail.timeText}}</text></view>
+    </view>
+
+    <view class="ivs-note">
+      本票据由系统模拟开具，用于流程演示；正式财政票据由医院开票系统出具。
+    </view>
+
+    <button class="btn-primary ivs-detail-btn" bindtap="onGoDetail">查看票据详情</button>
+    <button class="btn-outline ivs-list-btn" bindtap="onGoList">已开具发票</button>
+    <button class="btn-outline ivs-home-btn" bindtap="onBackHome">返回首页</button>
+  </view>
+</view>
