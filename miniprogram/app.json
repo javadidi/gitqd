@@ -29,7 +29,9 @@
     "pages/queue/queue",
     "pages/report/type",
     "pages/report/list",
-    "pages/report/detail"
+    "pages/report/detail",
+    "pages/record/list",
+    "pages/record/detail"
   ],
   "window": {
     "navigationBarBackgroundColor": "#ffffff",

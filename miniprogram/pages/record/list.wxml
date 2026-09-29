@@ -1,0 +1,33 @@
+<view class="page-record-list">
+  <view class="container">
+    <view class="card mr-head">
+      <text class="mr-title">历史病历</text>
+      <text class="text-muted mr-sub">共 {{rows.length}} 条</text>
+    </view>
+
+    <view wx:if="{{!loading && rows.length === 0}}" class="mr-empty">
+      <view class="empty-icon">📋</view>
+      <view class="empty-title">还没有病历记录</view>
+      <text class="text-muted empty-desc">病历由就诊医生书写，出具后会显示在这里</text>
+      <button class="btn-outline mr-home-btn" bindtap="onGoHome">回首页</button>
+    </view>
+
+    <view
+      wx:for="{{rows}}"
+      wx:key="recordId"
+      class="card mr-card"
+      data-id="{{item.recordId}}"
+      bindtap="onOpen"
+    >
+      <view class="mr-card-head">
+        <text class="mr-patient">{{item.patientName}}</text>
+        <text class="mr-time">{{item.timeText}}</text>
+      </view>
+      <view class="mr-doctor">就诊医生 {{item.doctorName}}</view>
+      <view class="mr-foot">
+        <text class="text-muted mr-no">{{item.recordNo}}</text>
+        <text class="mr-arrow">›</text>
+      </view>
+    </view>
+  </view>
+</view>

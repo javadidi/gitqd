@@ -1,0 +1,86 @@
+.mr-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 20rpx 24rpx;
+}
+
+.mr-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.mr-sub {
+  font-size: 22rpx;
+}
+
+.mr-empty {
+  padding: 80rpx 0;
+  text-align: center;
+}
+
+.mr-empty .empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.mr-empty .empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.mr-empty .empty-desc {
+  font-size: 24rpx;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.mr-home-btn {
+  width: 60%;
+}
+
+.mr-card {
+  padding: 24rpx;
+}
+
+.mr-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mr-patient {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.mr-time {
+  font-size: 24rpx;
+  color: #64748b;
+}
+
+.mr-doctor {
+  margin-top: 10rpx;
+  font-size: 26rpx;
+  color: #1f2937;
+}
+
+.mr-foot {
+  margin-top: 8rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.mr-no {
+  font-size: 24rpx;
+  font-family: Menlo, Consolas, monospace;
+}
+
+.mr-arrow {
+  font-size: 36rpx;
+  color: #9ca3af;
+}

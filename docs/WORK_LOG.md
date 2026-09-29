@@ -5253,3 +5253,216 @@ T14 已经证明"不继承 `BaseEntity` 的流水实体若漏这条注解，MyBa
 - **T17 收口**：后端 **242 例全绿**（227 + 15）、真 HTTP **44/44 PASS**、UI **12 步全过**（两张截图我逐张看过渲染）、库里五项计数逐项回基线、`report` 表回到 0 行（本卡没留任何数据）。
 - `SecurityConfig`、`pom.xml`、两个 `package.json` 一行未动；零迁移、零新列；**既有后端文件零修改**（只有新增）。
 - 下一个推送点仍是 🚩 **M2 = T28**，本卡只提交不推送。
+
+## T18 · 病历查询（2026-09-29）
+
+### 任务卡原文 → 实现对照（562–574 行，**逐字**引用）
+
+| 行号 | 卡片原文 | 落点 |
+|---|---|---|
+| 565 | `- 病历列表：展示历史病历。` | `pages/record/list.*` + `GET /api/user/medical-records`（**无任何 query 参数**） |
+| 566 | `- 病历详情：查看病历详细内容（诊断、处方、医嘱等）。` | `pages/record/detail.*` + `GET /api/user/medical-records/{id}`；诊断与处方原文渲染，**医嘱见下面的冲突判定** |
+| 568 | `**红线**：不做报告查询（T17）。` | 全卡零碰 `report` 表；只在测试基线里数它一行证明没写它。`ReportService`/`ReportController` 一行未动 |
+| 571 | `- J41 病历列表 → 数据正确。` | MockMvc 6 例 + 真 HTTP 第 2–3 组（7 步） |
+| 572 | `- J42 病历详情 → 内容正确。` | MockMvc 6 例 + 真 HTTP 第 4–6 组（9 步）+ UI 第 6b/7 步 |
+| 574 | `**DoD**：病历查询通。` | 三层证据：**256 例**门禁 / 真 HTTP **39/39** / UI **12 步全过**（详情页截图我亲自看过） |
+
+### 范围判定：两页两接口（五路来源逐条核对）
+
+| 来源 | 行号 | 原文 | 判定 |
+|---|---|---|---|
+| 卡片「要做什么」 | 565–566 | 两条：病历列表 / 病历详情 | 两条都是页面级动词 |
+| 卡片 DoD | 574 | `**DoD**：病历查询通。` | 不扩页 |
+| PRD §3.5 | 176–177 | `1. **病历查询** — 展示历史病历列表`<br>`2. **病历详情** — 查看病历详细内容（诊断、处方、医嘱等）` | 两步两页 |
+| PRD §6.1 页面清单 | 519 | `\| 病历查询 \| 病历查询、病历详情 \|` | **确认两页**（对照 T17 那格 518 行列了四项 → 三页，同一张表的读法一致） |
+| PRD §9.1 接口概览 | 614 | `\| 病历查询 \| 病历列表、病历详情 \|` | **两个端点**，且与 T17 一样没给"病历类型"这种入口 |
+| PRD §10 数据字典 | 590 | `\| 病历 \| 病历ID、就诊人ID、诊断、处方、医生、时间 \|` | 字段权威清单（也是下面「医嘱」判定的关键证据） |
+
+### 本卡最大的判断：「医嘱」不加列、不显示、不编造
+
+卡片 566 行与 PRD 177 行都点名了医嘱，但另外两处没有。**这是一次真实的规格自相矛盾**，四路原文逐字如下：
+
+| 出处 | 行号 | 原文 | 有没有医嘱 |
+|---|---|---|---|
+| 卡片「要做什么」 | 566 | `- 病历详情：查看病历详细内容（诊断、处方、医嘱等）。` | **有** |
+| PRD §3.5 页面流程 | 177 | `2. **病历详情** — 查看病历详细内容（诊断、处方、医嘱等）` | **有** |
+| PRD §10 数据字典 | 590 | `\| 病历 \| 病历ID、就诊人ID、诊断、处方、医生、时间 \|` | **无** |
+| V1 建表语句 | 220–232 | `record_no` / `patient_id` / `doctor_id` / `diagnosis` / `prescription` / `record_time`（+ 三个通用列） | **无** |
+
+**取舍：以数据字典与建表为准，本卡不加这一列。** 三条理由（也写进了 `MedicalRecordDetailResponse` 的类注释）：
+
+1. 数据字典是描述**结构**的权威位置，V1 的 `medical_record` 与 590 行**逐项对齐**（六个字段一一对上），说明建表就是照它做的；177 行那句带「等」字，是"举其要"而不是"列其全"——同句把「诊断、处方」也并列在里面，而这两项恰好都在字典里。
+2. 与 **T14 加 `balance_fen` 的情形不同**：那一列有 J33 + PRD 98 + PRD 661 三处要求、且功能非它不可（充值必须能表达余额）；医嘱只有这一处提及，且是页面文案里的一个"等"。
+3. `medical_record` 与 `report`/`queue_status` 一样**首版没有生产者**。给一张没人写的表加一列，页面上就是一条**永远空着的栏目** —— 那是假装有功能（[[no-speculative-additions]]）。所以详情页刻意**不留**一个"医嘱："标题。
+
+这条判定被钉成了可测事实，三处：MockMvc `j42_detailHasNoAdviceField`（响应里没有 `advice`/`doctorAdvice`/`note`）、真 HTTP 第 `5` 步（同一件事在真容器上再证一次）、UI 第 8 步（页面上 `.mrd-advice` 节点 `no such element`）。**将来产品决定支持医嘱，这三条会一起红，提醒契约变了**——比翻日志发现强。
+
+### 结构性事实：`medical_record` 也是**没有生产者**的一张表
+
+与 T16 的 `queue_status`、T17 的 `report` 三连：`seed.sql` 零行（逐字 grep `insert into medical_record` 无匹配）、28 张卡没有一张写它、PRD §4 后台没有病历录入页。
+**注意别再犯 T17 那个错**：PRD 全文没有 `HIS`/`LIS`/`PACS` 任何一个词（只有 486 行「对接微信支付安全接口」），所以"病历由院内系统推入"是**行业常识推断**，不是规格内容 —— 代码注释里已按推断标注。
+
+### 七个实现判断
+
+| # | 判断 | 出处 / 理由 |
+|---|---|---|
+| ① | 列表**一个 query 参数都没有** | 病历表没有分类列（V1:220-232），PRD 614 行也没给参数。与 T17 恰好相反（那边 `?type=` 是卡片 548 行明确要求的）。用真 HTTP 第 `3` 步 + MockMvc 一例把"传什么都不改变结果集"钉住，证明不是漏做 |
+| ② | 列表五个字段、详情七个 | 全部可追到 PRD 590 行；`diagnosis`/`prescription` 是 TEXT（V1:225/226）→ 只在详情出现（T15/T17 同一条纪律）。`recordNo` 属**我的选择**，依据是 V1:222 有这列且注释「病历编号」 |
+| ③ | 医生名逐行按 `doctor_id` 解析，**不外放 `doctorId`** | PRD 590 行写的是「医生」不是"医生ID"；患者认名字。名字唯一出处仍是 `doctor` 表（与 T13 预约记录、T16 候诊页同源）。医生行被软删时返回 null，前端 `— ` 兜底，不拿 id 冒充 |
+| ④ | 不加「科室」列/字段 | `medical_record` 只有 `doctor_id`，科室要再跳一次 `doctor.department_id`；PRD 590 与卡片 565 都没有这一项 |
+| ⑤ | 按 `record_time` **倒序** + `id` 兜底次序 | "历史病历"就是最近在前（T13 预约记录同口径）。`record_time` 是 **NOT NULL**（V1:227），所以不像 T17 那样有空时间排最后的情况——这一点也测了（`6b`） |
+| ⑥ | 归属跳一次 `patient.user_id`，越权/不存在/软删三路同为 5001 | 表里没有 `user_id`。列表 `patient_id IN (我的就诊人)` 收口；403 会确认存在性 → 可枚举（T08 起一路沿用） |
+| ⑦ | 路径取 `/user/medical-records` 而非 `/user/records` | 本仓已有三种"记录"（appointments / payments / recharges），单数 `record` 指代不清；表名与 PRD 用词都是 medical_record |
+
+**`SecurityConfig` 一行没改**（`/user/**` 天然 `hasRole("patient")`，真 HTTP `10/10b/10c` 实测）；**既有后端文件零修改**（`MedicalRecord` 实体与 `MedicalRecordMapper` 是 T01/T02 建的，本卡只是第一次读它们）。
+
+### 门禁证据：`mvn -o clean test` 全绿 **256 例**（242 + 14）
+
+```
+[INFO] Tests run: 14, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.492 s -- in com.hospital.service.MedicalRecordIntegrationTest
+[INFO] Tests run: 256, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+25 个测试类分项计数（逐条抄自 `t18-mvn3.log`，合计 256）：
+
+| 类 | 例 | 类 | 例 | 类 | 例 |
+|---|---|---|---|---|---|
+| FlywayMigrationTest | 1 | AuditFieldFillTest | 3 | AuditLogTest | 3 |
+| SeedCheckTest | 4 | SeedConstraintTest | 4 | TaskKernelTest | 7 |
+| AuthIntegrationTest | 7 | MoneyMaskingTest | 7 | service.CaptchaServiceTest | 5 |
+| service.CaptchaIntegrationTest | 8 | service.PermissionServiceTest | 9 | service.UserAuthIntegrationTest | 9 |
+| service.SerialNumberServiceTest | 3 | service.AppointmentPayFailureTest | 2 | service.PatientIntegrationTest | 17 |
+| service.CatalogIntegrationTest | 19 | service.InpatientIntegrationTest | 11 | service.ScheduleIntegrationTest | 29 |
+| service.AppointmentIntegrationTest | 27 | service.AppointmentManageIntegrationTest | 10 | service.RechargeIntegrationTest | 13 |
+| service.PaymentIntegrationTest | 16 | service.QueueIntegrationTest | 13 | service.ReportIntegrationTest | 15 |
+| **service.MedicalRecordIntegrationTest（本卡新增）** | **14** | — | — | — | — |
+
+`MedicalRecordIntegrationTest` 十四个方法：
+
+| # | 方法 | 钉住什么 |
+|---|---|---|
+| 1 | `j41_listReturnsMyRecordsNewestFirst` | 倒序 + 就诊人 + 医生名 + 编号 + 时间 |
+| 2 | `j41_listRowShapeIsExactlyFiveFields` | 键白名单（正文两列与两个内部 id 都不外放） |
+| 3 | `j41_thereIsNoFilterBecauseTheSpecNeverAskedForOne` | **判断①**：传 `type/doctorId/page` 结果集一字不变 |
+| 4 | `j41_recordsOfTwoPatientsUnderOneUserAreBothListed` | 归属是"我名下所有就诊人"的并集 |
+| 5 | `j41_softDeletedRecordIsInvisibleEverywhere` | `@TableLogic` 让软删行在读路径上彻底不存在 |
+| 6 | `j41_anotherUserSeesNothingAndGuessingIdsGives5001` | 越权与不存在同码，不给枚举机会 |
+| 7 | `j42_detailCarriesDiagnosisAndPrescriptionVerbatim` | 正文两段中文原文一字不改 |
+| 8 | `j42_detailHasNoAdviceField` | **「医嘱」判定的机械证明**（无 advice/doctorAdvice/note + 七键白名单） |
+| 9 | `j42_absentDiagnosisAndPrescriptionBecomeAbsentKeys` | Jackson NON_NULL：未填时键整个消失 |
+| 10 | `j42_detailOfNonexistentRecordIsSameCodeAsNotMine` | 5001 同码 |
+| 11 | `j42_softDeletedDoctorLeavesNameNullNotFake` | 医生解析不出来就是 null，不拿 id 冒充 |
+| 12 | `recordIdStaysInsideJsSafeInteger` | T14 跨卡闸门落在 `medical_record` 上 |
+| 13 | `staffAndAnonymousCannotReachMedicalRecordEndpoints` | 角色隔离回归 |
+| 14 | `readsWriteNothingIntoTheDatabase` | 内容指纹 + 行数 + 审计三件套证明只读 |
+
+### 真 HTTP 验收：**39 步全 PASS**（`t18_http.py` → `t18-http-result.txt`，`PY_EXIT=0`）
+
+基线 = 收尾：`{"medical_record": 0, "report": 0, "patient": 10, "user": 10, "audit_log": 36}`；探针 `patient=2058/2059`（本人两个）与 `2060`（他人）、六条病历 id 52–57（本人 4 + 他人 1 + 软删 1）；`2b` 读到的倒序就是 `[56, 53, 54, 52]`。
+
+| 组 | 步数 | 覆盖 |
+|---|---|---|
+| 0 前置 | 5 | `medical_record` 真的是 0 行；两个账号真登录；本人两个就诊人 + 他人一个就诊人（都经 T08 真接口） |
+| 1 造数据 | 1 | 裸插六条：正文齐全 ×2（不同医生、不同时间）+ 第二个就诊人 ×1 + 他人 ×1 + 正文皆空 ×1 + 软删 ×1 |
+| 2 J41 列表 | 6 | 命中四条、倒序（一小时前 > 两小时前 > 十天前 > 三十天前）、**逐行按 doctor_id 解析名字（刘一鸣 / 李慧敏 各自对各自）**、并集归属、五字段白名单、无正文无内部 id |
+| 3 无筛选 | 1 | 传 `type/doctorId/page/keyword` 结果集与不传**完全一致** |
+| 4 J42 详情 | 6 | 业务成功、诊断原文、处方原文、七字段清单、就诊人与医生名、id 在 JS 安全整数内 |
+| 5 医嘱判定 | 1 | 响应里没有 `advice`/`doctorAdvice`/`note` |
+| 6 空正文 | 2 | 未填时两键整个消失（不是 null 值）；`record_time` NOT NULL 所以时间永远在 |
+| 7 越权 | 3 | 他人只看到自己那一条；猜真实 id → 5001；不存在的 id → 5001 |
+| 8 软删 | 2 | 详情 5001、不在列表 |
+| 9 只读证明 | 3 | 内容指纹一字不变、行数不变、`audit_log` 同轮自比 36→36 |
+| 10 角色 | 3 | 医生 403+4001（列表与详情）、匿名 401 |
+| 11 编码 | 2 | 诊断整句与处方整句（含 `×`、全角逗号）入库字节 = Python 端同一字面量的 UTF-8 字节 |
+| 12 自净 | 5 | 五张表逐项回基线 |
+
+### UI 验收：12 步全过（`t18_ui.sh` → `t18-ui3.log`，`UI_EXIT=0`）
+
+`medical_record` 没有生产者 → 病历行 SQL 裸插（UTF-8 文件 + stdin）；**就诊人走 T08 真实添加页**（加密、卡号唯一、归属由产品代码负责）。
+
+| 步 | 取证 | 结果 |
+|---|---|---|
+| 0 | 基线五项 + 登录前 `MAX(user.id)=3025` | `base medical_record=0 report=0 patient=10 user=10 audit=36` |
+| 1 | 装录制器 + `clearlog` + `console.error` 钩子 | `installed/cleared: true` |
+| 2 | 清登录态 → 微信登录 → 「稍后再说」 | token 到位 |
+| 3 | 首页 `.qe-record` **真点击**进列表（此前 url 是空串） | `route: pages/record/list`、`rowCount: 0`、`.mr-title → 历史病历`、`.mr-sub → 共 0 条`、`.empty-title → 还没有病历记录` |
+| 4 | 真实添加就诊人「候病历」 | 建成功（toast「已添加」，见第 10 步台账），此时列表仍空 → 空态与"有就诊人但没病历"区分开 |
+| 5 | 裸插三条病历 → 重新进列表页 | `inserted=3`、`rows: "66\|T18UI-NULL-01\|候病历\|王建国\|2026-09-29 ;; 65\|T18UI-NEW-01\|…\|李慧敏\|… ;; 64\|T18UI-OLD-01\|…\|张伟\|2026-09-09"`、`.mr-sub → 共 3 条`、`.mr-doctor → 就诊医生 王建国` |
+| 6 | 点 `.mr-card` 进详情 | `route: pages/record/detail`、`query` 带 id、`detail` 非空 → 证明卡片可点且 id 经 URL 传递 |
+| 6b | **正文齐全那条按 id 直接打开** | `detail: T18UI-NEW-01\|候病历\|李慧敏\|2026-09-29 12:39\|高血压 1 级（低危）；建议家庭自测血压并记录\|苯磺酸氨氯地平片 5mg × 7 片，每日一次晨服。`；DOM 级读数：`.mrd-text → 高血压 1 级（低危）；建议家庭自测血压并记录`、`.mrd-doctor-value → 李慧敏`、`.mrd-no → T18UI-NEW-01` |
+| 7 | 未填分支（三列皆空的病历，详情 URL 直接打开） | `detail: T18UI-NULL-01\|…\|13:34\|\|`（两列为空串）、`.mrd-none → 本次病历未填写诊断` → **不白屏、不冒充** |
+| 8 | 页面没有「医嘱」栏 | `.mrd-label → 病历编号`（区块正常渲染）+ `.mrd-advice → no such element`（**负向取证**） |
+| 9 | 未登录进两页 | 两次 `reLaunch`（列表与详情）后栈都只剩 `[pages/login/login]` → 守卫在页面上 |
+| 10 | 控制台 error + toast 台账 + 库侧读数 | `errs: []`；toast 台账**只有一条**「已添加」（第 4 步 T08 自己的成功提示，无错误吐司）；`probe_records=3`、`null_body_rows=1` |
+| 11 | 清理 + 回基线 | `after medical_record=0 report=0 patient=10 user=10 audit=36`、`残留探针病历=0` |
+
+**详情页截图我亲自看过**（`t18-3b-detail-filled`）：抬头「病历详情」，卡片里「门诊病历 / 候病历」+ 三行（病历编号 `T18UI-NEW-01` 等宽字体 / 就诊医生 李慧敏 / 就诊时间 2026-09-29 12:39）+ 「诊断」段 + 「处方」段（`5mg × 7 片` 的乘号与全角逗号都正常）+ 底部说明 + 「返回病历列表」主按钮。**通篇没有"医嘱"这一栏**，与判定一致。
+
+### 本轮最贵的一次自错：打到的是**上一个构建**的后端（15 条假 FAIL）
+
+第一轮 `t18_http.py` 报 **24 PASS / 15 FAIL**，症状是"列表返回空、详情 500"——看起来像新写的控制器有致命 bug。真因：
+
+- 我先跑了 `mvn clean test`（门禁），随后用 `mvn spring-boot:run` 起后端；
+- 但 8080 上**还挂着一个上一轮遗留的孤儿 `java.exe`（PID 99316，T17 的构建）**，我的 `spring-boot:run` 因端口占用**直接失败**（日志尾部是 `BUILD FAILURE` + `MojoExecutionException`），而 `t18-backend.log` 我一眼没看；
+- 于是脚本打的是**没有 `MedicalRecordController` 的旧进程**：`/user/medical-records` 404 → `data_of` 拿到 None → 列表 0 行；`/user/medical-records/{id}` 落到旧构建的某个映射上 → 500。
+
+这条教训仓库记忆里**早就有**（"A backgrounded `mvn spring-boot:run` leaves an orphan `java.exe` holding 8080 … a `curl` 200 proves *an* old server is alive, not that mine started"），我这次只看了 `captcha=200` 就当"起好了"。**新增的硬规矩**：起后端后必须两条同时成立才算就绪 ——
+① `grep -c "Started HospitalApplication" <log>` 为 1（且没有 `BUILD FAILURE`）；
+② `netstat -ano | grep ':8080' | grep LISTENING` 的 PID 与日志里 `--- [hospital-appointment] [main]` 前面的进程号一致。
+本轮修完后重跑：**39/39 PASS**，一次没剩。
+
+### 另外三处脚本/测试自己的错（都不是业务错）
+
+| 症状 | 根因 | 修法 |
+|---|---|---|
+| 门禁第一轮 3 例红 | ① 我把键白名单按**字母序**写，而 Jackson 出的键序是 **DTO 声明序**（T17 侥幸对上过一次，这次露馅）；② 倒序列表第一条挂的医生是 2（李慧敏）不是 1，我按"插的顺序"想成了张伟 | 期望值改按声明序写；医生名改成**逐行按 recordId 取**再对（`by_id` 字典），这样"整页共用一个名字"这类错也能被抓出来 |
+| 编译报「找不到符号 `assertNotNull(capture#1, ？)`」 | 复制 T17 骨架时**漏了 `assertNotNull` 的静态导入**；而报错把 `Map<?,?>.get()` 的通配符渲染成 `capture#1`，读起来像"重载不存在"，我一度去改消息参数位置（JUnit 5 的 `assertNotNull` 消息在**最后**，`assertArrayEquals` 那族才在最前） | 补 import + 恢复原顺序；已把"报错里出现 `capture#N` 先怀疑没导入"写进 [[mockmvc-jsonpath-no-reason-arg]] 第四类 |
+| UI 第 6 步没证到正文渲染 | 列表是时间倒序，而第 5 步插的"未填写"那条恰好是**一小时前**（最新），所以点击进详情进的就是空正文那条 | 拆成 6（点击 → 证明跳转与 id 传递）+ 6b（**按 id 显式打开正文齐全那条** → 证明渲染），并把这条推理写进脚本注释 |
+
+顺带：`pages/record/detail.wxml` 的「就诊医生 / 就诊时间」两个值原本没有类名，为了 DOM 级取证补了 `.mrd-doctor-value` / `.mrd-time-value`（附录 B 第 14 条），补完 `simulator_refresh` 重跑一轮，**没有留降级项**。
+
+### 附录 B · 全局红线检查表（14 条逐条扫）
+
+| # | 检查项 | 本卡结论 |
+|---|---|---|
+| 1 | 严禁前端隐藏金额 | N/A：病历与费用无关，一个金额字段都没有 |
+| 2 | 金额裁剪层是否被绕过 | N/A（同上）；`/user/**` 只有患者 token 进得来 |
+| 3 | 审计必须同事务 | N/A：全卡只读，零写操作 → 按 T10/T13/T16/T17 先例不留痕（真 HTTP `9c` 同轮自比 36→36） |
+| 4 | 外部通道用 afterCommit | N/A：不碰任何外部通道 |
+| 5 | 权限判断是否只写在 UI | ✅ 归属在 SQL（`patient_id IN (我的就诊人)`）+ 角色隔离在 `SecurityConfig`（`10/10b/10c` 实测 403/401）；页面 `onLoad` 的 token 守卫是第二道（UI 第 9 步两页都被弹回登录） |
+| 6 | 小程序新接口是否强制注入 userId 归属校验 | ✅ 两个端点**没有任何入参**（连 query 都没有），`userId` 只从 `SecurityUtils.currentUserId()` 取 |
+| 7 | 身份证/手机号是否加密存储 | N/A（本卡不写这两列）；探针就诊人经 T08 真接口创建，加密路径照旧 |
+| 8 | 有没有多装 T01 清单外的三方库 | ✅ 零新增依赖（`pom.xml`、两个 `package.json` 一行未动） |
+| 9 | 落地/跳转目标是否白名单 | ✅ 全是字面量：`navigateTo('/pages/record/detail?id=' + …)`、`switchTab('/pages/index/index')`、`navigateBack()`；详情页只读 query 里的 `id`，不据它跳任意页 |
+| 10 | 列表筛选/搜索/分页是否进 URL | **N/A（本卡没有筛选）**：病历表没有分类列、PRD 614 行没给参数，所以没有"筛选进 URL"这回事 —— 这一点用真 HTTP 第 `3` 步证成"传参数也不生效"，避免被读成漏做。分页同样 N/A（记入遗留 TODO） |
+| 11 | 是否越界做别的卡的活 | ✅ 不做报告查询（卡片 568 行红线 → T17）、不做病历录入/编辑（没有卡负责）、不做病案配送（卡片 661 行 / J52，属 T23·住院服务）、不做复诊配药（卡片 598 行，属 T20）、不修首页快捷入口的 tabbar 缺陷（T17 已记遗留） |
+| 12 | 是否写了规格里没有的实体/表/字段 | ✅ 零迁移、零新列、零新表；DTO 字段逐个可追到 PRD 590 行或 V1 列，`recordNo` 一处已标明"我的选择"。**并且拒绝加一列"医嘱"**（见上面的四路证据表） |
+| 13 | 是否自造了数字或规则 | ✅ 无。唯一带主观性的就是"不加医嘱列"这条取舍，它有四路原文对照 + 三处测试钉住，属**可推翻的判定**而非编造 |
+| 14 | 前端是否有唯一类名可复核 | ✅ 两页前缀 `mr-*` / `mrd-*`（**与 T17 报告页的 `rl-*`/`rd-*`/`rt-*` 刻意错开**，避免验收选择器歧义）；详情页的值节点补了 `.mrd-doctor-value`/`.mrd-time-value` 才拿到 DOM 级证据 |
+
+### 本卡有意未做的事（附录 D 第 3 条）
+
+| 未做 | 为什么 |
+|---|---|
+| 加 `advice`（医嘱）列 | 见四路证据表。真要支持：补 V5 迁移 + 等生产者配合 + 产品确认它是否本就并入 `diagnosis` 正文 |
+| 病历列表的分页 / 时间范围 / 按医生筛选 | PRD 176 行只说「展示历史病历列表」，614 行只给两个端点。附录 B 第 10 条要求的是"如果有筛选就要进 URL"，不是"必须有筛选" |
+| 病历 PDF 下载 / 打印 / 复制到剪贴板 | 规格里一次没出现 |
+| 检查报告与病历的合并视图 | 两张表、两个模块（PRD §3.4 / §3.5），合并是发明需求 |
+| 医生被软删时给个"已停诊医生"提示 | 规格没定义这种状态；后端返回 null、前端显示 `—` 是最少假设的做法 |
+| 缺参一律 500 的通用修法 | 与 T17 同一条遗留（`GlobalExceptionHandler` 缺 query 参数映射） |
+
+### 遗留 TODO（交给后续卡或二期）
+
+1. **「医嘱」待产品裁决**（本卡最大的一个空洞）：三选一 —— ① V5 加 `advice` 列；② 确认它并入 `diagnosis` 正文；③ 从 177 行那句里删掉。三处测试（MockMvc/HTTP/UI 负向）会在改动时提醒。
+2. **`medical_record` 的生产者**：与 `report`/`queue_status` 同一批二期对接项。届时必须确认：医生是否可能不在 `doctor` 表里（本卡按 null 兜底）、`record_time` 是否总由 HIS 给（列是 NOT NULL）。
+3. **病历分页**：几年后单就诊人会有几十条，与 T17 一起补（并遵守附录 B 第 10 条：筛选进 URL）。
+4. **`SerialType` 里没有病历编号前缀**（现有 YY/CF/JF/TK/YJ/TJ/HX/FP）。本卡不生成编号（`record_no` 由出病历的一方给），所以不缺；若二期要自生成，需补一个前缀并同步 `SerialNumberService` 的测试。
+5. 首页快捷入口对 tabBar 页用 `navigateTo`（T17 记的那条）仍未修，与病历链路无关。
+
+### 当前状态
+
+- **T18 收口**：后端 **256 例全绿**（242 + 14）、真 HTTP **39/39 PASS**、UI **12 步全过**（详情页截图逐行看过）、库里五项计数逐项回基线、`medical_record` 回到 0 行。
+- `SecurityConfig`、`pom.xml`、两个 `package.json` 一行未动；零迁移、零新列；**既有后端文件零修改**。
+- P4 还剩 T19（电子发票）——它是 P4 三张卡里**唯一自己有生产者**的一张（开票由本系统写 `invoice` 表）。
+- 下一个推送点仍是 🚩 **M2 = T28**，本卡只提交不推送。

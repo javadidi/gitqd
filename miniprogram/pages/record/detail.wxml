@@ -1,0 +1,32 @@
+<view class="page-record-detail">
+  <view class="container">
+    <view wx:if="{{detail}}" class="card">
+      <view class="mrd-head">
+        <text class="mrd-title">门诊病历</text>
+        <text class="mrd-patient">{{detail.patientName}}</text>
+      </view>
+
+      <view class="mrd-row"><text class="mrd-label">病历编号</text><text class="mrd-no">{{detail.recordNo}}</text></view>
+      <view class="mrd-row"><text class="mrd-label">就诊医生</text><text class="mrd-doctor-value">{{detail.doctorName}}</text></view>
+      <view class="mrd-row"><text class="mrd-label">就诊时间</text><text class="mrd-time-value">{{detail.timeText}}</text></view>
+
+      <view class="mrd-block">
+        <text class="mrd-label">诊断</text>
+        <text wx:if="{{detail.diagnosis}}" class="mrd-text">{{detail.diagnosis}}</text>
+        <text wx:else class="text-muted mrd-none">本次病历未填写诊断</text>
+      </view>
+
+      <view class="mrd-block">
+        <text class="mrd-label">处方</text>
+        <text wx:if="{{detail.prescription}}" class="mrd-text">{{detail.prescription}}</text>
+        <text wx:else class="text-muted mrd-none">本次病历未开具处方</text>
+      </view>
+    </view>
+
+    <view wx:if="{{detail}}" class="mrd-note">
+      病历内容由就诊医生书写、医院出具，本页面只负责展示。
+    </view>
+
+    <button class="btn-primary mrd-back-btn" bindtap="onBack">返回病历列表</button>
+  </view>
+</view>
