@@ -44,7 +44,13 @@
     "pages/nucleic/confirm",
     "pages/nucleic/result",
     "pages/nucleic/list",
-    "pages/nucleic/report"
+    "pages/nucleic/report",
+    "pages/physical/packages",
+    "pages/physical/package",
+    "pages/physical/confirm",
+    "pages/physical/notice",
+    "pages/physical/result",
+    "pages/physical/list"
   ],
   "window": {
     "navigationBarBackgroundColor": "#ffffff",

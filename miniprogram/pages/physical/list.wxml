@@ -1,0 +1,38 @@
+<view class="page-physical-list">
+  <view class="container">
+    <view wx:if="{{!loading && rows.length === 0}}" class="card">
+      <view class="ppl-empty">
+        <view class="empty-icon">🩺</view>
+        <view class="empty-title">还没有体检预约</view>
+        <view class="text-muted empty-desc">预约后可在这里查看记录，体检报告在同一页进入</view>
+        <button class="btn-outline ppl-empty-btn" bindtap="onGoPackages">去预约体检</button>
+      </view>
+    </view>
+
+    <view wx:for="{{rows}}" wx:key="appointmentId" class="card">
+      <view class="ppl-row-head">
+        <text class="ppl-mono">{{item.orderNo}}</text>
+        <text class="ppl-status ppl-status-{{item.statusTone}}">{{item.statusLabel}}</text>
+      </view>
+      <view class="ppl-line">
+        <text class="ppl-label">体检人</text>
+        <text class="ppl-value">{{item.patientName}}</text>
+      </view>
+      <view class="ppl-line">
+        <text class="ppl-label">体检套餐</text>
+        <text class="ppl-value">{{item.packageName}}</text>
+      </view>
+      <view class="ppl-line">
+        <text class="ppl-label">套餐费用</text>
+        <text class="ppl-price">{{item.priceText}}</text>
+      </view>
+      <view class="ppl-line">
+        <text class="ppl-label">体检日期</text>
+        <text class="ppl-value">{{item.appointmentDate}}</text>
+      </view>
+    </view>
+
+    <button wx:if="{{rows.length}}" class="btn-primary ppl-apply-btn" bindtap="onGoPackages">再约一次</button>
+    <button class="btn-outline ppl-reports-btn" bindtap="onGoReports">体检报告</button>
+  </view>
+</view>

@@ -1,0 +1,130 @@
+.ppa-empty {
+  padding: 48rpx 0;
+  text-align: center;
+}
+
+.ppa-empty .empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.ppa-empty .empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.ppa-empty .empty-desc {
+  font-size: 24rpx;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.ppa-empty-btn {
+  width: 60%;
+}
+
+.ppa-patient {
+  position: relative;
+  padding: 24rpx 60rpx 24rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.ppa-patient:last-of-type {
+  border-bottom: none;
+}
+
+.ppa-patient-main {
+  display: flex;
+  align-items: center;
+}
+
+.ppa-patient-name {
+  font-size: 30rpx;
+  color: #1f2937;
+  margin-right: 12rpx;
+}
+
+.ppa-patient-relation {
+  font-size: 22rpx;
+  color: #2563eb;
+  background: #eff6ff;
+  padding: 2rpx 12rpx;
+  border-radius: 6rpx;
+}
+
+.ppa-patient-card {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+}
+
+.ppa-patient-on {
+  background: #f8fafc;
+}
+
+.ppa-patient-check {
+  position: absolute;
+  right: 16rpx;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #2563eb;
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.ppa-loading {
+  font-size: 24rpx;
+  padding: 16rpx 0;
+}
+
+.ppa-empty-inline {
+  font-size: 24rpx;
+  line-height: 1.7;
+  padding: 24rpx 0;
+}
+
+.ppa-package {
+  padding: 24rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.ppa-package:last-of-type {
+  border-bottom: none;
+}
+
+.ppa-package-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ppa-package-name {
+  font-size: 30rpx;
+  color: #1f2937;
+}
+
+.ppa-package-price {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.ppa-package-audience {
+  font-size: 24rpx;
+  margin-top: 8rpx;
+}
+
+.ppa-package-enter {
+  font-size: 24rpx;
+  color: #2563eb;
+  text-align: right;
+  margin-top: 8rpx;
+}
+
+.ppa-records-btn {
+  margin-top: 12rpx;
+}
+
+.ppa-reports-btn {
+  margin-top: 20rpx;
+}

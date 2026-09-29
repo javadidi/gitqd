@@ -1,0 +1,113 @@
+.ppr-head {
+  text-align: center;
+  padding: 48rpx 24rpx;
+}
+
+.ppr-check {
+  width: 96rpx;
+  height: 96rpx;
+  line-height: 96rpx;
+  margin: 0 auto 20rpx;
+  border-radius: 50%;
+  background: #dcfce7;
+  color: #16a34a;
+  font-size: 48rpx;
+  font-weight: 600;
+}
+
+.ppr-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 12rpx;
+}
+
+.ppr-sub {
+  font-size: 24rpx;
+}
+
+.ppr-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.ppr-row:last-of-type {
+  border-bottom: none;
+}
+
+.ppr-label {
+  font-size: 26rpx;
+  color: #64748b;
+  flex-shrink: 0;
+  margin-right: 24rpx;
+}
+
+.ppr-value {
+  font-size: 28rpx;
+  color: #1f2937;
+  text-align: right;
+}
+
+.ppr-mono {
+  font-size: 26rpx;
+  color: #1f2937;
+  font-family: Menlo, Consolas, monospace;
+}
+
+.ppr-price {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.ppr-status {
+  font-size: 24rpx;
+  padding: 4rpx 20rpx;
+  border-radius: 8rpx;
+}
+
+/* 四个配色对应 format.js 的 PHYSICAL_STATUS_TONES，码值出处 V1:286 列注释 */
+.ppr-status-pending {
+  color: #d97706;
+  background: #fffbeb;
+}
+
+.ppr-status-confirmed {
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.ppr-status-done {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.ppr-status-cancelled {
+  color: #64748b;
+  background: #f1f5f9;
+}
+
+.ppr-missing {
+  font-size: 24rpx;
+  line-height: 1.7;
+  padding: 24rpx 0;
+}
+
+.ppr-records-btn {
+  margin-top: 32rpx;
+}
+
+.ppr-reports-btn,
+.ppr-home-btn {
+  margin-top: 20rpx;
+}
+
+.ppr-note {
+  font-size: 22rpx;
+  line-height: 1.6;
+  text-align: center;
+  margin-top: 32rpx;
+}

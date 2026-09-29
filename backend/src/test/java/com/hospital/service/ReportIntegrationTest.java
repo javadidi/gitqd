@@ -165,19 +165,35 @@ class ReportIntegrationTest {
     }
 
     @Test
-    void j39_physicalReportsAreNotReadableByThisCard() throws Exception {
-        // PHYSICAL 属 PRD §3.4.2 体检报告查询，承接卡是 T22（卡片 642 行 / J50）。
-        // 本卡两处都要挡住：列表筛不到、详情也读不出，否则等于替 T22 把数据路径做掉一半。
+    void j39_physicalReportsBecomeReadableInT22AndStayTypeIsolated() throws Exception {
+        // 这一条原本是 T17 写的「PHYSICAL 两处都进不来」（方法名旧为
+        // j39_physicalReportsAreNotReadableByThisCard）。T22 卡片 642 行 / J50 承接体检报告，
+        // 按 ReportType 类注释预留的钩子放开了白名单，所以断言整个反过来——
+        // 这不是把测试改松了，而是被改卡的契约确实变了，改的同时把"类型之间仍然互斥"钉上：
+        // 放开 PHYSICAL 不等于让 LAB 列表里混进体检报告。
         long patientId = createPatient("报丁");
-        long physical = insertReport(patientId, "PHYSICAL", "[\"身高\",\"血压\"]", "体检结论", LocalDateTime.now());
+        long physical = insertReport(patientId, "PHYSICAL", "[\"身高\",\"血压\"]", "体检结论",
+                LocalDateTime.now());
+        long lab = insertReport(patientId, "LAB", "[\"血常规\"]", "ok", LocalDateTime.now());
 
-        mockMvc.perform(get("/user/reports?type=PHYSICAL").header("Authorization", "Bearer " + ownerToken()))
+        List<?> physicalRows = expectDataList(getJson("/user/reports?type=PHYSICAL"));
+        assertEquals(1, physicalRows.size(), "体检报告列表只该有那一行");
+        assertEquals(physical, ((Number) asMap(physicalRows.get(0)).get("reportId")).longValue(),
+                "T22 之后 PHYSICAL 进得来，且只回体检行");
+        assertEquals("PHYSICAL", asMap(physicalRows.get(0)).get("type"), "类型原样回，不做翻译");
+
+        List<?> labRows = expectDataList(getJson("/user/reports?type=LAB"));
+        assertEquals(1, labRows.size(), "检验报告列表仍只有那一行——放开一类不等于混排");
+        assertEquals(lab, ((Number) asMap(labRows.get(0)).get("reportId")).longValue());
+
+        Map<?, ?> detail = expectData(getJson("/user/reports/" + physical));
+        assertEquals("体检结论", detail.get("result"), "J50「体检报告 → 内容正确」的读路径就是这一条");
+        assertEquals("PHYSICAL", detail.get("type"));
+
+        // 闸还在：类型不认识仍然 400，放开 PHYSICAL 没有把白名单变成来者不拒
+        mockMvc.perform(get("/user/reports?type=BLOOD").header("Authorization", "Bearer " + patientToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(400));
-
-        mockMvc.perform(get("/user/reports/" + physical).header("Authorization", "Bearer " + patientToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.code").value(5001));
     }
 
     @Test

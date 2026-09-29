@@ -1,0 +1,60 @@
+.ppd-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 20rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.ppd-name {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.ppd-price {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.ppd-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.ppd-row:last-of-type {
+  border-bottom: none;
+}
+
+.ppd-label {
+  font-size: 26rpx;
+  color: #64748b;
+  flex-shrink: 0;
+  margin-right: 24rpx;
+}
+
+.ppd-value {
+  font-size: 28rpx;
+  color: #1f2937;
+  text-align: right;
+}
+
+.ppd-items {
+  font-size: 28rpx;
+  color: #1f2937;
+  line-height: 1.8;
+  padding: 8rpx 0;
+}
+
+.ppd-tip {
+  font-size: 22rpx;
+  line-height: 1.6;
+}
+
+.ppd-next {
+  margin-top: 32rpx;
+}

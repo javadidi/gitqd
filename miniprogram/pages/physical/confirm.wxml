@@ -1,0 +1,30 @@
+<view class="page-physical-confirm">
+  <view class="container">
+    <view class="card">
+      <view class="section-title">确认预约信息</view>
+      <view class="ppc-row">
+        <text class="ppc-label">体检人</text>
+        <text class="ppc-value">{{patientName || '—'}}</text>
+      </view>
+      <view class="ppc-row">
+        <text class="ppc-label">体检套餐</text>
+        <text class="ppc-value">{{packageName || '—'}}</text>
+      </view>
+      <view class="ppc-row">
+        <text class="ppc-label">套餐费用</text>
+        <text class="ppc-price">{{priceText || '—'}}</text>
+      </view>
+      <picker mode="date" start="{{today}}" value="{{appointmentDate}}" bindchange="onDateChange">
+        <view class="ppc-row">
+          <text class="ppc-label">体检日期</text>
+          <text class="ppc-value {{appointmentDate ? '' : 'ppc-placeholder'}}">{{appointmentDate || '请选择日期'}}</text>
+        </view>
+      </picker>
+      <view class="text-muted ppc-note">
+        本页费用为套餐标价；首版仅演示预约流程，提交预约不产生任何扣款。
+      </view>
+    </view>
+
+    <button class="btn-primary ppc-next" bindtap="onNext">下一步，阅读体检须知</button>
+  </view>
+</view>

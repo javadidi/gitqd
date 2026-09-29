@@ -6159,3 +6159,297 @@ J48「内容正确」因此这样证：**库里有什么就回什么**——门�
 `pages/mine/mine.wxml` 补一个唯一类名供验收真点击、`utils/format.js` 加两组标签/配色）。
 下一张：**T22 体检预约**（卡片 634 行起）。
 
+## T22 · 体检预约（2026-09-29）
+
+### 任务卡原文 → 实现对照（634–650 行，**逐字**引用）
+
+| 卡片行 | 原文 | 实现 | 证据 |
+|---|---|---|---|
+| 637 | `- 选择体检人。` | `pages/physical/packages` 第一块就诊人卡列表（内联，同 T14/T20/T21） | UI 第 8 步 `el tap .ppa-patient` → `.ppa-patient-check` 出 ✓ |
+| 638 | `- 体检套餐列表：展示可预约的体检套餐。` | 同页第二块 + `GET /user/physical-packages` | 门禁 `packagesListIsEmptyBecauseSeedHasNone`；HTTP 第 3–6 步；UI 第 6–7 步（先取真空态、再取探针渲染） |
+| 639 | `- 套餐详情：查看套餐详细内容。` | `pages/physical/package` + `GET /user/physical-packages/{id}` | 门禁 `packageDetailCarriesPriceAndItemsUntouched`；HTTP 第 7–9 步 |
+| 640 | `- 确认预约信息：确认体检时间、套餐、费用等。` | `pages/physical/confirm`（日期 picker + 三行复核）；**费用只展示** | 门禁 `j49_priceIsNeverTakenFromTheClient` + `j49_noMoneyMovesAtAll`；HTTP 第 16–18 步 |
+| 641 | `- 体检须知：展示体检注意事项。` | `pages/physical/notice`，四条文案全部有出处，不编医学建议 | UI 第 9 步 `.ppn-item-title` / `.ppn-item-desc` |
+| 642 | `- 体检报告：查看体检报告。` | **复用 T17 的两个端点**，本卡只放开 `PHYSICAL` 白名单 | 门禁 `j50_physicalReportIsReadableThroughTheT17Endpoints`；HTTP 第 32–37 步 |
+| 644 | `**红线**：不做真实体检（二期做）；首版仅模拟流程。` | 预约行由产品代码写；体检报告行与套餐行都不写 | HTTP 第 1/3 步、门禁 `packagesListIsEmptyBecauseSeedHasNone` |
+| 647 | `- J49 体检预约 → 记录创建。` | `POST /user/physical-appointments` | 门禁 6 例；HTTP 第 12–15 步；UI 第 10–11 步 |
+| 648 | `- J50 体检报告 → 内容正确。` | `GET /user/reports?type=PHYSICAL` + `GET /user/reports/{id}` | 门禁 2 例；HTTP 第 33–34 步（报告正文按 UTF-8 字节逐字节相等） |
+| 650 | `**DoD**：体检预约流程通。` | 个人中心 → 记录 → 套餐 → 详情 → 确认 → 须知 → 成功 → 报告 | UI 第 5–13 步全程真点击 |
+
+### 范围判定：本卡新增四个端点，另有两个是"借"来的
+
+| 出处 | 逐字原文 | 判定 |
+|---|---|---|
+| PRD §9.1 617 行 | `\| 体检服务 \| 套餐列表、套餐详情、创建体检预约、体检报告 \|` | 四项 |
+| PRD §3.8 210–215 行 | 六步：选择体检人 / 体检预约 / 套餐详情 / 确认预约信息 / 体检须知 / 预约成功 | 六个页面名 |
+| PRD §6.1 522 行 | `\| 体检服务 \| 选择体检人、体检预约、套餐详情、确认预约信息、体检须知、预约成功 \|` | 同上六页 |
+| PRD §3.11.8 309–311 行 | `预约记录列表 — 展示体检预约历史` / `预约详情` / `体检报告` | 个人中心三页 |
+| PRD §6.1 527 行 | 个人中心页面名含 `体检预约记录、预约详情、体检报告、报告详情` | 再次点名 |
+| PRD 数据字典 585–587 行 | `体检套餐 \| 套餐ID、名称、类型ID、价格、适用人群、项目列表`；`体检预约 \| 预约ID、体检人ID、套餐ID、预约日期、状态` | 字段清单 |
+
+**四个新端点**：`GET /user/physical-packages`、`GET /user/physical-packages/{id}`、
+`POST /user/physical-appointments`（§9.1 前三项），加一个 `GET /user/physical-appointments`
+——它由 §3.11.8 309 行 + §6.1 527 行 + `pages/mine/mine.js:26` 那行 `{ label: '体检预约记录', url: '' }`
+三处共同撑起，判法与 T19 待开具、T21 核酸记录列表完全相同。
+
+**「体检报告」不在本卡的新端点里**：`report` 表 V1:206 那一列的注释就是 `LAB/IMAGING/PHYSICAL`，
+体检报告的数据在同一张表里。T17 建卡时在 `ReportType` 留了钩子，原话：
+「而后卡要改的只是这个白名单一行」。本卡兑现它——`isQueryable` 加上 `PHYSICAL`，
+于是 `GET /user/reports?type=PHYSICAL` 与 `GET /user/reports/{id}` 直接可用。
+**不开 `/user/physical-reports`**：给同一张表两个读路径等于自造第二个出处，越权面与缓存面都翻倍。
+注册表测试 `physicalEndpointsAreExactlyTheFourThisCardAdds` 把这件事钉成三条断言
+（套餐两把 + 预约两把 + `physical-report` 一把都不许有）。
+
+**「预约详情」（§3.11.8 310 行）既不加端点也不加页面**：列表那一行的七个字段
+（单号/体检人/套餐/费用/日期/状态）就是详情的全部内容。
+HTTP 第 41 步实测 `GET /user/physical-appointments/{id}` 不是业务成功。
+
+### 本卡最大的判断：费用是**读出来的**，不是存下来、更不是收走的
+
+卡片 640 行让患者"确认体检时间、套餐、费用等"，这一句里有三处需要判定：
+
+| # | 判定 | 依据 |
+|---|---|---|
+| 1 | **预约表没有价格列** | `V1:280-291` 五列是 `order_no/patient_id/package_id/appointment_date/status`，PRD 587 行字典同形。HTTP 第 15 步用 `information_schema.COLUMNS` 实测"名字里带 price 的列数 = 0" |
+| 2 | **费用只能现场读** | 唯一出处是 `physical_package.price_fen`（V1:255）。所以列表与创建响应里的 `priceFen` 都是读时从套餐表带出来的，不是预约行存的 |
+| 3 | **本卡不扣一分钱** | 规格里没有"体检缴费"这一步（T15 的门诊账单是院内推的，体检没有建单端点），预约表也没有支付关联列。所以不写 `payment_record`、不动 `patient.balance_fen` |
+
+第 3 条钉成了两条断言，其中 HTTP 第 16 步是本卡最硬的一条：
+**创建前后 `payment_record` / `refund_record` / `recharge_record` 的行数与全体就诊人余额总额四个数字一字不变**
+（实测 `(4, 15, 3, 10000)` → `(4, 15, 3, 10000)`）。
+它比"响应里没有金额键"结实得多——证的不是形状，是账本没被碰。
+
+**代价必须写在明面上**：因为费用没有快照，T27 后台改了套餐价格之后，
+历史预约记录上显示的费用会跟着变。真要"下单即锁价"需要加列 + 创建时写入，
+规格没要求，本卡不做，只记进遗留 TODO 第 1 条。
+这一条与 T12 的挂号费同源而不同结果：那一卡的 `appointment.fee_fen` **有**列（V1:126），所以它能锁价。
+
+### 第二个判断：体检须知的四条文案，一条医学建议都不写
+
+卡片 641 行「体检须知：展示体检注意事项」要求一页内容，而**全仓没有任何出处**：
+库里没有须知表（`announcement` 的 `type` 只有 `NOTICE/ACTIVITY`，V1:348，是公告表）；
+PRD 575–596 行数据字典没有"须知"；§4 后台也没有"体检须知管理"页（只有 §4.5.3 套餐管理、
+§4.5.4 项目管理，406–413 行）。
+
+处理沿用 **T12 预约须知页**的同一条纪律（`pages/appointment/notice.js` 注释里写着：
+「看着像常识的条款，本仓库没有任何出处，写上去就是编造」）：
+页面照建（规格点名了这一步），内容只写三类有出处的句子——
+
+| 页面上的四条 | 出处 |
+|---|---|
+| 首版为预约流程演示，不含实际体检；提交后不会安排真实体检，也不产生扣款 | 卡片 644 行红线 + 本卡"不扣钱"的代码事实 |
+| 提交后本单状态为「待确认」；当前版本状态不会自动变化 | `V1:286` 列注释 + `PhysicalAppointmentService` 写死 PENDING |
+| 体检报告在个人中心查看 | PRD §3.7 203 行同型句 + §3.11.8 311 行 |
+| 体检注意事项：具体条款由医院维护，本版本暂无可展示内容 | 上面那段"无出处"的结论本身 |
+
+**没有写"体检前需空腹 8 小时""请携带身份证"这类条款**——它们看着像常识，
+但写进一个医疗场景的页面就是编造医疗指引。
+
+### 结构性事实：三张体检表 seed 全零行，而生产者是**点名存在**的
+
+这一点让 T22 与 T16/T17/T18 那三张"没有任何一张卡负责写"的表**形似而神不似**：
+
+| 表 | 首版行数 | 生产者 | 本卡怎么办 |
+|---|---|---|---|
+| `physical_package` | 0（逐字 grep `insert into physical_*` 无匹配；库内实测 `pkg 0`） | **T27** 后台「体检套餐管理」（PRD 406–408 行；`App.tsx:73` 占位路由已写 `card="T27"`） | 接口照做、页面照做、**空态老实显示**；取证用人工裸插探针，收尾按 id 删净 |
+| `physical_item` | 0 | 同上（PRD 411–413 行） | 本卡完全不碰这张表（套餐的 `items` 是 JSON 列，与它没有外键关系，规格也没说） |
+| `physical_appointment` | 0 | **本卡**（J49 要求"记录创建"） | 预约行一律经真接口产生，测试与验收里零条 `INSERT INTO physical_appointment` |
+| `report`（PHYSICAL 那部分） | 0 | **T25** 后台「预约体检管理 — 查看/录入体检报告」（PRD 357 行） | 读路径本卡放开，写路径不碰；J50 的"内容正确"靠探针行证 |
+
+**为什么不塞几个套餐进 seed 让页面好看**：那等于替 T27 编它要管理的数据，
+而且验收时看起来像功能已通——与本仓 宁少勿假 的规矩直接冲突（[[no-speculative-additions]]）。
+套餐的 `target_audience`/`items` 也没有一份规格给过合法取值，编一份"入职体检/全面体检"就是自造字典。
+
+### 十个实现判断
+
+| # | 判断 | 依据与理由 |
+|---|---|---|
+| 1 | 入参只有 `patientId`/`packageId`/`appointmentDate` | 表里其余两列各有归属：单号服务端发、状态服务端定；**费用没有列可收** |
+| 2 | 状态写死 `PENDING`，其余三值不产生 | V1:286 给了 PENDING/CONFIRMED/COMPLETED/CANCELLED。确认与完成归 T25 后台，取消规格里没给患者入口（对照退号：卡片 448 行明写了「退号」）。读路径仍原样回 `status` |
+| 3 | 单号复用 `SerialType.TJ` | T02 建模时就有 `TJ("TJ", "体检单号")`（`SerialType.java:10`），与 T19 用 `FP`、T21 用 `HX` 同一条纪律：不新增序列种类 |
+| 4 | 日期下限=今天（`@FutureOrPresent`），上限不设 | 与 T21 完全同判：过去的体检日永远做不了，入库就是死数据；而"最多约几天内"规格没给 |
+| 5 | 套餐不存在 → 5001 | `package_id` 是 NOT NULL（V1:284），不查就会留下一条"套餐名与价格都读不出来"的记录 |
+| 6 | 套餐软删后 `packageName`/`priceFen` 两个键一起消失，**价格不兜 0** | 0 元与"价格未知"在钱上是两件完全不同的事。HTTP 第 30–31 步实测 |
+| 7 | `items` 原样透传 `JsonNode` | 与 T17 的 `report.items` 同一条：V1:257 只写「包含项目」，没有键名约定、没有生成列、seed 零行可抄形状。自造 `{name,value}` 就是替 T27 编契约。前端复用 T17 的 `reportItemsText` 容错渲染 |
+| 8 | `type_id` 不外放也不显示 | V1:254 有这一列，但**全仓 28 张表没有套餐类型表**（PRD 417 行「新增套餐类型」是 T27 的一句话，schema 没跟上）。既显示不出名字，也不该把裸 id 塞给患者 |
+| 9 | 列表按 `created_at` 倒序、零筛选参数 | 「展示…预约历史」= 按预约动作的时间排（与 T13/T14/T15/T19/T20/T21 同口径）。套餐表没有可筛的分类列，PRD 也没给参数，附录 B 第 10 条 N/A；HTTP 第 11 / 门禁第 5 步专门钉"传了参数结果一字不变"，防止后来者把"没做筛选"当漏做补上 |
+| 10 | 报告入口是**页级**不是行级 | `report` 表里没有任何指向 `physical_appointment` 的列（V1:202-215），两者只共享 `patient_id`。在每一行上放"查看本报告"会暗示一个不存在的关联，所以记录页只给一个页级按钮跳 `?type=PHYSICAL` |
+
+### 门禁证据：`mvn -o clean test` 全绿 **327 例**（309 + 18）
+
+日志 `t22-mvn.log`（`MVN_EXIT=0`，`Tests run: 327, Failures: 0, Errors: 0, Skipped: 0`，29 个测试类）。
+新增 `PhysicalIntegrationTest` 18 例：
+
+| 分组 | 用例 | 钉住什么 |
+|---|---|---|
+| 套餐 | `packagesListIsEmptyBecauseSeedHasNone` | 首版零行 + 接口回空数组（不是 500、不是 null） |
+| 套餐 | `packagesListReturnsProbeRowsInIdOrder` | 四键白名单、id 升序、**没有 `typeId`**、不派生"含 N 项" |
+| 套餐 | `packageDetailCarriesPriceAndItemsUntouched` | 五键；items 两个元素、`{name}` 与 `{id,note}` 两种形状都原样回 |
+| 套餐 | `unknownPackageDetailIs5001AndListIgnoresAnyFilter` | 未知套餐 5001；传 `type/keyword/page/sort` 结果集不变 |
+| J49 | `j49_createAppointmentWritesTheRow` | 回 id + TJ 单号 + PENDING + 套餐名与费用，库里三值逐个对 |
+| J49 | `j49_priceIsNeverTakenFromTheClient` | 塞 `priceFen`/`amountFen`/`status`/`orderNo`/`id` 五个假字段全部无效 |
+| J49 | `j49_noMoneyMovesAtAll` | **两次预约后三张钱表计数与余额总额一分不变** |
+| J49 | `j49_missingOrPastDateIsRejectedByValidation` | 缺三个字段任一 + 昨天 → 400 且零落库 |
+| J49 | `j49_foreignPatientOrMissingPackageIs5001AndCreatesNothing` | 别人的体检人、不存在的套餐，同为 5001 |
+| 列表 | `listShowsMyRowsWithPackageValuesAndHidesOthers` | 两个体检人合并、七键、`packageName`/`priceFen` 来自套餐、别人的看不见 |
+| 列表 | `softDeletedPackageLeavesNameAndPriceAbsentNotZero` | 软删套餐 → 两个键一起消失，价格不兜 0 |
+| J50 | `j50_physicalReportIsReadableThroughTheT17Endpoints` | 跨卡路径实测：列表回体检行、详情 `result` 逐字、`items` 原样、LAB 列表不混排 |
+| J50 | `j50_anotherUsersPhysicalReportIsStill5001` | 放开类型不等于放开归属 |
+| 范围 | `physicalEndpointsAreExactlyTheFourThisCardAdds` | 套餐两把 + 预约两把，且 `physical-report` 一把都不许有 |
+| 审计 | `auditIsWrittenInSameTransactionAndRollsBackWithRejection` | 成功留痕；被 400 与 5001 拒掉的两次一条都不许多 |
+| 权限 | `staffAndAnonymousCannotReachPhysicalEndpoints` | 员工 403+4001、匿名 401 |
+| 只读纪律 | `readsWriteNothingIntoTheDatabase` | 读端点不许多写一行、不改套餐、不留痕 |
+| 跨卡闸门 | `appointmentIdStaysInsideJsSafeInteger` | 两个实体都 `extends BaseEntity` → `@TableId(AUTO)` 已在 `BaseEntity:13`，本卡不需要像 Invoice/QueueStatus 那样自己补注解 |
+
+**跨卡改动一并重跑**（附录 C「改完必须重跑被改卡的全部测试」）：
+`ReportIntegrationTest` 仍是 15 例全绿，其中原本断言"PHYSICAL 两处都进不来"的
+`j39_physicalReportsAreNotReadableByThisCard` 已改名为
+`j39_physicalReportsBecomeReadableInT22AndStayTypeIsolated` 并整体反转断言——
+放开之后要证的是"进得来 + 只回体检行 + LAB 列表不混排 + 未知类型仍然 400"。
+这不是把测试改松，是被改卡的契约确实变了，改的同时把新的不变量钉上。
+
+### 真 HTTP 验收：**47 步全 PASS**（`t22_http.py` → `t22-http-run3.log`，`EXIT=0`）
+
+| 步 | 取证 | 实测（原样引用） |
+|---|---|---|
+| 0–1 | 通道与基线 | 匿名 `401`；`pkg=0 item=0 apt=0`（三张体检表 seed 全零行） |
+| 3 | **首版套餐列表是空的** | `200 + []` —— 不塞假数据，空态就是产品行为 |
+| 4–6 | 人工取证探针插入后 | `ids=[18, 19]` 按 id 升序；四键 `[name, packageId, priceFen, targetAudience]`；`priceFen=9900` 是分 |
+| 7–9 | 详情五键 + items 原样 | `[{name:身高}, {id:7, note:外科}]` 两个元素、各自的键一个不丢；`["血常规","尿常规"]` 字符串数组也原样回 |
+| 10–11 | 未知套餐 5001；筛选参数无效 | 传 `type/keyword/page/sort` 结果集仍 2 行（`keyword` 必须 percent-encode，见自错第 3 条） |
+| 12–14 | J49 创建 | `200`；`no=TJ20260929-xxxx status=PENDING pkg=入职体检（探针） price=9900`；库里 `2978\|18\|2026-09-29\|PENDING` |
+| 15 | **预约表根本没有价格列** | `information_schema.COLUMNS` 里 `COLUMN_NAME LIKE '%price%'` 计数 = **0** |
+| 16 | **钱一分不动** | 提交前后 `(4, 15, 3, 10000)` → `(4, 15, 3, 10000)`：三张钱表行数与全体就诊人余额总额四个数字全不变 |
+| 17–18 | 费用与状态不可声明 | 塞 `priceFen=1` → 响应仍 `9900`；塞 `status=COMPLETED`、`orderNo=TJ-FAKE` → 仍 `PENDING` + `TJ20…` |
+| 19–21 | 日期边界 | 昨天 `400/400`；三年后 `200`；`not-a-date` → `http=500 code=500`（不是业务成功，见遗留 TODO 第 2 条） |
+| 22–25 | 归属与校验 | 别人的体检人 `5001`；不存在的套餐 `5001`；缺日期 `400`；三次被拒后整表仍只有成功的 3 行 |
+| 26–29 | 列表 | 我的 3 行、七键、`packageName`/`priceFen` 来自套餐表；无 `patientId`/`packageId`；B 的列表 0 行 |
+| 30–31 | 套餐软删 | 那一行的 `packageName` 与 `priceFen` **两个键一起消失**，价格不兜成 0 |
+| 32–36 | **J50 走 T17 端点** | `?type=PHYSICAL` 回探针行；`HEX(result)` 与提交的 UTF-8 字节逐字节相等；`items[0].value=170cm` 内嵌键不丢；`type=LAB` 列表 0 行（不混排）；别人的报告 `5001` |
+| 37 | 没有第五套报告端点 | `GET /user/physical-reports` → `http=500 code=500`，不是业务成功 |
+| 38–39 | 审计同事务 | 三条成功 = 三条 `CREATE_PHYSICAL_APPOINTMENT`；`PATIENT physical_appointment NULL reason-NULL` |
+| 40–41 | 角色与详情 | 员工 `403/4001`；`GET /user/physical-appointments/{id}` 不是业务成功（详情并进列表那一行） |
+| 42–44 | id 形状与软删 | `appointmentId < 2^53`；就诊人软删后列表 0 行、报告 `5001` |
+| 44b–45 | 自净 | 探针套餐按 id 删净（`pkg=0`）；八项计数与钱表快照全部回到本次脚本开始时的基线 |
+
+### UI 验收：**跑到第 8 步开发者工具整个崩了，第 9 步之后未跑**（`t22_ui.sh` → `t22-ui2.log`）
+
+这一节按"证到了什么"和"没证到什么"两段写，不含混。
+
+**已证（第 0–8 步，日志原文）**：
+
+| 步 | 取证 | 实测 |
+|---|---|---|
+| 0–2 | 后端就绪三查 + `simulator_refresh` 后轮询等通道 | `Started=1 BUILDFAILURE=0`；`通道已恢复（第 1 次轮询，约 5 秒）` |
+| 4 | 真链路添加体检人 | `fn/fill.js` 四次回填后 `name/cardNo/idCard/phone` 全部就位 |
+| 5 | **个人中心真点击入口** | `el text .menu-item-physical` → `❤️体检预约记录`；真点击 → 空态 `.empty-title` → `还没有体检预约`、`.empty-desc` → `预约后可在这里查看记录，体检报告在同一页进入` |
+| 6 | **首版套餐列表真的是空的** | `.ppa-empty-inline` → `暂无可预约的体检套餐。套餐由医院维护，维护完成后这里会出现可预约的套餐。`；`packageCount: 0` |
+| 7 | 人工取证探针（两个套餐）后渲染 | `packages: "22/入职体检（界面探针）/¥99.00 ;; 23/全面体检（界面探针）/¥588.00"`；`el text .ppa-package-price` → `¥99.00`（分→元换算在渲染层正确） |
+| 8 | 选体检人 + 点套餐进详情 | `.ppa-patient-check` → `✓`；详情页 `detail: "入职体检（界面探针） \| ¥99.00 \| 探针套餐 \| 身高、体重 \| …"`，`route: pages/physical/package` |
+
+**未证（第 9–19 步）**：确认页选日期 → 须知页四条 → **提交预约（J49 的真机形态）** → 成功页 →
+库侧对账 → **体检报告空态与"已出"分支（J50 的真机形态）** → 报告页负向取证 → 就诊人软删后两处读不到 →
+未登录守卫 → 控制台错误计数 → 清理回基线。
+
+崩溃证据（日志尾部原文）：`cant find runtimeid by projectpath E:\qdspace\qd1\miniprogram` →
+`crashpad ... CreateFile: 系统找不到指定的文件。(0x2)` →
+`[wechatide] Failed to connect to WechatIDE. Please run wechatide auth -c <clientName>`。
+之后 IDE 进程已不在；`open-ide.js` 重新拉起 + `enable-port.js` 报 `RESULT=PORT_ENABLED`，
+但 skill CLI 仍 `Connection failed … rediscovering port`（项目窗口没开起来，需要人在窗口上操作一次）。
+
+**这一轮最值钱的一条是它没有假绿**：第 9 步之后所有 CLI 调用都在报错，
+而脚本仍然往下跑并打印了"钱表一致：PASS"——**那是空跑出来的假绿**，
+真凭据是同一段的 `本次预约 id=`（空）与 `counts apt= 0`（库里根本没有预约行）。
+判据只能落在"库里有没有那一行"，不能落在 UI 步骤的打印上。
+补跑通过前，本卡的 UI 一层记为**未完成**。
+
+### 本轮五处自错（三处驱动侧、一处测试侧、一处是工具环境）
+
+1. **`sql()` 与 `num()` 用混，一条断言"看着对却红"**。HTTP 第 15 步写 `cols = sql("SELECT COUNT(*) …")`
+   拿到字符串 `'0'`，于是 `cols == 0` 为 False——expect 与 actual 都印 `0`，只有 `ok` 是 False。
+   [[acceptance-harness-silent-assertions]] 说的是假绿，这次是它的镜像：**假红同样烧掉一轮**。
+2. **一条断言的前提不存在**：第 30 步要证"套餐软删后两个键消失"，却软删了 `pkg2`——
+   而三条预约全挂在 `pkg`（`pkg_id`）上，没有任何一行会缺 `packageName`，`soft_row` 取到 `None`。
+   教训：**写"某行会变成什么样"的断言前，先确认这行是真被制造出来的**。
+3. **中文直接进 URL 让脚本崩在 `UnicodeEncodeError`**（第 11 步 `keyword=入职`）。
+   `atexit` 兜底只落出 11 步证据（这个兜底是有用的）。正解 `urllib.parse.quote()`；
+   同时把清理从"按中文名字 LIKE"改成"登记 id 按 id 删"。
+4. **`retryfn` 只加在了 `submit.js` 一处**，第 9 步之后的 `el tap` 全部裸奔，
+   于是通道断掉后脚本继续往下打印——这就是第 11 步那句假绿的直接来源。
+   补跑时要把重试闸加到**每一个**依赖前一步结果的调用上，或者干脆让脚本在连续两次
+   `APPID_ERROR` 时直接 `exit 1`。
+5. **工具环境**：微信开发者工具跑到第 8 步之后整个进程崩掉（crashpad 报找不到文件），
+   重拉后自动化服务端口连不上。这一条不是脚本能自愈的，需要人在 IDE 窗口里操作一次。
+   另外本轮清库时发现 `user` 表积着 7 个无就诊人关联的历史测试用户（11:12 / 12:14 / 12:16 三批），
+   已一并删净，现在 `user=4` 回到 seed 的真实行数——
+   往前几卡的"回到基线"是按各自脚本开始时的快照比的，那个比较本身没错，只是基线值不等于 seed 值。
+   这条已写进 [[mp-acceptance-skill-cli]]。
+
+### 附录 B · 全局红线检查表（14 条逐条扫）
+
+| # | 检查项 | 结论 |
+|---|---|---|
+| 1 | 金额有没有 FLOAT/DOUBLE | ✅ 零浮点。`price_fen` 是 BIGINT（V1:255），DTO 全程 `Long priceFen`，换算只在 `format.js` 的 `formatMoney` |
+| 2 | 护士视角新接口会不会吐金额 | ✅ 四个端点全在 `/user/**` 患者侧，患者看自己那单的套餐价属于"该看到的"；后台角色（T25/T27）还没建这些接口，届时走 T04 的序列化层裁剪 |
+| 3 | 新写操作有没有写 audit_log、同事务吗 | ✅ `@AuditLog(CREATE_PHYSICAL_APPOINTMENT)` + `@Transactional`；门禁与 HTTP 各钉一条"被拒不留痕"；没用 `@Async`/`REQUIRES_NEW`/`afterCommit` |
+| 4 | 跨表写入是否一个事务、外部调用是否 afterCommit | ✅ 只写一张表；本卡没有任何外部通道调用 |
+| 5 | 指标口径有没有在别处重算 | N/A。但记一句相关的：PRD 339 行「收入统计（门诊/住院/体检等）」属 T28 看板，而本卡不产生任何收入流水，将来那个口径也不该把体检预约算进收入 |
+| 6 | 权限判断是否只写在 UI | ✅ 归属在服务层；套餐存在性在服务层查；日期下限在 DTO 注解（picker 的 `start` 只是少让人白填） |
+| 7 | 自动派发的任务是否幂等 | N/A。**有意不做预约唯一性**：同一套餐同一天可以约多次（规格无此要求），与 T19 的 `uk_payment_id` 相反 |
+| 8 | 小程序端新接口是否强制注入 userId 归属 | ✅ 预约列表与报告都按 token 的 `userId` 一跳收口（HTTP 第 22/29/36 步实测）。**例外是有意的**：套餐是全院目录，与 T10 的科室/医生一样不做归属过滤（仍要求患者登录态） |
+| 9 | `<Money>`/`<DataTable>`/`<StatusBadge>` | N/A（admin 侧零改动）；小程序侧状态用 `ppl-status-*`/`ppr-status-*` 四配色，对应 V1:286 四个码值 |
+| 10 | 列表筛选/分页是否进 URL | N/A —— 两个列表都是零筛选参数。体检报告的 `?type=PHYSICAL` 确实进了 URL，沿的是 T17 那条纪律 |
+| 11 | 有没有多装三方库 | ✅ 零新增依赖 |
+| 12 | 有没有实现附录 A「首版不做」 | ✅ 真实体检、报告录入、体检缴费全没碰；红线 644 行逐字守住 |
+| 13 | J 编号是否逐条真实通过 | ⚠️ **J49/J50 后端与真 HTTP 两层全过；UI 一层未跑完**（崩在第 8 步之后）。这一条不能勾"全过"，见「当前状态」的补跑清单 |
+| 14 | 身份证/手机号加密 | N/A —— 本卡零新列；体检人就是就诊人，加密沿用 T07/T08 那套，响应里只有名字 |
+
+### 本卡有意未做的事（附录 D 第 3 条）
+
+| 未做 | 为什么 |
+|---|---|
+| 扣款、生成缴费单、动余额 | 预约表没有价格列也没有支付关联列，规格里没有"体检缴费"这一步。HTTP 第 16 步把"钱不动"钉成断言 |
+| 费用快照列（下单即锁价） | 加列属结构变更，PRD 587 行字典没有这一项。代价（改价影响历史显示）写进遗留 TODO 第 1 条 |
+| 往 seed 塞套餐/项目让页面好看 | 三张体检表零行是**有主的空**（T27 管套餐、T25 录报告）。编一份"入职体检"就是替后台编它要管理的数据 |
+| 编一份体检注意事项条款 | 无表、无字典项、无后台页。"空腹 8 小时""带身份证"这类看着像常识的话，写在医疗场景页面就是编造（沿用 T12 预约须知同一条纪律） |
+| 显示体检地点与时段 | 表里只有 `appointment_date`（DATE），没有地点列也没有时段列。卡片 640 行那句带「等」字 |
+| 显示套餐类型名 | `type_id` 有列无表（全仓 28 张表没有套餐类型表），显示不出来，也不把裸 id 塞给患者 |
+| 「预约详情」独立端点与页面 | 列表那一行七个字段就是详情；报告是页级入口，与预约行没有外键关系 |
+| 取消体检预约 | 规格里没有"取消体检"这个功能点（对照退号：卡片 448 行明写了「退号」）；V1:286 有 CANCELLED 这个码值，但没人写它 |
+| 把 `HttpMessageNotReadableException` 映射成 400 | 与 T21 遗留 TODO 第 1 条同一条，本卡第二次撞到，仍不顺手改跨卡共享件 |
+| 给 `report` 与 `physical_appointment` 建关联 | 规格从没说"一次预约对应一份报告"，`report` 表也没有指向预约的列。硬关联就是编造数据模型 |
+| `physical_item` 表 | 本卡完全没用它：套餐的 `items` 是 JSON 列，与项目表没有外键关系，规格也没说两者怎么连 |
+
+### 遗留 TODO（交给后续卡或二期）
+
+1. **费用快照**：T27 一旦允许改套餐价格，历史预约显示的费用会跟着变。要"下单即锁价"
+   需给 `physical_appointment` 加 `price_fen` 列并在创建时写入——结构变更 + PRD 587 行字典要同步加项，
+   需产品确认。本卡 `j49_priceIsNeverTakenFromTheClient` 与 HTTP 第 15 步（"没有价格列"）会一起红，作为提醒。
+2. **`GlobalExceptionHandler` 缺一个 400 分支**（T21 已记一次，本卡第二次撞到）：
+   请求体里 `LocalDate` 格式非法时 Jackson 抛 `HttpMessageNotReadableException`，落进 catch-all → 500。
+   影响所有带日期字段的 POST（T11 排班、T21 核酸、T22 体检）。改法一行，但它统一决定全部端点的错误形状，
+   该由一次专门修复统一定调，不由功能卡顺手改。
+3. **体检报告与预约行的关联**：现在只能按 `patient_id` 列报告。若产品要"这一次体检的报告"，
+   需要 `report` 表加一列指向预约，并由 T25 录入时写入。
+4. **状态推进的生产者**：`CONFIRMED`/`COMPLETED`/`CANCELLED` 的标签与配色前端已备好
+   （`PHYSICAL_STATUS_LABELS` 四值全给），等 T25 后台落地。
+5. **分页**：与 T17/T18/T19 一并处理（本卡两个列表数据量小，先不做）。
+6. **UI 补跑**（本卡自己欠的那一条）：见「当前状态」。
+
+### 当前状态
+
+后端 327 例全绿（含被改卡 T17 的 15 例重跑）、真 HTTP 47/47 全 PASS；
+**UI 一层只跑到第 8 步，第 9–19 步因开发者工具崩溃未跑，本卡的 UI 验收记为未完成**。
+库已清回 seed 真实状态（`physical_package=0 physical_appointment=0 report=0 patient=10 user=4`）。
+
+零迁移、零新列、`SecurityConfig` 一行未改；
+新增 8 个后端主文件 + 1 个测试类 + 24 个小程序文件；
+改动 7 个既有文件（`ReportType` 放开 PHYSICAL、`ReportService`/`ReportController` 三处注释、
+`ReportIntegrationTest` 一条断言反转、`app.json` 加六条路由、`pages/mine/mine.js` 接线入口、
+`utils/format.js` 加两组标签/配色）。
+
+**补跑清单（IDE 恢复后，7 步）**：确认页选日期 → 须知页四条 → 提交并核对库里那一行 →
+成功页 TJ 单号与「待确认」→ 体检报告空态 → 裸插探针报告看"已出"分支 →
+未登录守卫 + 控制台错误 + 清理回基线。
+补跑通过前，附录 B 第 13 条保持 ⚠️。
+下一张：**T23 住院服务**（卡片 652 行起）。

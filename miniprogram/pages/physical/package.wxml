@@ -1,0 +1,26 @@
+<view class="page-physical-package">
+  <view class="container">
+    <view wx:if="{{detail}}" class="card">
+      <view class="ppd-head">
+        <text class="ppd-name">{{detail.name}}</text>
+        <text class="ppd-price">{{detail.priceText}}</text>
+      </view>
+      <view class="ppd-row">
+        <text class="ppd-label">体检人</text>
+        <text class="ppd-value">{{patientName || '—'}}</text>
+      </view>
+      <view class="ppd-row">
+        <text class="ppd-label">适用人群</text>
+        <text class="ppd-value">{{detail.targetAudience}}</text>
+      </view>
+    </view>
+
+    <view wx:if="{{detail}}" class="card">
+      <view class="section-title">检查项目</view>
+      <view class="ppd-items">{{detail.itemsText}}</view>
+      <view class="text-muted ppd-tip">项目清单由套餐维护方提供，未维护时显示「—」。</view>
+    </view>
+
+    <button class="btn-primary ppd-next" bindtap="onNext">下一步，确认预约信息</button>
+  </view>
+</view>

@@ -1,0 +1,42 @@
+<view class="page-physical-notice">
+  <view class="container">
+    <view class="card">
+      <view class="section-title">本次预约</view>
+      <view class="ppn-row">
+        <text class="ppn-label">体检人</text>
+        <text class="ppn-value">{{patientName || '—'}}</text>
+      </view>
+      <view class="ppn-row">
+        <text class="ppn-label">体检套餐</text>
+        <text class="ppn-value">{{packageName || '—'}}</text>
+      </view>
+      <view class="ppn-row">
+        <text class="ppn-label">体检日期</text>
+        <text class="ppn-value">{{appointmentDate || '—'}}</text>
+      </view>
+      <view class="ppn-row">
+        <text class="ppn-label">套餐费用</text>
+        <text class="ppn-price">{{priceText || '—'}}</text>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">体检须知</view>
+      <view wx:for="{{rules}}" wx:key="title" class="ppn-item">
+        <view class="ppn-item-index">{{index + 1}}</view>
+        <view class="ppn-item-body">
+          <view class="ppn-item-title">{{item.title}}</view>
+          <view class="text-muted ppn-item-desc">{{item.desc}}</view>
+        </view>
+      </view>
+    </view>
+
+    <button
+      class="btn-primary ppn-submit"
+      loading="{{submitting}}"
+      disabled="{{submitting}}"
+      bindtap="onSubmit"
+    >已阅读，提交预约</button>
+    <button class="btn-outline ppn-back" bindtap="onBackEdit">返回修改</button>
+  </view>
+</view>

@@ -1,0 +1,58 @@
+<view class="page-physical-packages">
+  <view class="container">
+    <view class="card">
+      <view class="section-title">选择体检人</view>
+
+      <view wx:if="{{!loadingPatients && patients.length === 0}}" class="ppa-empty">
+        <view class="empty-icon">🧑</view>
+        <view class="empty-title">还没有添加体检人</view>
+        <view class="text-muted empty-desc">体检人就是就诊人，先在就诊人管理里添加</view>
+        <button class="btn-outline ppa-empty-btn" bindtap="onAddPatient">去添加体检人</button>
+      </view>
+
+      <view
+        wx:for="{{patients}}"
+        wx:key="id"
+        class="ppa-patient {{patientId === item.id ? 'ppa-patient-on' : ''}}"
+        data-id="{{item.id}}"
+        bindtap="onPickPatient"
+      >
+        <view class="ppa-patient-main">
+          <text class="ppa-patient-name">{{item.name}}</text>
+          <text class="ppa-patient-relation">{{item.relationLabel}}</text>
+        </view>
+        <view class="text-muted ppa-patient-card">就诊卡 {{item.cardNo || '—'}}</view>
+        <view wx:if="{{patientId === item.id}}" class="ppa-patient-check">✓</view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">体检套餐</view>
+      <view wx:if="{{loadingPackages}}" class="text-muted ppa-loading">加载中…</view>
+
+      <view wx:if="{{!loadingPackages && packages.length === 0}}" class="text-muted ppa-empty-inline">
+        暂无可预约的体检套餐。套餐由医院维护，维护完成后这里会出现可预约的套餐。
+      </view>
+
+      <view
+        wx:for="{{packages}}"
+        wx:key="packageId"
+        class="ppa-package"
+        data-id="{{item.packageId}}"
+        bindtap="onOpenPackage"
+      >
+        <view class="ppa-package-head">
+          <text class="ppa-package-name">{{item.name}}</text>
+          <text class="ppa-package-price">{{item.priceText}}</text>
+        </view>
+        <view class="text-muted ppa-package-audience">
+          适用人群：{{item.targetAudience || '—'}}
+        </view>
+        <view class="ppa-package-enter">查看套餐详情 ></view>
+      </view>
+    </view>
+
+    <button class="btn-outline ppa-records-btn" bindtap="onGoRecords">我的体检预约记录</button>
+    <button class="btn-outline ppa-reports-btn" bindtap="onGoReports">体检报告</button>
+  </view>
+</view>

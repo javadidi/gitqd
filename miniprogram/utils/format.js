@@ -296,6 +296,35 @@ function nucleicStatusTone(status) {
   return NUCLEIC_STATUS_TONES[status] || 'pending'
 }
 
+// 体检预约状态码 → 中文标签。码值出处 V1__init.sql:286 的列注释
+// 「PENDING/CONFIRMED/COMPLETED/CANCELLED」——四个值一次给全，
+// 但首版只会出现 PENDING：T22 写死它，而确认/完成/取消都归 T25 后台
+// 「预约体检管理」（PRD 354–357 行），患者侧也没有取消入口。
+// 「待确认」而不是「待处理」：V1 那一列把 PENDING 与 CONFIRMED 分成两态，
+// 中间这一步的语义就是"等院方确认"，翻成待处理会把两态揉成一团。
+const PHYSICAL_STATUS_LABELS = {
+  PENDING: '待确认',
+  CONFIRMED: '已确认',
+  COMPLETED: '已完成',
+  CANCELLED: '已取消',
+}
+
+function physicalStatusLabel(status) {
+  return PHYSICAL_STATUS_LABELS[status] || status || '—'
+}
+
+// 状态 → 配色键，与标签表一一对应（同样只出自 V1:286）。
+const PHYSICAL_STATUS_TONES = {
+  PENDING: 'pending',
+  CONFIRMED: 'confirmed',
+  COMPLETED: 'done',
+  CANCELLED: 'cancelled',
+}
+
+function physicalStatusTone(status) {
+  return PHYSICAL_STATUS_TONES[status] || 'pending'
+}
+
 module.exports = {
   formatMoney,
   formatDate,
@@ -336,4 +365,8 @@ module.exports = {
   nucleicStatusLabel,
   NUCLEIC_STATUS_TONES,
   nucleicStatusTone,
+  PHYSICAL_STATUS_LABELS,
+  physicalStatusLabel,
+  PHYSICAL_STATUS_TONES,
+  physicalStatusTone,
 }

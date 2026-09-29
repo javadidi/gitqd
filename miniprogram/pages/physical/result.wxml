@@ -1,0 +1,50 @@
+<view class="page-physical-result">
+  <view class="container">
+    <view class="card ppr-head">
+      <view class="ppr-check">✓</view>
+      <view class="ppr-title">体检预约提交成功</view>
+      <view class="text-muted ppr-sub">可在下方核对本单信息</view>
+    </view>
+
+    <view wx:if="{{detail}}" class="card">
+      <view class="ppr-row">
+        <text class="ppr-label">预约单号</text>
+        <text class="ppr-mono">{{detail.orderNo}}</text>
+      </view>
+      <view class="ppr-row">
+        <text class="ppr-label">体检人</text>
+        <text class="ppr-value">{{detail.patientName}}</text>
+      </view>
+      <view class="ppr-row">
+        <text class="ppr-label">体检套餐</text>
+        <text class="ppr-value">{{detail.packageName}}</text>
+      </view>
+      <view class="ppr-row">
+        <text class="ppr-label">套餐费用</text>
+        <text class="ppr-price">{{detail.priceText}}</text>
+      </view>
+      <view class="ppr-row">
+        <text class="ppr-label">体检日期</text>
+        <text class="ppr-value">{{detail.appointmentDate}}</text>
+      </view>
+      <view class="ppr-row">
+        <text class="ppr-label">当前状态</text>
+        <text class="ppr-status ppr-status-{{detail.statusTone}}">{{detail.statusLabel}}</text>
+      </view>
+    </view>
+
+    <view wx:if="{{!detail && !loading}}" class="card">
+      <view class="text-muted ppr-missing">
+        没读到这条预约记录。它可能不属于当前账号，请到「体检预约记录」里确认。
+      </view>
+    </view>
+
+    <button class="btn-primary ppr-records-btn" bindtap="onGoRecords">我的体检预约记录</button>
+    <button class="btn-outline ppr-reports-btn" bindtap="onGoReports">查看体检报告</button>
+    <button class="btn-outline ppr-home-btn" bindtap="onBackHome">返回首页</button>
+
+    <view class="text-muted ppr-note">
+      首版仅演示预约流程，不含实际体检，也不产生任何扣款。
+    </view>
+  </view>
+</view>

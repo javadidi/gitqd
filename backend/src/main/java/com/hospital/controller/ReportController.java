@@ -49,7 +49,7 @@ public class ReportController {
         return Result.success(reportService.list(SecurityUtils.currentUserId(), type));
     }
 
-    /** 报告详情。越权、不存在、软删、体检报告（PHYSICAL，属 T22）四种情况同为 5001。 */
+    /** 报告详情。越权、不存在、软删、类型不认识四种情况同为 5001（PHYSICAL 自 T22 起可查）。 */
     @GetMapping("/{id}")
     public Result<ReportDetailResponse> detail(@PathVariable Long id) {
         return Result.success(reportService.detail(SecurityUtils.currentUserId(), id));

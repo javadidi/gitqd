@@ -37,12 +37,19 @@ import java.util.stream.Collectors;
  * <p>反面约束也记一句：PRD 499 行「报告数据需长期保存（≥ 5年）」——本卡不删不改，
  * 唯一碰这张表的地方是测试自己插的探针行，收尾物理删掉。
  *
- * <h2>类型白名单：PHYSICAL 两处都进不来</h2>
- * 列表 {@link #list} 只收 LAB/IMAGING（{@link ReportType#isQueryable}）；
+ * <h2>类型白名单：列表与详情过同一道闸（T22 放开了 PHYSICAL）</h2>
+ * 列表 {@link #list} 只收 {@link ReportType#isQueryable} 允许的类型；
  * 详情 {@link #detail} <b>也</b>要过同一道白名单——只筛列表等于留一扇门：
- * 患者（或任何拿到别人报告 id 的人）用 {@code /user/reports/{id}} 照样能把体检报告读出来。
+ * 拿到别人报告 id 的人照样能绕过列表直读详情。
  * 越界读按 {@code 5001} 而不是 403：与"这条报告不存在"同码，不确认存在性
  * （T08/T09/T14/T15 一路沿用下来的同一口径）。
+ *
+ * <p>T17 建卡时白名单只有 LAB/IMAGING，体检报告（PHYSICAL）两处都进不来；
+ * <b>T22（卡片 642 行 / J50）把 PHYSICAL 放开了</b>，钩子就是 {@code ReportType} 里预留的那一行。
+ * 放开之后这道闸的<b>安全含义一点没变</b>：它挡的仍然是"类型不认识"的行，
+ * 而"这条报告不是你的"由归属那一跳挡，两件事各管各的。
+ * 变化只有一处：T17 的「选择报告类型」页仍只列检验/检查两项（PRD 161 行原话），
+ * 所以体检报告只能从 T22 的入口带 {@code ?type=PHYSICAL} 进来。
  *
  * <h2>归属：一跳</h2>
  * {@code report} 没有 {@code user_id}（V1:202–215），所以"这条报告是不是你的"必须经
@@ -101,7 +108,7 @@ public class ReportService {
         }).toList();
     }
 
-    /** 报告详情（卡片 550 行）。越权、不存在、软删、PHYSICAL 四种情况同为 5001。 */
+    /** 报告详情（卡片 550 行）。越权、不存在、软删、类型不认识四种情况同为 5001。 */
     public ReportDetailResponse detail(Long userId, Long reportId) {
         Report report = reportMapper.selectById(reportId);
         // 软删行到这里已经是 null：Report extends BaseEntity，deleted 上有 @TableLogic，

@@ -1,0 +1,98 @@
+.ppl-empty {
+  padding: 48rpx 0;
+  text-align: center;
+}
+
+.ppl-empty .empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.ppl-empty .empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.ppl-empty .empty-desc {
+  font-size: 24rpx;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.ppl-empty-btn {
+  width: 60%;
+}
+
+.ppl-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 16rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.ppl-mono {
+  font-size: 26rpx;
+  color: #1f2937;
+  font-family: Menlo, Consolas, monospace;
+}
+
+.ppl-status {
+  font-size: 22rpx;
+  padding: 4rpx 16rpx;
+  border-radius: 8rpx;
+}
+
+/* 四个配色对应 format.js 的 PHYSICAL_STATUS_TONES，码值出处 V1:286 列注释 */
+.ppl-status-pending {
+  color: #d97706;
+  background: #fffbeb;
+}
+
+.ppl-status-confirmed {
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.ppl-status-done {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.ppl-status-cancelled {
+  color: #64748b;
+  background: #f1f5f9;
+}
+
+.ppl-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14rpx 0;
+}
+
+.ppl-label {
+  font-size: 26rpx;
+  color: #64748b;
+}
+
+.ppl-value {
+  font-size: 28rpx;
+  color: #1f2937;
+  text-align: right;
+}
+
+.ppl-price {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.ppl-apply-btn {
+  margin-top: 12rpx;
+}
+
+.ppl-reports-btn {
+  margin-top: 20rpx;
+}
