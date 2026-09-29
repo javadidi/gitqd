@@ -1,0 +1,82 @@
+/* T24 医院服务六个页面共用的样式。
+   共用而不是每页一份，是因为这六页全是"标题 + 正文/列表行"同一种形状；
+   各页 wxss 用 @import 引它，页面自己只写独有的那几条。 */
+
+.page-hospital {
+  min-height: 100vh;
+}
+
+.hsp-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.hsp-row:last-child {
+  border-bottom: none;
+}
+
+.hsp-label {
+  font-size: 26rpx;
+  color: #64748b;
+  flex-shrink: 0;
+  margin-right: 24rpx;
+}
+
+.hsp-value {
+  font-size: 26rpx;
+  color: #1f2937;
+  text-align: right;
+  flex: 1;
+}
+
+.hsp-body {
+  font-size: 28rpx;
+  color: #333;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+.hsp-meta {
+  margin-top: 16rpx;
+  font-size: 22rpx;
+}
+
+.hsp-item {
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.hsp-item:last-child {
+  border-bottom: none;
+}
+
+.hsp-item-title {
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+.hsp-item-desc {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.hsp-arrow {
+  color: #cbd5e1;
+  font-size: 28rpx;
+  margin-left: 12rpx;
+}
+
+.hsp-empty {
+  padding: 60rpx 24rpx;
+  text-align: center;
+}
+
+.hsp-note {
+  margin: 24rpx 8rpx 0;
+  font-size: 24rpx;
+  line-height: 1.6;
+}

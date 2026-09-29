@@ -59,7 +59,13 @@
     "pages/case-delivery/apply",
     "pages/case-delivery/result",
     "pages/case-delivery/list",
-    "pages/case-delivery/detail"
+    "pages/case-delivery/detail",
+    "pages/hospital/service",
+    "pages/hospital/profile",
+    "pages/hospital/guides",
+    "pages/hospital/articles",
+    "pages/hospital/article",
+    "pages/hospital/notices"
   ],
   "window": {
     "navigationBarBackgroundColor": "#ffffff",

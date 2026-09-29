@@ -19,7 +19,7 @@
         bindtap="onQuickEntryTap"
       >
         <view class="entry-icon-wrap">
-          <text class="entry-icon">{{item.icon === 'calendar' ? '📅' : item.icon === 'wallet' ? '💰' : item.icon === 'clock' ? '⏰' : item.icon === 'credit-card' ? '💳' : item.icon === 'file-text' ? '📋' : item.icon === 'book' ? '📖' : item.icon === 'pill' ? '💊' : '❤️'}}</text>
+          <text class="entry-icon">{{item.icon === 'calendar' ? '📅' : item.icon === 'wallet' ? '💰' : item.icon === 'clock' ? '⏰' : item.icon === 'credit-card' ? '💳' : item.icon === 'file-text' ? '📋' : item.icon === 'book' ? '📖' : item.icon === 'pill' ? '💊' : item.icon === 'hospital' ? '🏥' : '❤️'}}</text>
         </view>
         <text class="entry-label">{{item.label}}</text>
       </view>
@@ -39,13 +39,13 @@
   <view class="card">
     <view class="flex-between">
       <text class="section-title" style="margin-bottom:0">健康百科</text>
-      <text class="text-muted">更多 ></text>
+      <text class="text-muted more-link" bindtap="onMoreArticles">更多 ></text>
     </view>
     <view class="health-articles">
       <view wx:for="{{healthArticles}}" wx:key="id" class="article-item">
         <view class="article-info">
           <text class="article-title">{{item.title}}</text>
-          <text class="text-muted">{{item.summary}}</text>
+          <text class="text-muted">{{item.timeText}}</text>
         </view>
       </view>
       <view wx:if="{{healthArticles.length === 0}}" class="empty-hint">

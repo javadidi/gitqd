@@ -1,0 +1,20 @@
+<view class="page-hospital">
+  <view class="container">
+    <view class="card">
+      <view class="section-title">停诊通知</view>
+      <view class="text-muted hsp-meta" wx:if="{{!loading}}">共 {{rows.length}} 条</view>
+
+      <view wx:if="{{!loading && rows.length === 0}}" class="hsp-empty">
+        <view class="empty-icon">📢</view>
+        <view class="empty-title">暂无停诊通知</view>
+        <view class="text-muted empty-desc">医生停诊或调班时，医院会在这里发布公告</view>
+      </view>
+
+      <view wx:for="{{rows}}" wx:key="id" class="hsp-item">
+        <view class="hsp-item-title">{{item.title}}</view>
+        <view class="hsp-body hsp-notice-body">{{item.content}}</view>
+        <view class="text-muted hsp-item-desc" wx:if="{{item.timeText}}">发布于 {{item.timeText}}</view>
+      </view>
+    </view>
+  </view>
+</view>

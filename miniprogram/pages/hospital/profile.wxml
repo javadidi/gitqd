@@ -1,0 +1,20 @@
+<view class="page-hospital">
+  <view class="container">
+    <view wx:if="{{profile}}" class="card">
+      <view class="section-title">{{profile.title}}</view>
+      <view class="hsp-body">{{profile.intro}}</view>
+      <view class="text-muted hsp-meta">更新于 {{profile.timeText}}</view>
+    </view>
+
+    <view wx:if="{{profile && profile.honors}}" class="card">
+      <view class="section-title">荣誉资质</view>
+      <view class="hsp-body">{{profile.honors}}</view>
+    </view>
+
+    <view wx:if="{{!loading && !profile}}" class="card hsp-empty">
+      <view class="empty-icon">🏛</view>
+      <view class="empty-title">医院简介正在维护</view>
+      <view class="text-muted empty-desc">简介与荣誉资质由医院在后台发布后显示在这里</view>
+    </view>
+  </view>
+</view>

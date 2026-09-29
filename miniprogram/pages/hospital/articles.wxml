@@ -1,0 +1,30 @@
+<view class="page-hospital">
+  <view class="container">
+    <view class="card">
+      <view class="section-title">健康百科</view>
+      <view class="text-muted hsp-meta" wx:if="{{!loading}}">共 {{rows.length}} 篇</view>
+
+      <view wx:if="{{!loading && rows.length === 0}}" class="hsp-empty">
+        <view class="empty-icon">🌿</view>
+        <view class="empty-title">还没有健康科普文章</view>
+        <view class="text-muted empty-desc">文章由医院在后台发布后显示在这里</view>
+      </view>
+
+      <view
+        wx:for="{{rows}}"
+        wx:key="id"
+        class="hsp-item"
+        data-id="{{item.id}}"
+        bindtap="onOpen"
+      >
+        <view class="hsp-row">
+          <view>
+            <view class="hsp-item-title">{{item.title}}</view>
+            <view class="text-muted hsp-item-desc" wx:if="{{item.timeText}}">发布于 {{item.timeText}}</view>
+          </view>
+          <text class="hsp-arrow">›</text>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>
