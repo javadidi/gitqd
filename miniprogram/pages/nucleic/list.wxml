@@ -1,0 +1,36 @@
+<view class="page-nucleic-list">
+  <view class="container">
+    <view wx:if="{{!loading && rows.length === 0}}" class="card">
+      <view class="nl-empty">
+        <view class="empty-icon">🧪</view>
+        <view class="empty-title">还没有核酸预约</view>
+        <view class="text-muted empty-desc">预约后可在这里查看记录与检测报告</view>
+        <button class="btn-outline nl-empty-btn" bindtap="onGoApply">去预约检测</button>
+      </view>
+    </view>
+
+    <view
+      wx:for="{{rows}}"
+      wx:key="appointmentId"
+      class="card nl-row"
+      data-id="{{item.appointmentId}}"
+      bindtap="onOpenReport"
+    >
+      <view class="nl-row-head">
+        <text class="nl-mono">{{item.orderNo}}</text>
+        <text class="nl-status nl-status-{{item.statusTone}}">{{item.statusLabel}}</text>
+      </view>
+      <view class="nl-line">
+        <text class="nl-label">就诊人</text>
+        <text class="nl-value">{{item.patientName}}</text>
+      </view>
+      <view class="nl-line">
+        <text class="nl-label">检测日期</text>
+        <text class="nl-value">{{item.appointmentDate}}</text>
+      </view>
+      <view class="nl-enter">查看检测报告 ></view>
+    </view>
+
+    <button wx:if="{{rows.length}}" class="btn-primary nl-apply-btn" bindtap="onGoApply">再约一次</button>
+  </view>
+</view>

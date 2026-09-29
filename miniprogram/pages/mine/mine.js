@@ -22,7 +22,9 @@ Page({
       ]},
       { group: '预约记录', items: [
         { label: '预约挂号记录', icon: '📋', url: '/pages/appointment/records' },
-        { label: '核酸预约记录', icon: '🧪', url: '' },
+        // key 只为验收服务：这一组十一行共用 .menu-item 一个类名，
+        // 单类名选择器永远只命中第一行，补一个唯一类才能真点击（同 T12 补 .res-btn-home 的做法）。
+        { label: '核酸预约记录', icon: '🧪', url: '/pages/nucleic/list', key: 'nucleic' },
         { label: '体检预约记录', icon: '❤️', url: '' },
       ]},
       { group: '缴费记录', items: [

@@ -273,6 +273,29 @@ function followUpStatusTone(status) {
   return FOLLOW_UP_STATUS_TONES[status] || 'pending'
 }
 
+// 核酸预约状态码 → 中文标签。码值出处 V1__init.sql:301 的列注释「PENDING/COMPLETED」。
+// 首版只会出现 PENDING：T21 写死它，而 COMPLETED 的语义是"检测做完、报告出了"，
+// 本卡既不采样也不出报告（红线 624 行）。两个都给，理由与上面复诊同一句。
+// 「已出报告」而不是「已完成」：患者在这一页真正想知道的就是报告到没到。
+const NUCLEIC_STATUS_LABELS = {
+  PENDING: '待检测',
+  COMPLETED: '已出报告',
+}
+
+function nucleicStatusLabel(status) {
+  return NUCLEIC_STATUS_LABELS[status] || status || '—'
+}
+
+// 状态 → 配色键，与标签表一一对应（同样只出自 V1:301）。
+const NUCLEIC_STATUS_TONES = {
+  PENDING: 'pending',
+  COMPLETED: 'done',
+}
+
+function nucleicStatusTone(status) {
+  return NUCLEIC_STATUS_TONES[status] || 'pending'
+}
+
 module.exports = {
   formatMoney,
   formatDate,
@@ -309,4 +332,8 @@ module.exports = {
   followUpStatusLabel,
   FOLLOW_UP_STATUS_TONES,
   followUpStatusTone,
+  NUCLEIC_STATUS_LABELS,
+  nucleicStatusLabel,
+  NUCLEIC_STATUS_TONES,
+  nucleicStatusTone,
 }

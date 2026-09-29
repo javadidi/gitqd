@@ -1,0 +1,35 @@
+.nc-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.nc-row:last-of-type {
+  border-bottom: none;
+}
+
+.nc-label {
+  font-size: 26rpx;
+  color: #64748b;
+}
+
+.nc-value {
+  font-size: 30rpx;
+  color: #1f2937;
+}
+
+.nc-note {
+  font-size: 22rpx;
+  line-height: 1.6;
+  padding-top: 20rpx;
+}
+
+.nc-submit {
+  margin-top: 32rpx;
+}
+
+.nc-back {
+  margin-top: 20rpx;
+}

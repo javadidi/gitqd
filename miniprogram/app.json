@@ -39,7 +39,12 @@
     "pages/followup/apply",
     "pages/followup/disease",
     "pages/followup/result",
-    "pages/followup/detail"
+    "pages/followup/detail",
+    "pages/nucleic/apply",
+    "pages/nucleic/confirm",
+    "pages/nucleic/result",
+    "pages/nucleic/list",
+    "pages/nucleic/report"
   ],
   "window": {
     "navigationBarBackgroundColor": "#ffffff",

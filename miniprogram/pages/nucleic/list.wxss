@@ -1,0 +1,88 @@
+.nl-empty {
+  padding: 48rpx 0;
+  text-align: center;
+}
+
+.nl-empty .empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.nl-empty .empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.nl-empty .empty-desc {
+  font-size: 24rpx;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.nl-empty-btn {
+  width: 60%;
+}
+
+.nl-row {
+  position: relative;
+}
+
+.nl-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 16rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.nl-mono {
+  font-size: 26rpx;
+  color: #1f2937;
+  font-family: Menlo, Consolas, monospace;
+}
+
+.nl-status {
+  font-size: 22rpx;
+  padding: 4rpx 16rpx;
+  border-radius: 8rpx;
+}
+
+/* 两个配色对应 format.js 的 NUCLEIC_STATUS_TONES，码值出处 V1:301 列注释 */
+.nl-status-pending {
+  color: #d97706;
+  background: #fffbeb;
+}
+
+.nl-status-done {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.nl-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14rpx 0;
+}
+
+.nl-label {
+  font-size: 26rpx;
+  color: #64748b;
+}
+
+.nl-value {
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+.nl-enter {
+  font-size: 24rpx;
+  color: #2563eb;
+  text-align: right;
+  padding-top: 12rpx;
+}
+
+.nl-apply-btn {
+  margin-top: 12rpx;
+}

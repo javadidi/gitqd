@@ -1,0 +1,95 @@
+.nr-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 16rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.nr-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.nr-status {
+  font-size: 24rpx;
+  padding: 4rpx 20rpx;
+  border-radius: 8rpx;
+}
+
+/* 两个配色对应 format.js 的 NUCLEIC_STATUS_TONES，码值出处 V1:301 列注释 */
+.nr-status-pending {
+  color: #d97706;
+  background: #fffbeb;
+}
+
+.nr-status-done {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.nr-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.nr-row:last-of-type {
+  border-bottom: none;
+}
+
+.nr-label {
+  font-size: 26rpx;
+  color: #64748b;
+}
+
+.nr-value {
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+.nr-mono {
+  font-size: 26rpx;
+  color: #1f2937;
+  font-family: Menlo, Consolas, monospace;
+}
+
+.nr-body {
+  font-size: 28rpx;
+  color: #1f2937;
+  line-height: 1.8;
+  padding: 8rpx 0;
+}
+
+.nr-empty {
+  padding: 40rpx 0 24rpx;
+  text-align: center;
+}
+
+.nr-empty-icon {
+  font-size: 64rpx;
+  margin-bottom: 16rpx;
+}
+
+.nr-empty-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 12rpx;
+}
+
+.nr-empty-desc {
+  font-size: 22rpx;
+  line-height: 1.7;
+}
+
+.nr-list-btn {
+  margin-top: 32rpx;
+}
+
+.nr-home-btn {
+  margin-top: 20rpx;
+}

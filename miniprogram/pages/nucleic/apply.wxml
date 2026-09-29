@@ -1,0 +1,42 @@
+<view class="page-nucleic-apply">
+  <view class="container">
+    <view class="card">
+      <view class="section-title">选择就诊人</view>
+
+      <view wx:if="{{!loadingPatients && patients.length === 0}}" class="na-empty">
+        <view class="empty-icon">🧑</view>
+        <view class="empty-title">还没有添加就诊人</view>
+        <view class="text-muted empty-desc">预约检测需要先有一位就诊人</view>
+        <button class="btn-outline na-empty-btn" bindtap="onAddPatient">去添加就诊人</button>
+      </view>
+
+      <view
+        wx:for="{{patients}}"
+        wx:key="id"
+        class="na-patient {{patientId === item.id ? 'na-patient-on' : ''}}"
+        data-id="{{item.id}}"
+        bindtap="onPickPatient"
+      >
+        <view class="na-patient-main">
+          <text class="na-patient-name">{{item.name}}</text>
+          <text class="na-patient-relation">{{item.relationLabel}}</text>
+        </view>
+        <view class="text-muted na-patient-card">就诊卡 {{item.cardNo || '—'}}</view>
+        <view wx:if="{{patientId === item.id}}" class="na-patient-check">✓</view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">检测信息</view>
+      <picker mode="date" start="{{today}}" value="{{appointmentDate}}" bindchange="onDateChange">
+        <view class="na-row">
+          <text class="na-row-label">检测日期</text>
+          <text class="na-row-value {{appointmentDate ? '' : 'na-row-placeholder'}}">{{appointmentDate || '请选择日期'}}</text>
+        </view>
+      </picker>
+      <view class="text-muted na-tip">首版仅演示预约流程，不含实际采样与检测</view>
+    </view>
+
+    <button class="btn-primary na-next" bindtap="onNext">下一步，确认预约信息</button>
+  </view>
+</view>

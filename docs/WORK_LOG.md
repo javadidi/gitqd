@@ -5933,3 +5933,229 @@ T16/T17/T18 的 `queue_status` / `report` / `medical_record` 三张表 seed 零�
 改动 3 个既有文件（`app.json` 加四条路由、`pages/index/index.js` 接线入口、`utils/format.js` 加两组标签/配色）。
 下一张：**T21 核酸检测**（卡片 616 行起）。
 
+## T21 · 核酸检测（2026-09-29）
+
+### 任务卡原文 → 实现对照（616–630 行，**逐字**引用）
+
+| 卡片行 | 原文 | 实现 | 证据 |
+|---|---|---|---|
+| 619 | `- 选择就诊人。` | `pages/nucleic/apply` 第一块就诊人卡列表（与 T14/T20 同型内联选择） | UI 第 7 步 `el tap .na-patient` → `.na-patient-check` 出 ✓ |
+| 620 | `- 核酸检测申请：填写检测信息。` | 同页第二块「检测信息」= 检测日期 picker，**只有这一项**（推导见下） | UI 第 7 步 `onDateChange` 后 `appointmentDate` 回出今天 |
+| 621 | `- 确认预约信息：确认检测时间、地点等。` | `pages/nucleic/confirm` 复核两行 + 提交；**地点刻意不显示** | UI 第 8 步 `.nc-label`/`.nc-value`/`.nc-note`；HTTP 第 12 步 |
+| 622 | `- 核酸检测报告：查看检测报告。` | `pages/nucleic/report`，六字段，未出与已出两条分支 | UI 第 10 步（未出分支）与第 13 步（已出分支，探针）；HTTP 第 8–9、24–26 步 |
+| 624 | `**红线**：不做真实检测（二期做）；首版仅模拟流程。` | 预约行由产品代码写，**`report` 一列产品代码永不写** | 门禁 `j47_reportColumnStaysNullForEverythingTheProductWrites`；HTTP 第 7 步（全表 `report IS NOT NULL` = 0）；UI 第 11 步 |
+| 627 | `- J47 检测申请 → 记录创建。` | `POST /user/nucleic-appointments` | 门禁 7 例；HTTP 第 4–6 步；UI 第 9 步（库里真多一行） |
+| 628 | `- J48 检测报告 → 内容正确。` | `GET /user/nucleic-appointments/{id}/report` | 门禁 4 例；HTTP 第 8–9 + 24–26 步；UI 两条分支 |
+| 630 | `**DoD**：核酸检测流程通。` | 个人中心 → 记录 → 申请 → 确认 → 成功 → 报告，全程真点击 | UI 第 5–13 步 |
+
+### 范围判定：三端点、五页面（§9.1 只给两个，第三个由 PRD 的页面名撑起）
+
+| 出处 | 逐字原文 | 判定 |
+|---|---|---|
+| PRD §9.1 616 行 | `\| 核酸检测 \| 创建检测预约、检测报告 \|` | 两个接口 |
+| PRD §3.7 203 行 | `5. **核酸检测报告** — 在个人中心查看检测报告` | **报告入口在个人中心**，不是成功页 |
+| PRD §3.11.7 304 行 | `1. **预约记录列表** — 展示核酸检测预约历史` | 有一个列表页 |
+| PRD §3.11.7 305 行 | `2. **预约详情** — 查看检测详情` | 又一个页面名 |
+| PRD §6.1 521 行 | `\| 核酸检测 \| 选择就诊人、核酸检测申请、确认预约信息、预约成功 \|` | 四个页面名（无列表/详情/报告） |
+| PRD §6.1 527 行 | 个人中心页面名里含 `核酸预约记录、预约详情、核酸检测报告` | 三个页面名再次出现 |
+| PRD 数据字典 588 行 | `\| 核酸预约 \| 预约ID、就诊人ID、预约日期、状态、报告 \|` | 字段清单 |
+| `V1:296-307` | `order_no NOT NULL、patient_id NOT NULL、appointment_date DATE NOT NULL、status(PENDING/COMPLETED)、report TEXT NULL、deleted` | 与 588 行逐项对齐 |
+
+**结论：三端点。** 「创建检测预约」「检测报告」是 §9.1 给的；**列表**是 §3.7 203 行那句「在个人中心查看」+ §3.11.7 304 行 + §6.1 527 行三处共同撑出来的
+——一个页面名的数据来源只能是端点，与 T19 的「待开具」、T15 的「待缴列表」同一条判法（[[read-dod-not-verb-list]]）。
+`pages/mine/mine.js:25` 那一行 `{ label: '核酸预约记录', url: '' }` 从 T07 起就占着位，本卡把它接上。
+
+**「预约详情」（§3.11.7 305 行）刻意不另开端点**：报告页本来就要显示"这是哪一次检测"
+（单号/就诊人/日期/状态），再开一个详情端点就是给同一份数据造第二个出处。
+所以详情与报告合成一页，注册表测试把 `/user/nucleic-appointments` 下的映射钉成**恰好三把**。
+
+**五页面**：`apply`（合并卡片 619+620 两步）、`confirm`、`result`、`list`、`report`（承担 §3.11.7 的详情+报告两步）。
+首页不加第九个入口：PRD §6.1 509 行的首页那一格逐字只有「首页」两个字，
+八个快捷入口是 T01 骨架的既有布局，本卡不替产品重排首页；核酸的规格入口在个人中心。
+
+### 本卡最大的判断：产品代码**永不写 `report`**
+
+卡片 624 行红线逐字：「不做真实检测（二期做）；首版仅模拟流程」。
+"模拟"能落到哪一步，是本卡最需要想清楚的一条线，四条证据（完整版在 `NucleicReportResponse` 类注释）：
+
+1. `report` 的内容是**关于患者身体的检测结论**（阴性/阳性），不是系统自己能签发的凭证。
+   写一句「阴性」就是断言这个人没被感染，而背后没有任何检测。
+2. **与 T19 的模拟开票不是一回事**：发票是系统自己出的单据，所以可以出一个明标 `MOCK-`、
+   去掉前缀不是纯数字的假代码（一眼假、不给验真留余地）；检测报告的内容不由本系统决定，
+   "模拟"它就等于伪造医学结论。
+3. **与 T20 的配药信息同源不同形**：`follow_up` 连一列都没有，所以是"不给字段"；
+   `nucleic_appointment.report` 有列、有字典出处、有端点，所以不能删字段，只能**不写它**。
+4. 全仓没有任何一侧负责写它：T25 后台只做「预约核酸检测列表/详情」（卡片 699 行，只读）；
+   `TaskTypeMeta.NUCLEIC_CONFIRM`「核酸采样确认」只是 T05 建的任务类型文案、没有处理器；
+   逐字 grep 全仓 `nucleic`，本卡之前只有建表语句、实体、空 mapper 三处。
+
+**所以首版的真实形状是：预约能下、记录能查、报告页能打开，但报告永远显示「报告未出」。**
+页面不假装有一份报告在里面（与 T18 不留「医嘱：」空标题、T20 不留「配药信息：」同一纪律）。
+J48「内容正确」因此这样证：**库里有什么就回什么**——门禁、HTTP、UI 各有一条人工裸插的探针行
+证明 `report` 有值时逐字回出，另有一条证明产品代码写出来的行 `report` 必为 NULL。
+
+### 九个实现判断
+
+| # | 判断 | 依据与理由 |
+|---|---|---|
+| 1 | 入参只有 `patientId` + `appointmentDate` | 表里其余三列各有归属：`order_no` 服务端发号、`status` 服务端定、`report` 检测侧回填。卡片 620 行「填写检测信息」听着像有一张表单，但这张表接不住任何别的字段——多做一个输入框就是假表单 |
+| 2 | 状态写死 `PENDING`，`COMPLETED` 不产生 | V1:301 的 COMPLETED 语义是"检测做完、报告出了"，本卡既不采样也不出报告，写它就是撒谎。读路径仍原样回 `status` |
+| 3 | 日期下限=今天（`@FutureOrPresent`），**上限不设** | 过去的检测日永远不可能被采样，入库就是留一条永远停在 PENDING 的死数据；方向与 T12 挂号一致。而"最多约几天内"规格从没给过，编一个 7 天/30 天就是发明规则（HTTP 第 14 步实测三年后照样能约） |
+| 4 | 单号走已有的 `SerialType.HX` | T02 建模时就建了 `HX("HX", "核酸单号")`（`SerialType.java:11`），本卡不新增序列种类，与 T19 用 `FP` 同一条纪律 |
+| 5 | 地点不显示、不提交、不返回 | 卡片 621 行点名了"地点"，但 V1 无列、PRD 588 行无项、全仓 28 张表无采样点表。编一个地址就是凭空造一个不存在的采样点。那句「检测时间、地点等」带「等」字，与 T18 那句「诊断、处方、医嘱等」同形 |
+| 6 | 列表按 `created_at` 倒序，零筛选参数 | 「展示…预约历史」= 按预约动作的时间排；表里没有可筛的分类列，PRD 也没给参数，附录 B 第 10 条对本卡 N/A |
+| 7 | 列表不带 `report`，也不带"报告是否已出"的派生布尔 | 明细留给报告页（T15/T17/T18 同一条纪律）；而"有没有报告"能从 `status` 读出来，再造一个字段就是给同一事实第二个出处 |
+| 8 | 报告页判"未出"看 `report` 键在不在，不看状态枚举 | NON_NULL 让 null 字段整个消失；二期若出现"已采样待出结果"这种中间态，按 `report` 判断比按 `status` 枚举判断更结实。前端也刻意不写 `report \|\| '阴性'` 这种拿默认值冒充结论的兜底 |
+| 9 | 归属一跳，越权/不存在/就诊人软删同为 5001 | `nucleic_appointment.patient_id → patient.user_id`，与 T13–T20 同一条口径；不回 403（403 会确认"这条存在"） |
+
+### 门禁证据：`mvn -o clean test` 全绿 **309 例**（291 + 18）
+
+日志 `t21-mvn.log`（`MVN_EXIT=0`，`Tests run: 309, Failures: 0, Errors: 0, Skipped: 0`，28 个测试类）。
+新增 `NucleicAppointmentIntegrationTest` 18 例：
+
+| 分组 | 用例 | 钉住什么 |
+|---|---|---|
+| J47 | `j47_createAppointmentWritesTheRow` | 回 id + 库里落行 + 四列逐值对 + `report` 是 NULL |
+| J47 | `j47_reportColumnStaysNullForEverythingTheProductWrites` | 连约三次后，**全表 `report IS NOT NULL` 必须为 0**、`status <> 'PENDING'` 必须为 0 |
+| J47 | `j47_statusAndReportCannotBeDeclaredByTheClient` | 塞 `status`/`report`/`id` 三个假字段全部无效 |
+| J47 | `j47_locationCannotBeSubmittedOrReturned` | 塞 `location`/`address`/`siteName` 后响应四个键都不存在 |
+| J47 | `j47_missingOrPastDateIsRejectedByValidation` | 缺字段与昨天 → 400；今天与三年后 → 200；三次被拒零落库 |
+| J47 | `j47_foreignOrSoftDeletedPatientIs5001AndCreatesNothing` | 别人的/没的/软删的就诊人，三种同为 5001 且整表零行 |
+| J47 | `j47_eachApplyGetsItsOwnOrderNo` | 两次申请两个 HX 单号（Redis 序列） |
+| 列表 | `listShowsMyOwnRowsNewestFirstAndNothingOfOthers` | 两个就诊人的行合并、最新在前、五项形状、无 report 键、别人的看不见 |
+| 列表 | `listIsEmptyWhenNoPatientAtAll` | 零就诊人回空列表，不把 `IN ()` 交给 MyBatis |
+| J48 | `j48_reportReturnsWhatIsStoredVerbatim` | 探针行：六键正好、报告逐字回出、状态原样、无 `patientId`、无 `location` |
+| J48 | `j48_reportKeyIsAbsentUntilSomeoneIssuesTheReport` | 产品写的行只有五键，`report` 键不存在 |
+| J48 | `j48_reportOfForeignOrMissingIsSameCode` | 猜 id 猜不到内容 |
+| J48 | `j48_softDeletedPatientHidesItsRowsEverywhere` | 列表与报告两条路都尊重软删 |
+| 跨卡闸门 | `appointmentIdStaysInsideJsSafeInteger` | `NucleicAppointment extends BaseEntity` → `@TableId(AUTO)` 在 `BaseEntity:13`，本卡不需要像 Invoice/QueueStatus 那样自己补注解；并把接口回的 id 原样送回查报告，证明 JSON 往返没丢精度 |
+| 范围 | `nucleicEndpointsAreExactlyTheThreeTheSpecNamed` | 注册表恰好三把，多一把就红 |
+| 审计 | `auditIsWrittenInSameTransactionAndRollsBackWithRejection` | 成功留痕；被 400 拒的那次连审计行一起回滚 |
+| 权限 | `staffAndAnonymousCannotReachNucleicEndpoints` | 员工 403+4001、匿名 401 |
+| 只读纪律 | `readsWriteNothingIntoTheDatabase` | 读五次不多写一行、不留痕 |
+
+### 真 HTTP 验收：**39 步全 PASS**（`t21_http.py` → `t21-http-run1.log`，`EXIT=0`）
+
+| 步 | 取证 | 实测（原样引用） |
+|---|---|---|
+| 0–1 | 通道与基线 | 匿名 `401`；`nucleic_appointment` 零行 |
+| 4–5 | J47 申请 | `200`；`id=21 no=HX20260929-0019 status=PENDING` |
+| 6 | J47 落库逐列 | `2773\|2026-09-29\|PENDING\|NULL`（`report` 是 NULL 不是空串） |
+| 7 | 全表零伪造 | `report IS NOT NULL` = **0**、`status <> 'PENDING'` = 0 |
+| 8–9 | J48 未出态 | 五键 `[appointmentDate, appointmentId, orderNo, patientName, status]`；`核酸甲\|2026-09-29` |
+| 10–11 | 状态与报告不可声明 | 塞 `status=COMPLETED` → 库里仍 `PENDING`；塞 `report=阴性` → 库里 `NULL` 且响应无该键 |
+| 12 | 地点无落点 | 塞 `location`/`address`/`siteName` → 响应里四个键全不存在 |
+| 13–15 | 日期边界 | 昨天 `400/400`；三年后 `200`；`not-a-date` → `http=500 code=500`（**不是业务成功**，见遗留 TODO 第 1 条） |
+| 16–18 | 归属 | 别人的就诊人 `5001`、不存在的 `5001`，整表仍只有成功的 4 行 |
+| 19 | 单号序列 | 再约一次 `HX20260929-0023` ≠ 首单 |
+| 20–22 | 列表 | 我的 5 行、五项形状无 `report` 键、B 的列表 0 行 |
+| 23–27 | **人工取证探针 + J48 已出态** | 裸插 `id=26`；报告页六键正好；`HEX(report)` 与提交的 UTF-8 字节**逐字节相等**；状态原样 `COMPLETED`；B 读它 `5001` |
+| 28–29 | 详情并进报告页 | `GET /user/nucleic-appointments/{id}`（不带 `/report`）→ `http=500 code=500`，不是业务成功；不存在的报告 `5001` |
+| 30–32 | 审计同事务 | 五条成功 = 五条 `CREATE_NUCLEIC_APPOINTMENT`；读三次不留痕；`PATIENT nucleic_appointment NULL reason-NULL` |
+| 33–34 | 角色隔离 | 员工 `403/4001`、匿名 `401` |
+| 35–37 | id 形状与软删 | `id=21 < 2^53`；就诊人软删后列表 0 行、报告 `5001` |
+| 38 | 自净 | `nuc=0 audit=0 pat=10 usr=10` 回到基线 |
+
+### UI 验收：19 步全过（`t21_ui.sh` → `t21-ui2.log`，`SCRIPT_EXIT=0`；五张截图逐张亲自看过）
+
+第一轮（`t21-ui.log`）在第二步就停了，白跑一轮，原因与修法见「本轮自错」。
+
+| 步 | 取证 | 实测（原样引用） |
+|---|---|---|
+| 0 | 后端就绪三查 | `Started=1 BUILDFAILURE=0`，日志 PID `99904` == `netstat` 8080 属主 |
+| 2 | **等通道恢复**（改轮询后） | `simulator_refresh` 后轮询到第 N 次恢复，`recInstalled:true`、`navErr:null` |
+| 3–4 | 登录 + 真链路添加就诊人 | `.login-btn` 真点击；`本次就诊人 id=2775` |
+| 5 | **个人中心真点击入口**（PRD 203 行的落点） | `el text .menu-item-nucleic` → `核酸预约记录`；`el tap` → 栈 `[mine, nucleic/list]`；空态 `.nl-empty-title` → `还没有核酸预约` |
+| 6 | 空态按钮进申请页 | `el tap .nl-empty-btn` → 栈 `[nucleic/list, nucleic/apply]`、`navErr:null`；`.na-row-placeholder` → `请选择日期` |
+| 7 | 选就诊人真点击 + 选日期（**降级：picker 的 change 只能调处理函数**） | `.na-patient-check` → `✓`；`onDateChange` 后 `appointmentDate: "2026-09-29"` |
+| 8 | 确认页两行 + 提交 | `.nc-label` → `就诊人`、`.nc-value` → `核酸界面`、`.nc-note` → `首版仅演示预约流程；规格未定义采样地点与具体时段，故本页不显示。`；`el tap .nc-submit` 真点击 |
+| 9 | 成功页（J47 真机形态） | `.nres-title` → `检测预约成功`、`.nres-mono` → `HX20260929-0024`、`.nres-status` → `待检测` |
+| 10 | **报告页未出分支** | 栈 `[...nucleic/report]`；`.nr-empty-title` → `报告未出`；`.nr-empty-desc` → `首版仅演示预约流程，不含实际采样与检测，故不会出具报告内容。`（截图 `t21-4-report-notissued.jpg`） |
+| 11 | 库侧对账 | `HX20260929-0024\|2775\|2026-09-29\|PENDING\|NULL\|0`；`audit CREATE_NUCLEIC_APPOINTMENT PATIENT nucleic_appointment NULL reason-NULL`；`counts 1 0`（一行预约、零行带报告） |
+| 12 | 人工取证探针 | 插 `T21UIP01`；`HEX(report)` 与期望**逐字节相等**（`E998B4…E38082`） |
+| 13 | **报告页已出分支** | 列表 `rowCount:2`，`rows:"28/T21UIP01/核酸界面/2026-09-29/已出报告 ;; 27/HX20260929-0024/…/待检测"`（探针在最前）；点进去 `.nr-body` → `阴性，采样时间 09:12，检测方法 RT-PCR。`、`.nr-status-done` → `已出报告`（截图 `t21-5-report-issued.jpg`） |
+| 14 | 负向取证 | `.nr-location` / `.nr-site` / `.nr-address` 三个选择器一律 `no such element` |
+| 15 | 删探针后回到真实形状 | 列表 `rowCount:1`、`.nl-mono` → `HX20260929-0024`；报告页 `.nr-empty-title` → `报告未出` |
+| 16 | 未登录守卫 | `t12-logout.js` + `reLaunch apply` → 连读三次 `stack:["pages/login/login"]`、`token:""` |
+| 17 | 控制台错误 | `count:0 errs:[]` |
+| 18–19 | 清理回基线 | `after 0 10 10 0 3 5`（预约/就诊人/用户/本卡审计/科室/医生）、`残留探针行=0` |
+
+截图五张：`t21-1-list-empty.jpg`（个人中心进来的空态 + 「去预约检测」）、`t21-2-apply.jpg`（就诊人已选 ✓ + 日期未填的灰提示）、
+`t21-3-result.jpg`（绿勾 + HX 单号 + 待检测徽章 + 三个出路按钮）、
+`t21-4-report-notissued.jpg`（沙漏 + 「报告未出」+ 那行实话）、
+`t21-5-report-issued.jpg`（探针行：绿色「已出报告」徽章 + 报告正文）。
+**五张里没有任何一处出现采样地点、也没有一处把内部 id 当文案显示。**
+
+### 本轮两处自错（一处白跑一轮，一处是代码库的真实缺口）
+
+1. **`simulator_refresh` 之后固定 `sleep 18` 不够，整轮 269 行全是 `APPID_ERROR`。**
+   第一轮日志里每条 CLI 调用都返回「Client network socket disconnected before secure TLS
+   connection was established」，而**退出码仍然是 0**（驱动层陷阱 12 的又一形态）。
+   真正救回来的是脚本第 4 步那句硬检查 `if [ -z "$PID" ]; then exit 1; fi` ——
+   它在第一步就停住，而不是继续跑出一个"看起来全过"的假绿。
+   第二轮把 `sleep 18` 换成**轮询等通道恢复**（最多 150 秒，判据是 `state` 不再出现 `APPID_ERROR`），
+   恢复后 `grep -c APPID_ERROR` = **0**。已把这条写进 [[mp-acceptance-skill-cli]] 陷阱 21。
+2. **请求体里日期格式非法会落进全局兜底 500，而不是 400。**
+   我一开始按 400 写断言，跑之前查了 `GlobalExceptionHandler` 才发现：
+   它只把 `BizException`、`MethodArgumentNotValidException`、`BindException` 分开处理，
+   Jackson 的 `HttpMessageNotReadableException` 走 catch-all → `HTTP 500 + code 500`。
+   **这不是 T21 引入的**（T11 排班创建带 `LocalDate` 同样吃得到），
+   所以本卡不顺手改跨卡共享件，只把断言改成"绝不能被当成业务成功"，
+   并记进遗留 TODO 第 1 条。改法一行：给那个异常加一个 `@ExceptionHandler` → 400。
+
+### 附录 B · 全局红线检查表（14 条逐条扫）
+
+| # | 检查项 | 结论 |
+|---|---|---|
+| 1 | 金额有没有 FLOAT/DOUBLE | N/A —— 本卡零金额（核酸没有费用列，PRD 也从没给） |
+| 2 | 护士视角新接口会不会吐金额 | N/A，同上；三个端点都在 `/user/**` 患者侧 |
+| 3 | 新写操作有没有写 audit_log、同事务吗 | ✅ `@AuditLog(CREATE_NUCLEIC_APPOINTMENT)` + `@Transactional`；门禁与 HTTP 各钉一条"被拒不留痕"；没用 `@Async`/`REQUIRES_NEW`/`afterCommit` |
+| 4 | 跨表写入是否一个事务、外部调用是否 afterCommit | ✅ 只写一张表；本卡没有任何外部通道调用 |
+| 5 | 指标口径有没有在别处重算 | N/A，本卡无指标 |
+| 6 | 权限判断是否只写在 UI | ✅ 归属在服务层双条件；日期下限在 DTO 注解（服务端判，不靠 picker 的 `start`）；员工/匿名在 `SecurityConfig` |
+| 7 | 自动派发的任务是否幂等 | N/A。**有意不做预约唯一性**：同一天同一人可以约两次（规格无此要求，且"再约一次"是列表页的正当动作），与 T19 的 `uk_payment_id` 相反 |
+| 8 | 小程序端新接口是否强制注入 userId 归属 | ✅ `userId` 只从 token 取，入参里没有它；HTTP 第 16 步实测别人的就诊人 5001 |
+| 9 | `<Money>`/`<DataTable>`/`<StatusBadge>` | N/A（admin 侧零改动）；小程序侧状态用 `nr-status-*`/`nl-status-*` 两配色，与 T16/T20 同法 |
+| 10 | 列表筛选/分页是否进 URL | N/A —— 列表零筛选参数（判断 6）。但报告页的 `?id=` 是真的可分享/可刷新 URL，UI 第 15 步直接 `navigateTo /pages/nucleic/report?id=` 打开成功 |
+| 11 | 有没有多装三方库 | ✅ 零新增依赖 |
+| 12 | 有没有实现附录 A「首版不做」 | ✅ 真实检测、报告签发、采样通知全没碰；红线 624 行逐字守住 |
+| 13 | J 编号是否逐条真实通过 | ✅ J47 三层各一次（门禁 7 例 / HTTP 4–7 步 / UI 第 9、11 步），J48 三层各两次（未出与已出两条分支都取了证） |
+| 14 | 身份证/手机号加密 | N/A —— 本卡零新列；就诊人加密仍是 T07/T08 那套，响应里只有名字 |
+
+### 本卡有意未做的事（附录 D 第 3 条）
+
+| 未做 | 为什么 |
+|---|---|
+| 伪造一份报告内容（哪怕是"阴性"） | 红线 624 行 + 四条证据（见上文"最大的判断"）。这是本卡最重要的一条不做 |
+| 显示采样地点 / 具体时段 | 无列、无字典项、无采样点表；卡片那句带「等」字是举其要 |
+| 「预约详情」独立端点与页面 | §9.1 只给两个接口；报告页本来就承担详情（单号/就诊人/日期/状态） |
+| 取消核酸预约 | 规格里没有"取消核酸"这个功能点（对照退号：卡片 448 行明写了「退号」） |
+| 状态推进到 `COMPLETED` | 是院内检测侧的动作，PRD §4 后台无报告录入页，28 张卡没有一张负责写它 |
+| 首页加第九个「核酸检测」入口 | PRD §6.1 509 行首页那一格逐字只有「首页」；八个入口是 T01 骨架既有布局，规格给核酸的入口是个人中心 |
+| 按状态/日期筛选列表、分页 | PRD 没要求，表里也没有可筛的分类列 |
+| 检测报告出 PDF / 下载 | 与 T19 的「下载」同一处理：没有文件可下，也不产生文件 |
+| 把 `HttpMessageNotReadableException` 映射成 400 | 见遗留 TODO 第 1 条：那是跨卡共享件 `GlobalExceptionHandler` 的既有形状，不该由 T21 顺手改 |
+
+### 遗留 TODO（交给后续卡或二期）
+
+1. **`GlobalExceptionHandler` 缺一个 400 分支**：请求体里的日期格式非法（`not-a-date`）时，
+   Jackson 抛 `HttpMessageNotReadableException`，落进 catch-all → HTTP 500 + code 500。
+   这是 T03 起的既有形状，影响所有带 `LocalDate`/`Long` 字段的 POST 端点（T11 排班、T21 核酸都吃得到）。
+   本卡只在 HTTP 第 15 步钉住"它绝不能被当成业务成功"，把改法留给一次专门的跨卡修复：
+   加一个 `@ExceptionHandler(HttpMessageNotReadableException.class)` → 400。
+2. **报告的生产者**：二期接采样/检测侧时，最小改动是写 `report` + 把 `status` 推到 `COMPLETED`，
+   前端两条分支已经都在（本卡用探针验过"已出"那一支的渲染）。
+   本卡三条断言（门禁 `j47_reportColumnStaysNull...`、HTTP 第 7 步、UI 第 11 步）会提醒契约变了。
+3. **采样地点**：真要显示，得先有出处——加列或建采样点表 + 由后台维护，属 T25/T27 的活。
+4. **核酸费用与缴费**：规格从没给过核酸的价格，`nucleic_appointment` 也没有费用列；
+   将来若要收费，得先在 PRD 数据字典里加项。
+5. 分页：与 T17/T18/T19 的分页需求一并处理（本卡列表数据量小，先不做）。
+
+### 当前状态
+
+后端 309 例全绿、真 HTTP 39/39、UI 19 步全过（第一轮因开发者工具通道重编译期死掉而白跑，见「本轮自错」）、库回到 seed 基线。
+本卡零迁移、零新列、`SecurityConfig` 一行未改，新增 5 个后端主文件 + 1 个测试类 + 20 个小程序文件，
+改动 4 个既有文件（`app.json` 加五条路由、`pages/mine/mine.js` 接线个人中心入口、
+`pages/mine/mine.wxml` 补一个唯一类名供验收真点击、`utils/format.js` 加两组标签/配色）。
+下一张：**T22 体检预约**（卡片 634 行起）。
+

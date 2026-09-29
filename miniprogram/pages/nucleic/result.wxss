@@ -1,0 +1,91 @@
+.nres-head {
+  text-align: center;
+  padding: 48rpx 24rpx;
+}
+
+.nres-check {
+  width: 96rpx;
+  height: 96rpx;
+  line-height: 96rpx;
+  margin: 0 auto 20rpx;
+  border-radius: 50%;
+  background: #dcfce7;
+  color: #16a34a;
+  font-size: 48rpx;
+  font-weight: 600;
+}
+
+.nres-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 12rpx;
+}
+
+.nres-sub {
+  font-size: 24rpx;
+}
+
+.nres-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.nres-row:last-of-type {
+  border-bottom: none;
+}
+
+.nres-label {
+  font-size: 26rpx;
+  color: #64748b;
+  flex-shrink: 0;
+  margin-right: 24rpx;
+}
+
+.nres-value {
+  font-size: 28rpx;
+  color: #1f2937;
+  text-align: right;
+}
+
+.nres-mono {
+  font-size: 26rpx;
+  color: #1f2937;
+  font-family: Menlo, Consolas, monospace;
+}
+
+.nres-status {
+  font-size: 24rpx;
+  padding: 4rpx 20rpx;
+  border-radius: 8rpx;
+}
+
+/* 两个配色对应 format.js 的 NUCLEIC_STATUS_TONES，码值出处 V1:301 列注释 */
+.nres-status-pending {
+  color: #d97706;
+  background: #fffbeb;
+}
+
+.nres-status-done {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.nres-report-btn {
+  margin-top: 32rpx;
+}
+
+.nres-list-btn,
+.nres-home-btn {
+  margin-top: 20rpx;
+}
+
+.nres-note {
+  font-size: 22rpx;
+  line-height: 1.6;
+  text-align: center;
+  margin-top: 32rpx;
+}

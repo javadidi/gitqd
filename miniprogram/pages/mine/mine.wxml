@@ -96,7 +96,7 @@
         wx:for="{{item.items}}"
         wx:for-item="menuItem"
         wx:key="label"
-        class="menu-item"
+        class="menu-item menu-item-{{menuItem.key}}"
         data-url="{{menuItem.url}}"
         data-label="{{menuItem.label}}"
         bindtap="onMenuTap"

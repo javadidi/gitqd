@@ -1,0 +1,26 @@
+<view class="page-nucleic-confirm">
+  <view class="container">
+    <view class="card">
+      <view class="section-title">确认预约信息</view>
+      <view class="nc-row">
+        <text class="nc-label">就诊人</text>
+        <text class="nc-value">{{patientName || '—'}}</text>
+      </view>
+      <view class="nc-row">
+        <text class="nc-label">检测日期</text>
+        <text class="nc-value">{{appointmentDate || '—'}}</text>
+      </view>
+      <view class="text-muted nc-note">
+        首版仅演示预约流程；规格未定义采样地点与具体时段，故本页不显示。
+      </view>
+    </view>
+
+    <button
+      class="btn-primary nc-submit"
+      loading="{{submitting}}"
+      disabled="{{submitting}}"
+      bindtap="onSubmit"
+    >确认预约</button>
+    <button class="btn-outline nc-back" bindtap="onBackEdit">返回修改</button>
+  </view>
+</view>
