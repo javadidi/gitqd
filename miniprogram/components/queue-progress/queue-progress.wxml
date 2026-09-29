@@ -1,0 +1,19 @@
+<view class="qp-{{tone}}">
+  <view class="qp-head">
+    <text class="qp-icon">{{icon}}</text>
+    <text class="qp-label">{{label}}</text>
+    <text wx:if="{{hasQueue}}" class="qp-percent">{{percent}}%</text>
+  </view>
+
+  <view class="qp-track">
+    <view class="qp-fill qp-fill-{{tone}}" style="width: {{percent}}%"></view>
+  </view>
+
+  <view wx:if="{{hasQueue}}" class="qp-nums">
+    <text class="qp-num">当前叫号 <text class="qp-num-value">{{numberText}}</text></text>
+    <text class="qp-num">前方等待 <text class="qp-num-value">{{waitingText}}</text> 人</text>
+  </view>
+  <view wx:else class="qp-nums qp-nums-muted">
+    院内叫号系统还没把这次就诊排进队列，可下拉或等待自动刷新
+  </view>
+</view>

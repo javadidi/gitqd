@@ -146,6 +146,43 @@ function paymentStatusLabel(status) {
   return PAYMENT_STATUS_LABELS[status] || status || '—'
 }
 
+// 候诊队列状态码 → 中文标签与色调。码值出处 V1__init.sql:193「WAITING/CALLING/SERVING/DONE」。
+// 色调沿用任务卡 §2.1 的设计令牌：候诊中=amber-500（93 行「提醒 | amber-500 | 候诊中/待缴费」）、
+// 进行中=sky-600（95 行）、已完成=zinc-400（96 行）。99 行还要求
+// 「状态颜色+图标+文字三重编码，禁止纯色圆点」，所以组件里色块、图标、文字三样都给了。
+const QUEUE_STATUS_LABELS = {
+  WAITING: '排队中',
+  CALLING: '叫到你了',
+  SERVING: '就诊中',
+  DONE: '已就诊',
+}
+
+const QUEUE_STATUS_TONES = {
+  WAITING: 'waiting',
+  CALLING: 'active',
+  SERVING: 'active',
+  DONE: 'done',
+}
+
+const QUEUE_STATUS_ICONS = {
+  WAITING: '⏳',
+  CALLING: '📣',
+  SERVING: '🩺',
+  DONE: '✓',
+}
+
+function queueStatusLabel(status) {
+  return QUEUE_STATUS_LABELS[status] || status || '—'
+}
+
+function queueStatusTone(status) {
+  return QUEUE_STATUS_TONES[status] || 'waiting'
+}
+
+function queueStatusIcon(status) {
+  return QUEUE_STATUS_ICONS[status] || '⏳'
+}
+
 module.exports = {
   formatMoney,
   formatDate,
@@ -166,4 +203,10 @@ module.exports = {
   payMethodLabel,
   PAYMENT_STATUS_LABELS,
   paymentStatusLabel,
+  QUEUE_STATUS_LABELS,
+  queueStatusLabel,
+  QUEUE_STATUS_TONES,
+  queueStatusTone,
+  QUEUE_STATUS_ICONS,
+  queueStatusIcon,
 }

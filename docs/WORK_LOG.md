@@ -4834,3 +4834,210 @@ J33（卡片 501 行）要求「就诊卡余额增加」，但把三处规格要
 
 
 
+
+## T16 · 候诊查询（2026-09-29）
+
+### 任务卡原文 → 实现对照（526–539 行，**逐字**引用）
+
+| 行号 | 卡片原文 | 落点 |
+|---|---|---|
+| 529 | `- 候诊查询页：展示当前排队人数、叫号进度。` | `pages/queue/queue.*` + `GET /api/user/queues`；一行 = **一次预约**，三个数字挂在 `queueStatus`/`currentNumber`/`waitingCount` |
+| 530 | `- 实时更新：轮询或 WebSocket 更新排队状态。` | **选轮询**：`POLL_INTERVAL = 10000`，`onShow` 起、`onHide`/`onUnload` 停；间隔出处 PRD 477 行「候诊叫号刷新频率 \| ≤ 10秒」 |
+| 531 | `- \`<QueueProgress>\` 组件：排队进度条。` | `components/queue-progress/*`（**小程序侧第一个自定义组件**），组件表 114 行同样记在 T16 名下 |
+| 533 | `**红线**：不做预约（T12）。` | 全卡零写 `appointment`/`schedule`：`QueueService` 无 `@Transactional`、无 UPDATE；真 HTTP `8/8b/8c` 证明连打五次 GET 后队列行、审计、预约计数一字未变 |
+| 536 | `- J37 候诊查询 → 数据正确。` | MockMvc 8 例 + 真 HTTP 第 2–7 组（21 步） |
+| 537 | `- J38 实时更新 → 状态刷新。` | MockMvc 2 例（`j38_queueUpdateIsReflectedOnNextPoll`、`j38_noCacheBetweenReads_andEndpointWritesNothing`）+ 真 HTTP 第 4 组 + **UI 第 7 步**（不点任何按钮，页面自己变） |
+| 539 | `**DoD**：候诊查询通。` | 三层证据：**227 例**门禁 / 真 HTTP **37/37** / UI **12 步全过** |
+
+### 范围判定：一页、一组件、一个端点（五处来源逐条核对）
+
+| 来源 | 行号 | 原文 | 判定 |
+|---|---|---|---|
+| 卡片「要做什么」 | 529–531 | 三条：候诊查询页 / 实时更新 / `<QueueProgress>` 组件 | 页面 **1** 个；"实时更新"是**性质**不是页面；组件 1 个 |
+| 卡片组件表 | 114 | `\| \`<QueueProgress>\` \| 候诊排队进度条 \| T16 \|` | 组件是**交付物**，不是可选装饰 → 必须真建，不能糊在页面里 |
+| PRD §3.3.3 功能描述 | 103 | `**功能描述：** 实时查看当前候诊叫号状态。` | "当前"→ 时间下界取今天零点 |
+| PRD §3.3.3 功能要点 | 105–107 | `- 展示当前排队人数` / `- 实时更新排队状态，防止过号` / `- 显示当前叫号进度` | 三个要点对应三个渲染位：等待人数、自动刷新、进度条 |
+| PRD §6.1 页面清单 | 513 | `\| 门诊服务-候诊查询 \| 候诊查询 \|` | **只有一页**，没有详情页 |
+| PRD §9.1 接口概览 | 612 | `\| 候诊查询 \| 获取当前排队状态 \|` | **只有一个端点**（单数，无"列表 + 详情"两栏，与 T14/T15 的写法明显不同） |
+| PRD §8 性能 | 477 | `\| 候诊叫号刷新频率 \| ≤ 10秒 \|` | 轮询间隔取上限 10 秒；也据此否掉 WebSocket（首版无推送通道，规格只要求十秒内更新） |
+| PRD §10 术语 | 662 | `\| 候诊叫号 \| 医院排队叫号系统，患者可实时查看排队进度 \|` | 队列的**生产者是院内系统**，不是本院小程序后端 |
+
+结论：**P4 之前最小的一张卡**——1 端点 + 1 页 + 1 组件。端点数由 §9.1 的"单数"钉死，所以**没有**做 `/user/queues/{id}`：列表本身一行一预约、字段齐到够渲染首屏，再造详情端点等于给同一份数据两个出处。
+
+### 结构性事实：`queue_status` 首版**没有生产者**（这不是实现缺陷）
+
+三条独立证据，全部写进了 `QueueStatusResponse` 的类注释：
+
+1. `seed.sql` 里 **零行** `queue_status`（真 HTTP 第 `0` 步就是去实测这个断言：`queue_status 首版真的是空的 → 0`）；
+2. 全仓检索"候诊/叫号/排队"，任务卡只在 T16、组件表 114 行、路线图出现过；PRD 的 §4 后台章节、§6.2 后台页面清单、§9.2 后台接口里**一次都没有叫号管理**；
+3. PRD 662 行明确这是**医院排队叫号系统**的事 → 真实部署由 HIS 写入。
+
+由此定下两条纪律：**本卡一律只读**；**绝不为了"页面好看"自造假叫号生成器**。页面因此必须能表达"还没进队列"这个状态（见下面第 ② 条判断）。
+
+### 八个实现判断
+
+| # | 判断 | 出处 / 理由 |
+|---|---|---|
+| ① | 列表**以预约为骨架**，队列行 LEFT 挂上去 | `queue_status`（V1:188–197）只有 `appointment_id` + 三个数字，它自己说不清"这是谁的、排谁的队"；患者手上的实体是一次就诊预约。没进队列的预约照样出现（`queueStatus = null`），否则患者以为预约丢了 |
+| ② | `queueStatus` 为 null 时 **Jackson 整个键消失**，前端据此走"暂未进入叫号队列"分支 | `application.yml` 的 `default-property-inclusion: non_null`（T12 就吃过这个反向教训）。真 HTTP `2b` 实测：`排队字段整体缺席（不是 0，也不是 null 键）→ [False, False, False]` |
+| ③ | 只放 `status IN (CONFIRMED, COMPLETED)` 且 `appointment_time >= 今天零点` | 排除 `PENDING_PAYMENT` 的出处是卡片 453 行第 ⑧ 步「支付成功 → 预约状态 CONFIRMED」（没付钱还没挂上号）；卡片 331 行把「覆盖待支付/已确认/已完成/已取消」明确写在 **T13 预约记录**名下，两页范围不同是规格自己做的区分。**`COMPLETED` 保留这条没有直接出处，是我自己的设计选择**，理由见 `QueueService` 注释 |
+| ④ | **不外放 `queueId`** | `queue_status.id` 是流水表主键；T14 已经证明"会被客户端回传的 id 必须自增且在 2^53 以内"。本卡客户端只用 `appointmentId` 认队列（`uk_appointment_id` V1:196 保证一预约至多一行），所以压根不需要外放这个 id。真 HTTP `2e` 断言 `feeFen`/`queueId` 两个键都不存在 |
+| ⑤ | **不带 `feeFen`** | 候诊页与费用无关，带上只会让患者以为要在这里付钱（也顺手避开 T04 金额裁剪那条线） |
+| ⑥ | 列表按 `appointment_time` **升序** | 与 T13 预约记录的倒序刻意相反：那边是翻历史，这边是"下一个该我了吗" |
+| ⑦ | 进度百分比**由前端组件算，不由后端算** | 卡片 531/PRD 107 要的"进度"从没定义过算法（PRD 105–107 只有"排队人数""叫号进度"两个词）。既然后端没有口径可引，就不该把公式固化成数字回给前端——否则改口径要前后端各改一处还要防漂移。组件注释里明写了这条**无规格出处** |
+| ⑧ | 归属跳两次：`queue_status → appointment.patient_id → patient.user_id` | 两张表都没有 `user_id`。列表用 `patient_id IN (我的就诊人)` 一次收口（T13 同一条纪律），少了这一跳改一个 `appointment_id` 就能看见别人排到几号 |
+
+另外两点跨卡事实：
+
+- **`SecurityConfig` 一行没改**：端点在 `/user/**` 下，天然继承 T07 的 `hasRole("patient")`。真 HTTP `9`（医生 token → `[403, 4001]`）、`9b`（匿名 → 401）实测。
+- **复用了 T13 的那一份批量名字解析**：`AppointmentQueryService.namesOf(...)` 与 `Names` 内部类从 `private` 开成**包级可见**（唯一的源码改动，注释里写了为什么），这样"同一预约在两个页面显示的医生名"必然同源。真 HTTP `2d` 就是拿候诊页与预约记录页对撞同一个 `doctorName`。逐个查会变成 4N 次 SQL，所以仍是四次 `selectBatchIds`。
+
+### 门禁证据：`mvn -o clean test` 全绿 **227 例**（214 + 13）
+
+```
+[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.043 s -- in com.hospital.service.QueueIntegrationTest
+[INFO] Tests run: 227, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+23 个测试类分项计数（逐条抄自 `t16-mvn5.log`，合计 227）：
+
+| 类 | 例 | 类 | 例 | 类 | 例 |
+|---|---|---|---|---|---|
+| FlywayMigrationTest | 1 | AuditFieldFillTest | 3 | AuditLogTest | 3 |
+| SeedCheckTest | 4 | SeedConstraintTest | 4 | TaskKernelTest | 7 |
+| AuthIntegrationTest | 7 | MoneyMaskingTest | 7 | service.CaptchaServiceTest | 5 |
+| service.CaptchaIntegrationTest | 8 | service.PermissionServiceTest | 9 | service.UserAuthIntegrationTest | 9 |
+| service.SerialNumberServiceTest | 3 | service.AppointmentPayFailureTest | 2 | service.PatientIntegrationTest | 17 |
+| service.CatalogIntegrationTest | 19 | service.InpatientIntegrationTest | 11 | service.ScheduleIntegrationTest | 29 |
+| service.AppointmentIntegrationTest | 27 | service.AppointmentManageIntegrationTest | 10 | service.RechargeIntegrationTest | 13 |
+| service.PaymentIntegrationTest | 16 | **service.QueueIntegrationTest（本卡新增）** | **13** | — | — |
+
+`QueueIntegrationTest` 十三个方法（每个都对应一条真实风险，不是凑数）：
+
+| # | 方法 | 钉住什么 |
+|---|---|---|
+| 1 | `j37_queueRowIsReturnedWrappedInItsAppointment` | 骨架行 + 三个数字一起回，`appointmentId` 是预约 id 不是队列 id |
+| 2 | `j37_appointmentWithoutQueueRow_isStillListedWithNullQueue` | 没进队列的预约**必须还在列表里**（首版的常态） |
+| 3 | `j37_unpaidAndCancelledAppointmentsAreExcluded` | `PENDING_PAYMENT` 与 `CANCELLED` 都不进叫号 |
+| 4 | `j37_completedAppointmentStaysListed` | `COMPLETED` 保留（本卡唯一无出处的口径，用测试钉住以便产品推翻时只改一处） |
+| 5 | `j37_pastAppointmentIsExcluded` | PRD 103 行的"当前"= 零点下界真的生效 |
+| 6 | `j37_listIsAscendingByAppointmentTime` | 升序，与 T13 倒序相反 |
+| 7 | `j37_responseShapeCarriesNoMoneyAndNoQueueId` | 字段清单白名单：多一个键就算破口 |
+| 8 | `j38_queueUpdateIsReflectedOnNextPoll` | 库里推进后下一次读就变（"实时"的后端半边） |
+| 9 | `j38_noCacheBetweenReads_andEndpointWritesNothing` | 连读两次一致 + 零副作用 |
+| 10 | `j37_otherUsersSeeNothingOfMine` | 越权患者拿到空列表（不是 403，是查不到——不泄露存在性） |
+| 11 | `newUserWithoutPatientsGetsEmptyList` | 无就诊人时不回 `IN ()` 非法 SQL |
+| 12 | `staffAndAnonymousCannotReachQueueEndpoint` | 角色隔离回归 |
+| 13 | `queueStatusOfSomeoneElsesAppointmentIsNotLeakedEvenWhenIdsAreGuessed` | 猜 `appointment_id` 也拿不到别人的队 |
+
+**自净纪律**：`@AfterEach` 逐条删自己造的 `payment_record → refund_record → appointment → audit_log → patient → user`，并在最外层比较六张表计数（`queue_status/appointment/payment_record/schedule/patient/user`）。这条链在 T16 门禁跑到第三轮才修干净，代价记在下面。
+
+### 真 HTTP 验收：37 步全 PASS（`t16_http.py` → `t16-http-result.txt`，`PYTHON_EXIT=0`）
+
+基线：`{"queue_status": 0, "appointment": 13, "payment_record": 4, "schedule": 150, "patient": 10}`；探针 `patient=1515 apt=4539 apt2=4540`、探针排班 `id=67244`（今天 + 5 年）。
+
+| 组 | 步数 | 覆盖 |
+|---|---|---|
+| 0 前置 | 3 | `0` 实测 `queue_status` 真的是 0 行；`0b` 两个患者真登录；`0c` 中文探针就诊人经 HTTP 入库 |
+| 1 造数据 | 3 | 医生 token 建探针排班 → 患者挂号 → 支付，走 T12 真链路（`PENDING_PAYMENT → CONFIRMED`） |
+| 2 J37 骨架 | 5 | 命中预约、排队三键整体缺席（不是 0 也不是 null 键）、预约侧八字段齐、名字与 T13 同源、`feeFen`/`queueId` 都不外放 |
+| 3 J37 挂队列 | 4 | 裸插队列行后 `WAITING/0/5` 读得出、`appointmentId` 未变（同一骨架行）、`queueUpdatedAt` 有值、`uk_appointment_id` 挡住第二条 |
+| 4 J38 | 3 | 库里推进 → 下一次读就变（`CALLING`/叫号 14/等待 1）、`queueUpdatedAt` 跟着变、连读两次一致 |
+| 5 时间过滤 | 2 | 预约时间挪到昨天 → 消失；挪回五年后 → 又回来（证明过滤的是时间而不是被顺手改坏了状态） |
+| 6 状态过滤 | 3 | 第二条待支付不进列表 → 支付后立刻进 → 退号后消失 |
+| 7 越权 | 2 | 另一患者的列表看不到我的队列；我自己的那条还在（`7b` 首轮期望写错，已改成"第二条此时已退号所以只剩 1 条"） |
+| 8 只读证明 | 3 | 连打五次 GET 后 `queue_status` 内容一字不变（`1|14|1`）、零新增审计、预约计数不变 |
+| 9 角色 | 2 | 医生 token → `[403, 4001]`；匿名 → 401 |
+| 10 编码 | 2 | 就诊人名与科室名**入库字节**是 utf8mb4（`E9989F…`/`E6B688…`），排除"JSON 里那个『消化内科』只是转码巧合" |
+| 11 自净 | 5 | 五张表逐项回到基线：`queue_status=0 / appointment=13 / payment_record=4 / schedule=150 / patient=10` |
+
+### UI 验收：12 步全过（`t16_ui.sh` → `t16-ui4.log`，`UI_EXIT=0`）
+
+候诊页要读得到"今天的已支付预约"，所以脚本中段跑了**真实挂号链路**（医生详情 → 须知 → 添加就诊人 → 确认 → 支付），拿到 `appointment id=4544`、`status=CONFIRMED`、`order_no=YY20260929-0396`，占掉种子排班 `schedule.id=22` 的一个号，第 12 步还原。
+
+| 步 | 取证 | 结果 |
+|---|---|---|
+| 0 | 后端就绪 + 六项基线读数 | `base queue=0 apt=13 sched=150 patient=10 user=10 audit_apt=0` |
+| 1 | 装录制器 + `clearlog` + `console.error` 钩子 | `installed: true` / `cleared: true` |
+| 2 | 清登录态 → 微信登录 → 「稍后再说」 | token 到位 |
+| 3 | 首页 `.qe-queue` **真点击**进候诊页（此前 url 是空串、只会 toast「即将开放」） | `route: pages/queue/queue`、`rowCount: 0`、`el text .empty-title → 今天没有待就诊的预约` |
+| 4 | 真实挂号 + 支付链路 | 走到 `pages/appointment/result` |
+| 5 | 有预约但未进队列（**首版常态分支**） | `rows: 4544\|候验甲\|消化内科\|张伟\|09-29 08:30（上午）\|NOQUEUE`，组件渲染 `tone=waiting label=暂未进入叫号队列 noQueueBranch=true` |
+| 6 | SQL 裸插队列行（叫号系统写库的替身）+ 点 `.q-refresh-btn` | `WAITING` → `label=排队中 percent=0% nums=0/5 fillWidth=0` |
+| 7 | **J38 自动刷新：只改库、不点任何按钮、等一个轮询周期** | `lastSyncText` 自己从 `12:55:09` 变到 `12:55:29`；`label=叫到你了 percent=93% nums=14/1` |
+| 8 | 渲染层进度条宽度 | 内联 `style="width: 93%"`（`fillWidth=93`），与 14/(14+1)=93% 一致 |
+| 9 | 删掉队列行 → 回到未入队分支 | `label=暂未进入叫号队列 noQueueBranch=true`（`percent` 键消失，不是回 0） |
+| 10 | 未登录 `reLaunch /pages/queue/queue` | 两次复读栈都是 `[pages/login/login]` → **守卫在页面上，不是只藏按钮** |
+| 11 | `console.error` 台账 + toast 台账 + 库侧读数 | `errs: []`、`toasts: []`、`apt=4544 status=CONFIRMED`、`queue_rows_left=0` |
+| 12 | 清理 + 还原种子号源 | `还原前：schedule=22 remaining=19` → `还原后：… remaining=20`；`after queue=0 apt=13 sched=150 patient=10 user=10 audit_apt=0`；`未来种子号源占用异常行数=0` |
+
+**J38 这条为什么只能这么证**：`≤ 10 秒`是频率约束，不是"点了立刻变"。所以第 7 步全程**没有任何 UI 交互**，只 `UPDATE` 库 + `sleep 13`，读到的新数字只可能来自定时器。第 6 步那次点击是必要对照——它证明"手动刷新也行"，第 7 步才证明"不点也行"。
+
+### 驱动层三条新陷阱（都在本卡付出过真实代价）
+
+1. **新增页面 / 新组件必须显式 `simulator_refresh`，否则运行中的 bundle 里根本没有它。** 第一轮整条 UI 链"跑成功、exit 0"，但从第 3 步起页面栈纹丝不动、页面内 selector 全是 `no such element`——看起来像我把 wxml 写坏了。真凶只有读 `wx.__navErr` 才看得见：`navigateTo:fail can not navigateTo an unregistered page (pages/queue/queue), please register it in app.json first`。跑 `simulator_refresh` → sleep 18s → 重查得 `navErr: null` + 栈深 +1，之后一次跑通。**教训的形状**：CLI 的 `nav` 助手故意把失败写进全局变量而不抛出，所以"导航没发生"永远是**静默**的，必须主动读 `__navErr`。
+2. **`el --selector` 穿不进自定义组件。** 组件内部节点（`.qp-label`/`.qp-fill`）用页面选择器一律 `no such element`，而同页面的 `.q-refresh-btn`/`.empty-title` 都能查到。对策：对**宿主节点** `.q-progress` 取 `--action outerWxml`，它会把组件渲染出的整棵子树带回来——标签文字、百分比、内联 `style="width: 93%"` 全在里面。这条**反而补强了**渲染层取证（内联宽度是 observers→setData→渲染的结果）。驱动器落成 `qp.js`。附带自纠：解析器正则一开始写窄了（`waiting|calling|serving|done`），把 `CALLING` 的真实 tone 值 `active` 报成 `tone=null`，看着像缺陷其实是我脚本的锅——**断言取不到值先怀疑解析器，再怀疑产品**。
+3. **SQL 里的反引号写进 bash 双引号 = 命令替换。** 收尾那句 `` … WHERE `date` >= CURDATE() `` 实际执行的是 `date` 命令，MySQL 收到 `WHERE Sep 29 12:43:52 2026 >= …` 直接语法错，脚本因为只 `set -u` 没 `-e` 而把它表现成"整轮验收 exit 1"。`date` 在 MySQL 8 是非保留字，去掉反引号即可（已实测）。**退出码要能对应到具体哪一句**，别让一句诊断 SQL 盖掉前面十二步的取证。
+
+### 门禁轮次的两次数据泄漏（记下来，因为它坑的是**隔壁卡的测试**）
+
+- **第一轮 12 条失败**：`@AfterEach` 里用 `DELETE FROM payment_record WHERE patient_id IN (SELECT patient_id FROM appointment …)`，而 `payment_record.patient_id` 指的是**患者表**主键，不是预约表的列 → 清不到，开发库里堆了 14 条孤儿流水；随后用 `DELETE FROM payment_record WHERE patient_id NOT IN (SELECT id FROM patient)` 手工清干净。
+- **第三轮 1 条失败，失败的却是 T12 的类**：我泄漏的 `CREATE_APPOINTMENT` 审计行（`target_id` 为 NULL）被 `AppointmentIntegrationTest` 收尾那条"按 target_type 一把清"顺走，于是 **T12 在自己没创建的那份基线上断言失败**。修法是本卡的清理同时按 `operator_type='PATIENT' AND operator_id = 我的 user` 删审计行。**通用结论：共用一张审计表时，"按类型全清"的写法会把邻居的取证一起扫掉，每个测试类必须按自己造的行删。**
+- 修完复跑：`t16-mvn1..4.log`，最终 `Tests run: 227, Failures: 0` + 跑完库内 `queue_status=0 / appointment=13 / payment_record=4`。
+
+### 两处引用写错，已就地更正（写日志是为了下次别再犯）
+
+| 位置 | 原本写的 | 实情 | 已改成 |
+|---|---|---|---|
+| `QueueService` 注释、`QueueIntegrationTest` 断言消息 | 「卡片 458 行明写：未支付的预约**不占号源**也不进就诊流程」 | 卡片 458 行原文是「待支付超时自动取消（定时任务，二期做）；支付金额禁篡改；除本方法外禁止任何地方更新预约状态」，**从没说过不占号源**；而且卡片 453 行的 ⑤⑥ 明写 PENDING_PAYMENT **已经在扣号源** —— 引用与事实两头都反了 | 改引卡片 453 行第 ⑧ 步「支付成功 → 预约状态 CONFIRMED」+ 卡片 331 行（T13 记录页才覆盖待支付），并注明"排除是业务口径，不是数据缺失" |
+| `QueueService` 注释 | 「PRD 107 行『防止过号』」 | 「实时更新排队状态，防止过号」在 PRD **106** 行，107 行是「显示当前叫号进度」 | 改 106 行，并把"保留 COMPLETED"明确标注为**无直接出处的设计选择** |
+
+这是 [[quote-spec-verbatim]] 那条纪律的又一次现形：把"我认为规格会这么说"写成带行号的引用，比不引用更危险，因为读者会去查——查到的是反的。
+
+### 顺手补的一个跨卡钉：`QueueStatus` 加 `@TableId(type = IdType.AUTO)`
+
+T14 已经证明"不继承 `BaseEntity` 的流水实体若漏这条注解，MyBatis-Plus 会退回默认 ASSIGN_ID（雪花 ~2.1e18），既与 `AUTO_INCREMENT` 列定义冲突、又超出 JS `Number.MAX_SAFE_INTEGER`，小程序端详情页整页空白"（见 [[t14-balance-decisions]]）。本卡**只读不写**，所以今天不会触发；但 `queue_status` 正是二期要写的那张表，注解现在补上比让下一个作者再踩一次便宜。改完复跑门禁 227 全绿。
+
+### 附录 B · 全局红线检查表（14 条逐条扫）
+
+| # | 检查项 | 本卡结论 |
+|---|---|---|
+| 1 | 严禁前端隐藏金额 | N/A：本卡**一个金额字段都不返回**（判断⑤），候诊页与费用无关 |
+| 2 | 金额裁剪层是否被绕过 | N/A（同上）；`/user/**` 只有患者 token 进得来 |
+| 3 | 审计必须同事务 | N/A：全卡只读，零写操作 → 按 T10/T13 的先例**不留审计**（真 HTTP `8b` 实测零新增） |
+| 4 | 外部通道用 afterCommit | N/A：本卡不碰任何外部通道（队列由 HIS 写，不是本系统推） |
+| 5 | 权限判断是否只写在 UI | ✅ 归属在 SQL（`patient_id IN (我的就诊人)`），角色隔离在 `SecurityConfig`（`9`/`9b` 实测 403/401）；页面 `onShow` 的 token 守卫是**第二道**，不是唯一一道（第 10 步实测未登录被弹回 login） |
+| 6 | 小程序新接口是否强制注入 userId 归属校验 | ✅ `GET /user/queues` **没有任何入参**，`userId` 只从 `SecurityUtils.currentUserId()` 取 |
+| 7 | 身份证/手机号是否加密存储 | N/A（本卡不写这两列） |
+| 8 | 有没有多装 T01 清单外的三方库 | ✅ 零新增依赖（`pom.xml`、两个 `package.json` 一行未动）；组件用的是原生 `Component({})`，没引组件库 |
+| 9 | 落地/跳转目标是否白名单 | ✅ 空态两个按钮分别 `switchTab('/pages/appointment/appointment')` 与 `navigateTo('/pages/appointment/records')`，全是字面量；页面无 query 参数 |
+| 10 | 列表筛选/搜索/分页是否进 URL | N/A：PRD 612 行只给"获取当前排队状态"，没有筛选/分页需求。全量返回（今天及以后的有效预约，天然只有一条两条）；**故意不做状态 tab**——与 T13"后端不做状态分组"同一条纪律 |
+| 11 | 是否越界做别的卡的活 | ✅ 不做挂号（卡片 533 行红线 → T12）、不做叫号写入（二期对接 HIS）、不做病历/报告（T17/T18）、不做住院候诊（PRD §3.5 无此要求） |
+| 12 | 是否写了规格里没有的实体/表/字段 | ✅ 零迁移、零新列；DTO 十二个字段逐个可追到 V1:188–197 或 PRD 581 行数据字典；`Names` 开可见性属复用不是新造 |
+| 13 | 是否自造了数字或规则 | ⚠️ **两处，都已就地标注**：① 进度公式 `当前叫号 /(当前叫号 + 前方等待)`（规格从没定义"进度"怎么算）；② `COMPLETED` 是否进列表（规格没写）。两处都写清"无规格出处、我的选择、要改只改一个文件" |
+| 14 | 前端是否有唯一类名可复核 | ✅ 页面 `q-*` 前缀（`.q-refresh-btn`/`.empty-title`/`.q-progress`…），组件内部 `qp-*` 前缀与页面无冲突；组件宿主类 `.q-progress` 就是 UI 取证的入口 |
+
+### 本卡有意未做的事（附录 D 第 3 条）
+
+| 未做 | 为什么 |
+|---|---|
+| 后端写 `queue_status`（自动叫号 / 假数据生成器） | PRD 662 行：这是院内排队叫号系统的活；全仓没有任何一张卡负责写它。造一个生成器会让 T21–T23 与真实对接方都以为接口已存在 |
+| WebSocket 实时推送 | 卡片 530 行是"轮询**或** WebSocket"，PRD 477 行只要求 ≤ 10 秒。首版无推送通道，WebSocket 还要额外做连接管理与鉴权 → 选够用且不发明东西的那个 |
+| `/user/queues/{id}` 详情端点 | PRD 612 行的接口概览是单数；列表一行一预约、字段齐到够渲染，再造详情=同一份数据两个出处 |
+| 过号提醒 / 推送通知 | 规格里没有"过号"这个功能点（PRD 106 行用的是"防止过号"，实现成"能随时看到当前进度"就是这条要点的落点），也没有消息推送通道 |
+| 叫号序号规则（如 `A012` 这种格式） | `current_number` 是 INT（V1:191），规格从没定义过号票格式；页面就显示裸数字，不编格式 |
+| 队列历史 / 曾经排到几号 | `queue_status` 一预约一行（`uk_appointment_id`），没有历史表；做历史要新表，超出卡片范围 |
+
+### 遗留 TODO（交给后续卡或二期）
+
+1. **叫号数据对接**：二期由 HIS 写 `queue_status`。届时要确认三件事：院内号票是否要用格式化字符串（当前 INT 放不下）、`DONE` 之后队列行是否保留（本卡的显示口径依赖它保留）、以及 `QueueStatus` 现在这条 `@TableId(AUTO)` 是否被写路径沿用。
+2. **进度口径待产品确认**：如果产品要按"号源总数"算进度，只改 `components/queue-progress/queue-progress.js` 一个文件。
+3. **候诊页无分页**：目前"今天及以后的有效预约"数量天然极小；若将来支持跨期候诊，需要与 T13 一起补分页（并遵守附录 B 第 10 条：筛选进 URL）。
+4. **`COMPLETED` 是否该出现在候诊页**：判断③里唯一无出处的那条，已用测试 `j37_completedAppointmentStaysListed` 钉住，产品推翻时改一处 SQL 条件 + 一条测试。
+
+### 当前状态
+
+- **T16 收口**：后端 **227 例全绿**（214 + 13）、真 HTTP **37/37 PASS**、UI **12 步全过**、库里六项计数逐项回基线、种子排班 `schedule.id=22` 号源已还原（19 → 20）。
+- `SecurityConfig`、`pom.xml`、两个 `package.json` 一行未动；零迁移、零新列。
+- P3（T14–T16）到此**三张卡全部收口**。下一个推送点仍是 🚩 **M2 = T28**，本卡只提交不推送。

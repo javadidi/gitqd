@@ -1,0 +1,7 @@
+{
+  "navigationBarTitleText": "候诊查询",
+  "enablePullDownRefresh": true,
+  "usingComponents": {
+    "queue-progress": "/components/queue-progress/queue-progress"
+  }
+}

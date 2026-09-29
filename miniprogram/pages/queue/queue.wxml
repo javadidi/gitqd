@@ -1,0 +1,37 @@
+<view class="page-queue">
+  <view class="container">
+    <view class="card q-cards-head">
+      <text class="q-head-title">当前候诊进度</text>
+      <text class="text-muted q-sync">更新于 {{lastSyncText || '—'}} · 每 10 秒自动刷新</text>
+    </view>
+
+    <view wx:if="{{!loading && rows.length === 0}}" class="q-empty">
+      <view class="empty-icon">🏥</view>
+      <view class="empty-title">今天没有待就诊的预约</view>
+      <view class="text-muted empty-desc">挂号成功并支付后，这里会显示你的排队进度</view>
+      <button class="btn-outline q-empty-btn" bindtap="onGoAppointment">去预约挂号</button>
+      <button class="btn-outline q-records-btn" bindtap="onGoRecords">看预约记录</button>
+    </view>
+
+    <view wx:for="{{rows}}" wx:key="appointmentId" class="card q-card">
+      <view class="q-card-head">
+        <text class="q-patient">{{item.patientName}}</text>
+        <text class="q-apt-status">{{item.appointmentStatus === 'COMPLETED' ? '已就诊' : '已确认'}}</text>
+      </view>
+      <view class="q-doctor">{{item.departmentName}} · {{item.doctorName}}</view>
+      <view class="text-muted q-time">{{item.timeText}}</view>
+
+      <queue-progress
+        class="q-progress"
+        status="{{item.queueStatus}}"
+        current-number="{{item.currentNumber}}"
+        waiting-count="{{item.waitingCount}}"
+      />
+    </view>
+
+    <button class="btn-primary q-refresh-btn" loading="{{loading}}" bindtap="onRefresh">立即刷新</button>
+    <view class="text-muted q-tip">
+      叫号进度来自院内排队系统；过号请联系分诊台重新叫号。本页面只读，不会影响你的预约。
+    </view>
+  </view>
+</view>

@@ -1,0 +1,98 @@
+.q-cards-head {
+  display: flex;
+  flex-direction: column;
+  padding: 20rpx 24rpx;
+}
+
+.q-head-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.q-sync {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+}
+
+.q-empty {
+  padding: 80rpx 0;
+  text-align: center;
+}
+
+.q-empty .empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.q-empty .empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.q-empty .empty-desc {
+  font-size: 24rpx;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.q-empty-btn,
+.q-records-btn {
+  width: 60%;
+}
+
+.q-records-btn {
+  margin-top: 20rpx;
+}
+
+.q-card {
+  padding: 24rpx;
+}
+
+.q-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.q-patient {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.q-apt-status {
+  font-size: 22rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.q-doctor {
+  margin-top: 10rpx;
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+.q-time {
+  margin-top: 4rpx;
+  font-size: 24rpx;
+}
+
+.q-progress {
+  margin-top: 20rpx;
+  display: block;
+}
+
+.q-refresh-btn {
+  margin-top: 32rpx;
+}
+
+.q-tip {
+  margin-top: 20rpx;
+  font-size: 22rpx;
+  line-height: 1.6;
+  text-align: center;
+}

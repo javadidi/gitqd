@@ -105,8 +105,12 @@ public class AppointmentQueryService {
     /**
      * 一次批量把三个名字表捞回来。逐个查会变成 4N 次 SQL（患者、医生、科室、排班各一次），
      * 列表页 20 条就是 80 次——与 T10 {@code CatalogService.resolveTitleNames} 同一个理由。
+     *
+     * <p><b>包内可见是给 T16 {@code QueueService} 用的</b>：候诊查询也要给每条预约标出
+     * 就诊人/科室/医生/时段，复制第二份同样的四次批量查就是给同一段逻辑两个出处——
+     * 一改一漏之后，两个页面对同一个预约会显示不一样的医生名。
      */
-    private Names namesOf(List<Appointment> rows) {
+    Names namesOf(List<Appointment> rows) {
         Names names = new Names();
         names.patients = patientMapper.selectBatchIds(distinct(rows.stream()
                         .map(Appointment::getPatientId).collect(Collectors.toList())))
@@ -148,12 +152,15 @@ public class AppointmentQueryService {
         return item;
     }
 
-    /** 一批查询的临时容器，只为把"四次批量查"的结果带回到映射那一步。 */
-    private static final class Names {
-        private Map<Long, String> patients = new HashMap<>();
-        private Map<Long, String> doctors = new HashMap<>();
-        private Map<Long, Long> doctorDepartment = new HashMap<>();
-        private Map<Long, String> departments = new HashMap<>();
-        private Map<Long, String> slots = new HashMap<>();
+    /**
+     * 一批查询的临时容器，只为把"四次批量查"的结果带回到映射那一步。
+     * 包内可见（成员同）：{@code QueueService} 复用同一份解析结果，见 {@link #namesOf}。
+     */
+    static final class Names {
+        Map<Long, String> patients = new HashMap<>();
+        Map<Long, String> doctors = new HashMap<>();
+        Map<Long, Long> doctorDepartment = new HashMap<>();
+        Map<Long, String> departments = new HashMap<>();
+        Map<Long, String> slots = new HashMap<>();
     }
 }

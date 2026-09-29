@@ -1,0 +1,82 @@
+/* 色块 + 图标 + 文字三重编码（任务卡 99 行「禁止纯色圆点」）；
+   色调取自 §2.1 设计令牌：候诊中 amber-500、进行中 sky-600、已完成 zinc-400、进度条 blue-600。 */
+.qp-waiting {
+  --qp-label: #d97706;
+  --qp-bg: #fef3c7;
+}
+
+.qp-active {
+  --qp-label: #0284c7;
+  --qp-bg: #e0f2fe;
+}
+
+.qp-done {
+  --qp-label: #71717a;
+  --qp-bg: #f4f4f5;
+}
+
+.qp-head {
+  display: flex;
+  align-items: center;
+}
+
+.qp-icon {
+  font-size: 30rpx;
+  margin-right: 10rpx;
+}
+
+.qp-label {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: var(--qp-label, #d97706);
+}
+
+.qp-percent {
+  margin-left: auto;
+  font-size: 26rpx;
+  color: var(--qp-label, #d97706);
+}
+
+.qp-track {
+  margin-top: 14rpx;
+  height: 14rpx;
+  border-radius: 8rpx;
+  background: #f1f5f9;
+  overflow: hidden;
+}
+
+.qp-fill {
+  height: 100%;
+  border-radius: 8rpx;
+  background: #2563eb;
+  transition: width 0.4s ease;
+}
+
+.qp-fill-active {
+  background: #0284c7;
+}
+
+.qp-fill-done {
+  background: #a1a1aa;
+}
+
+.qp-nums {
+  margin-top: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 24rpx;
+  color: #6b7280;
+}
+
+.qp-num-value {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.qp-nums-muted {
+  display: block;
+  color: #9ca3af;
+  line-height: 1.6;
+}

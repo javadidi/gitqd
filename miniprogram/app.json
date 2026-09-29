@@ -25,7 +25,8 @@
     "pages/payment/confirm",
     "pages/payment/pay",
     "pages/payment/records",
-    "pages/payment/detail"
+    "pages/payment/detail",
+    "pages/queue/queue"
   ],
   "window": {
     "navigationBarBackgroundColor": "#ffffff",
