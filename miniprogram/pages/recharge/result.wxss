@@ -1,0 +1,73 @@
+.rc-result-head {
+  text-align: center;
+  padding: 40rpx 24rpx;
+}
+
+.rc-result-icon {
+  width: 88rpx;
+  height: 88rpx;
+  line-height: 88rpx;
+  border-radius: 50%;
+  margin: 0 auto 16rpx;
+  font-size: 44rpx;
+  color: #ffffff;
+  background: #10b981;
+}
+
+.rc-result-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.rc-result-sub {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #9ca3af;
+}
+
+.rc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.rc-row:last-child {
+  border-bottom: none;
+}
+
+.rc-label {
+  font-size: 26rpx;
+  color: #9ca3af;
+}
+
+.rc-amount,
+.rc-balance {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.rc-order {
+  font-size: 26rpx;
+  letter-spacing: 1rpx;
+  color: #1f2937;
+}
+
+.rc-note {
+  margin-top: 24rpx;
+  font-size: 22rpx;
+  color: #cbd5e1;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.rc-btn {
+  margin-top: 24rpx;
+}
+
+.rc-btn:first-of-type {
+  margin-top: 32rpx;
+}

@@ -101,6 +101,33 @@ function appointmentCancellable(status) {
   return status === 'PENDING_PAYMENT' || status === 'CONFIRMED'
 }
 
+// 充值状态码 → 中文标签。码值出处是后端 V1__init.sql:147 的列注释
+// 「PENDING/SUCCESS/REFUNDED」。REFUNDED 在首版只会出现在种子数据里
+//（真实退款属 T19/二期，卡片 498 行红线「不做退款」），标签仍先备着。
+const RECHARGE_STATUS_LABELS = {
+  PENDING: '待支付',
+  SUCCESS: '充值成功',
+  REFUNDED: '已退款',
+}
+
+function rechargeStatusLabel(status) {
+  return RECHARGE_STATUS_LABELS[status] || status || '—'
+}
+
+// 支付方式码 → 中文标签。码值出处 V1__init.sql:146「WECHAT/ALIPAY/CASH/CARD」。
+// 首版真实通道只有微信（卡片 494 行括号写死，后端也固定写 WECHAT），
+// ALIPAY/CASH 只会出现在种子数据里。
+const PAY_METHOD_LABELS = {
+  WECHAT: '微信支付',
+  ALIPAY: '支付宝',
+  CASH: '现金',
+  CARD: '刷卡',
+}
+
+function payMethodLabel(method) {
+  return PAY_METHOD_LABELS[method] || method || '—'
+}
+
 module.exports = {
   formatMoney,
   formatDate,
@@ -115,4 +142,8 @@ module.exports = {
   APPOINTMENT_GROUPS,
   appointmentGroup,
   appointmentCancellable,
+  RECHARGE_STATUS_LABELS,
+  rechargeStatusLabel,
+  PAY_METHOD_LABELS,
+  payMethodLabel,
 }

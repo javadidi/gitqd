@@ -1,0 +1,86 @@
+.rit-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 16rpx;
+  border-bottom: 2rpx solid #f5f5f5;
+}
+
+.rit-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+/* 三色与列表页一致：绿=到账、蓝=待支付、红=退款 */
+.rit-status {
+  font-size: 22rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+}
+
+.rit-status-ok {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.rit-status-pending {
+  color: #0284c7;
+  background: #e0f2fe;
+}
+
+.rit-status-refunded {
+  color: #e11d48;
+  background: #ffe4e6;
+}
+
+.rit-amount {
+  padding: 28rpx 0;
+  font-size: 56rpx;
+  font-weight: 600;
+  color: #dc2626;
+  text-align: center;
+}
+
+.rit-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+.rit-row:last-child {
+  border-bottom: none;
+}
+
+.rit-label {
+  color: #9ca3af;
+  font-size: 26rpx;
+}
+
+.rit-balance {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+.rit-order {
+  font-size: 26rpx;
+  letter-spacing: 1rpx;
+}
+
+.rit-note {
+  margin-top: 24rpx;
+  padding: 20rpx 24rpx;
+  background: #f9fafb;
+  border-radius: 12rpx;
+  font-size: 24rpx;
+  color: #9ca3af;
+  text-align: center;
+}
+
+.rit-back {
+  margin-top: 32rpx;
+}

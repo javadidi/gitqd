@@ -3,6 +3,7 @@ package com.hospital.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.hospital.entity.Patient;
 import org.apache.ibatis.annotations.Mapper;
+import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Update;
 
 @Mapper
@@ -29,4 +30,25 @@ public interface PatientMapper extends BaseMapper<Patient> {
             + "id_card = #{idCard}, phone = #{phone} "
             + "WHERE card_no = #{cardNo} AND user_id = #{userId} AND deleted = 1")
     int reviveSoftDeletedByCardNo(Patient patient);
+
+    /**
+     * 充值到账：把就诊卡余额原子加一笔（T14）。返回 1 = 加成功；0 = 这个就诊人不属于该用户（或不存在/已删）。
+     *
+     * <p><b>为什么把归属写进 UPDATE 的 WHERE 而不是先查一遍</b>：这条语句同时干两件事——
+     * 校验"这张卡是你的"和"把钱加进去"。如果拆成"先 selectOne 判归属、再 updateById 加钱"，
+     * 两次操作之间卡被删或归属判定基于旧快照，就会出现"给别人的卡加了钱"或"加给了已删除的行"。
+     * 合成一条之后，判定和写入在 InnoDB 同一把行锁里完成，返回值 0 就是唯一的"没加成"信号。
+     *
+     * <p>{@code balance_fen = balance_fen + #{amountFen}} 而不是"读出来加完写回去"，
+     * 是为了让并发充值变成累加而不是相互覆盖（两次充值各加一次，不会只加最后一笔）。
+     * 这与 {@code ScheduleMapper.occupySlot} / {@code releaseSlot} 是同一族写法：
+     * <b>账本的增减只在数据库里做一次算术</b>。
+     *
+     * <p>本卡只有加法。T15 缴费要加的是减法版本，且必须带
+     * {@code AND balance_fen >= #{amountFen}} 下界守卫，否则并发能把余额花成负数。
+     */
+    @Update("UPDATE patient SET balance_fen = balance_fen + #{amountFen} "
+            + "WHERE id = #{patientId} AND user_id = #{userId} AND deleted = 0")
+    int addBalance(@Param("patientId") Long patientId, @Param("userId") Long userId,
+                   @Param("amountFen") long amountFen);
 }

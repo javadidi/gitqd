@@ -5,7 +5,7 @@ Page({
     ],
     quickEntries: [
       { id: 'appointment', label: '预约挂号', icon: 'calendar', url: '/pages/appointment/appointment' },
-      { id: 'recharge', label: '门诊充值', icon: 'wallet', url: '' },
+      { id: 'recharge', label: '门诊充值', icon: 'wallet', url: '/pages/recharge/recharge' },
       { id: 'queue', label: '候诊查询', icon: 'clock', url: '' },
       { id: 'payment', label: '自助缴费', icon: 'credit-card', url: '' },
       { id: 'report', label: '报告查询', icon: 'file-text', url: '' },

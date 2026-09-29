@@ -1,0 +1,82 @@
+.rrc-empty {
+  padding: 80rpx 0;
+  text-align: center;
+}
+
+.rrc-empty .empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.rrc-empty .empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.rrc-empty .empty-desc {
+  font-size: 24rpx;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.rrc-empty-btn {
+  width: 60%;
+}
+
+.rrc-card {
+  padding: 24rpx;
+}
+
+.rrc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rrc-patient {
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+/* 三色对应任务卡 92-96 行：绿=到账、蓝=待支付、红=退款 */
+.rrc-status {
+  font-size: 22rpx;
+  padding: 4rpx 14rpx;
+  border-radius: 8rpx;
+}
+
+.rrc-status-ok {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.rrc-status-pending {
+  color: #0284c7;
+  background: #e0f2fe;
+}
+
+.rrc-status-refunded {
+  color: #e11d48;
+  background: #ffe4e6;
+}
+
+.rrc-amount {
+  margin-top: 12rpx;
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+.rrc-foot {
+  margin-top: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 24rpx;
+}
+
+.rrc-arrow {
+  color: #cbd5e1;
+  font-size: 34rpx;
+}

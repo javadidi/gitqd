@@ -17,7 +17,11 @@
     "pages/appointment/confirm",
     "pages/appointment/result",
     "pages/appointment/records",
-    "pages/appointment/record-detail"
+    "pages/appointment/record-detail",
+    "pages/recharge/recharge",
+    "pages/recharge/result",
+    "pages/recharge/records",
+    "pages/recharge/detail"
   ],
   "window": {
     "navigationBarBackgroundColor": "#ffffff",

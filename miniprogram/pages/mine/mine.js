@@ -27,7 +27,7 @@ Page({
       ]},
       { group: '缴费记录', items: [
         { label: '门诊缴费记录', icon: '💳', url: '' },
-        { label: '门诊充值记录', icon: '💰', url: '' },
+        { label: '门诊充值记录', icon: '💰', url: '/pages/recharge/records' },
         { label: '住院充值记录', icon: '🏦', url: '' },
       ]},
       { group: '其他', items: [

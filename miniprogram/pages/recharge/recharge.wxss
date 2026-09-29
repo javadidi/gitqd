@@ -1,0 +1,125 @@
+.rc-empty {
+  padding: 48rpx 0;
+  text-align: center;
+}
+
+.rc-empty .empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.rc-empty .empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.rc-empty .empty-desc {
+  font-size: 24rpx;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.rc-empty-btn {
+  width: 60%;
+}
+
+.rc-patient {
+  position: relative;
+  padding: 24rpx 60rpx 24rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.rc-patient:last-of-type {
+  border-bottom: none;
+}
+
+.rc-patient-main {
+  display: flex;
+  align-items: center;
+}
+
+.rc-patient-name {
+  font-size: 30rpx;
+  color: #1f2937;
+  margin-right: 12rpx;
+}
+
+.rc-patient-relation {
+  font-size: 22rpx;
+  color: #2563eb;
+  background: #eff6ff;
+  padding: 2rpx 12rpx;
+  border-radius: 6rpx;
+}
+
+.rc-patient-card {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+}
+
+.rc-patient-on {
+  background: #f8fafc;
+}
+
+.rc-patient-check {
+  position: absolute;
+  right: 16rpx;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #2563eb;
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.rc-amount-row {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 0 8rpx;
+}
+
+.rc-amount-unit {
+  font-size: 40rpx;
+  font-weight: 600;
+  color: #1f2937;
+  margin-right: 16rpx;
+}
+
+.rc-amount-input {
+  flex: 1;
+  font-size: 44rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.rc-amount-tip {
+  font-size: 22rpx;
+  color: #cbd5e1;
+  line-height: 1.6;
+}
+
+.rc-pay-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 0;
+}
+
+.rc-pay-name {
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+.rc-pay-check {
+  color: #2563eb;
+  font-size: 30rpx;
+}
+
+.rc-pay-tip {
+  font-size: 22rpx;
+  color: #cbd5e1;
+}
+
+.rc-submit {
+  margin-top: 32rpx;
+}

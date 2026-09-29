@@ -13,7 +13,7 @@
       <view
         wx:for="{{quickEntries}}"
         wx:key="id"
-        class="quick-entry-item"
+        class="quick-entry-item qe-{{item.id}}"
         data-url="{{item.url}}"
         data-label="{{item.label}}"
         bindtap="onQuickEntryTap"

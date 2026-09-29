@@ -1,0 +1,61 @@
+<view class="page-recharge">
+  <view class="container">
+    <view class="card">
+      <view class="section-title">选择就诊人</view>
+
+      <view wx:if="{{!loading && patients.length === 0}}" class="rc-empty">
+        <view class="empty-icon">🧑</view>
+        <view class="empty-title">还没有添加就诊人</view>
+        <view class="text-muted empty-desc">充值需要先有一位就诊人</view>
+        <button class="btn-outline rc-empty-btn" bindtap="onAddPatient">去添加就诊人</button>
+      </view>
+
+      <view
+        wx:for="{{patients}}"
+        wx:key="id"
+        class="rc-patient {{selectedPatientId === item.id ? 'rc-patient-on' : ''}}"
+        data-id="{{item.id}}"
+        bindtap="onPickPatient"
+      >
+        <view class="rc-patient-main">
+          <text class="rc-patient-name">{{item.name}}</text>
+          <text class="rc-patient-relation">{{item.relationLabel}}</text>
+        </view>
+        <view class="text-muted rc-patient-card">就诊卡 {{item.cardNo || '—'}}</view>
+        <view wx:if="{{selectedPatientId === item.id}}" class="rc-patient-check">✓</view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">充值金额</view>
+      <view class="rc-amount-row">
+        <text class="rc-amount-unit">¥</text>
+        <input
+          class="rc-amount-input"
+          type="digit"
+          placeholder="请输入金额"
+          value="{{amountYuan}}"
+          bindinput="onAmountInput"
+        />
+      </view>
+      <view class="rc-amount-tip">充值金额将实时到账就诊卡余额，用于门诊缴费</view>
+    </view>
+
+    <!-- 卡片 494 行「选择支付方式（微信支付）」：括号里已写死，所以这是一行信息不是选择器 -->
+    <view class="card">
+      <view class="section-title">支付方式</view>
+      <view class="rc-pay-row">
+        <text class="rc-pay-name">微信支付</text>
+        <text class="rc-pay-check">✓</text>
+      </view>
+      <view class="text-muted rc-pay-tip">首版为模拟支付通道，不会产生真实扣款</view>
+    </view>
+
+    <button
+      class="btn-primary rc-submit"
+      loading="{{submitting}}"
+      disabled="{{submitting}}"
+      bindtap="onSubmit"
+    >立即充值</button>
+  </view>
+</view>

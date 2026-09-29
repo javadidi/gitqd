@@ -1,0 +1,28 @@
+<view class="page-recharge-records">
+  <view class="container">
+    <view wx:if="{{!loading && rows.length === 0}}" class="rrc-empty">
+      <view class="empty-icon">💰</view>
+      <view class="empty-title">还没有充值记录</view>
+      <view class="text-muted empty-desc">充值后金额实时到账就诊卡，用于门诊缴费</view>
+      <button class="btn-outline rrc-empty-btn" bindtap="onGoRecharge">去充值</button>
+    </view>
+
+    <view
+      wx:for="{{rows}}"
+      wx:key="id"
+      class="card rrc-card"
+      data-id="{{item.id}}"
+      bindtap="onOpen"
+    >
+      <view class="rrc-head">
+        <text class="rrc-patient">{{item.patientName}}</text>
+        <text class="rrc-status rrc-status-{{item.tone}}">{{item.statusLabel}}</text>
+      </view>
+      <view class="rrc-amount">+{{item.amountText}}</view>
+      <view class="rrc-foot">
+        <text class="text-muted">{{item.payMethodLabel}} · {{item.timeText}}</text>
+        <text class="rrc-arrow">›</text>
+      </view>
+    </view>
+  </view>
+</view>

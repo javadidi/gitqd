@@ -4406,6 +4406,246 @@ schedule=150 appointment=13 payment_record=4 patient=10 user=4 audit_apt=0 id20=
 - 本轮不改动任何产品代码（驱动脚本全在仓库外），故未触发后端门禁；库里六表逐项回基线，种子行 `schedule.id=20` 已还原。
 - **T12 至此全卡收口**：后端 175 例 + 真 HTTP 40 步 + UI 12 项（11 确凿 + 1 降级）。下一步是 🚩 **M1 推送**，之后开 T13。
 
+---
+
+## T14 · 门诊充值（2026-09-29）
+
+### 任务卡原文 → 实现对照（491–504 行，**逐字**引用）
+
+| 行号 | 卡片原文 | 落点 |
+|---|---|---|
+| 494 | `- 充值页面：选择就诊人，输入充值金额，选择支付方式（微信支付）。` | `pages/recharge/recharge.{js,wxml,wxss,json}` + `POST /api/user/recharges` |
+| 495 | `- 支付成功：展示充值成功信息。` | `pages/recharge/result.*`（余额证据见下文判断④） |
+| 496 | `- 充值记录：查看充值历史。` | `pages/recharge/records.*` + `GET /api/user/recharges` |
+| 498 | `**红线**：不做缴费（T15）；不做退款（T19）。` | `RechargeService` 里只有 `addBalance` 一条加法；全卡没有任何减法、没有退款单 |
+| 501 | `- J33 充值 → 就诊卡余额增加 + 充值记录。` | MockMvc 8 例 + 真 HTTP 第 3/4 组（含并发） |
+| 502 | `- J34 充值记录 → 数据正确。` | MockMvc 3 例 + 真 HTTP 第 7/8 组 |
+| 504 | `**DoD**：充值流程通。` | 三层证据：198 例门禁 / 真 HTTP 48 步 / UI 两轮 14 项 |
+
+### 范围判定：卡片写三页，实际交付四页（第四页有出处，不是我加的）
+
+卡片 494–496 只列了三条。但**同一份 PRD 把「账单详情」也列成了本卡的页面**，而且是两处独立出处：
+
+- §3.11.5 第 296–297 行逐字：
+  - `1. **充值记录列表** — 展示门诊充值历史`
+  - `2. **账单详情** — 查看单笔充值明细`
+- §6.1 第 527 行「个人中心」页面清单里，逐字含 `…门诊充值记录、账单详情、住院充值记录、账单详情…`（前一组是本卡的门诊，后一组属 T23 住院）。
+- §9.1 第 622 行逐字：`| 个人中心 | 缴费记录、预约记录、充值记录、反馈提交、消息列表 |`。
+
+所以本卡交付 **4 页 / 3 个端点**：多出来的是 `pages/recharge/detail.*` + `GET /api/user/recharges/{id}`。教训与 T08 的 DELETE 同源：**只读卡片的「要做什么」会漏页，必须同时读 PRD 的 §3.x 功能点、§6.1 页面清单、§9.1 接口概览三张表**。
+
+### §9.1 那一格里有一个「支付回调」——本卡为什么没有对应端点
+
+§9.1 第 611 行逐字：`| 充值缴费 | 创建充值订单、支付回调、缴费列表、缴费详情 |`。这一格横跨两张卡：**创建充值订单 + 支付回调 = T14（本卡）**，**缴费列表 + 缴费详情 = T15**。
+
+「支付回调」我没有做成 `/user/recharges/notify`，理由（写进 `RechargeController` 的 javadoc）：
+
+1. T12 已经把 `POST /api/payments/wechat/notify` 建成**通道级唯一入口**——微信侧只配置一个回调地址，它按 `out_trade_no` 认单，而单号前缀已经带了类型（`SerialType`：`YY` 预约 / `CF` 充值 / `JF` 缴费）。
+2. 再造一个充值专属回调 = 两个入口各自实现一遍幂等。**幂等只有一处才算数**，两处就会漂移。
+3. 本卡的"回调"在业务流程内一次性完成（下单 → prepay → `markSuccess` → 加余额，同一事务），`RechargeRecordMapper.markSuccess` 的 `WHERE status = 'PENDING'` 已经把"重复置成功"在数据库层面堵死，真实回调接上时按前缀分流即可复用。
+
+### 本卡的规格缺口：余额这一列在数据库里根本不存在（V4 迁移的来由）
+
+J33（卡片 501 行）要求「就诊卡余额增加」，但把三处规格要求和 V1 建表语句摆在一起，缺口就暴露了：
+
+| 出处 | 逐字内容 | 说明余额必须落库？ |
+|---|---|---|
+| 卡片 501 | `J33 充值 → 就诊卡余额增加 + 充值记录` | ✅ 要求"增加"这个动作有对象 |
+| PRD 98 | `- 充值金额实时到账就诊卡余额` | ✅ 要求"实时到账"可被患者看见 |
+| PRD 661（术语表） | `| 就诊卡 | 患者在医院的电子账户，用于存储余额和就诊信息 |` | ✅ 把就诊卡定义成**存储余额的账户** |
+| PRD 582（数据字典） | `| 充值记录 | 充值ID、就诊人ID/住院人ID、金额、支付方式、状态、时间 |` | ❌ 这是**流水**的字段表，没有"账户余额" |
+| V1__init.sql `patient` 表 | `id/user_id/name/id_card/phone/relation/card_no/created_at/updated_at/deleted` | ❌ **没有余额列** |
+
+三处规格要求 vs 一处建表遗漏 → 结论是**规格没变，V1 漏建**。处理见 `V4__patient_balance.sql` 的头注释（本项目第一支加列迁移）：
+
+- **加在 `patient` 表上**，不新建账户表：PRD 661 说的"就诊卡"就是 `patient` 本身（它有 `card_no`），新建 `card_account` 表等于凭空造一个规格里没有的实体。
+- **不做派生值**（`SUM(recharge) - SUM(payment)` 之类）：T15 的扣减必须是原子的 `UPDATE patient SET balance_fen = balance_fen - ? WHERE id = ? AND balance_fen >= ?`，而派生值写不出这个下界守卫——`balance_fen >= ?` 里的左值必须是同一列。这条判断在 T14 就得定，否则 V4 会被推翻重来。
+- **种子回填口径**：`UPDATE p SET balance_fen = (SELECT SUM(r.amount_fen) … WHERE r.patient_id = p.id AND r.status = 'SUCCESS')`。只算 `SUCCESS`（PENDING 的钱没到账），**不减 `payment_record`**——因为 seed 里的 4 笔缴费全是 `WECHAT`/`CASH`（`seed.sql:192` 段），本来就没走余额。这个"暂不扣"的钩子写在 seed 的 9b 段注释里：一旦出现余额支付的缴费记录，`SeedCheckService` 必须同步加一条核对。
+- 实测（真 HTTP 第 1 组）：`p1=10000`（只有 `SEED-RC-0001` SUCCESS）、`p5=0`（只有 `SEED-RC-0002` PENDING），且**逐人核对**不一致人数 = 0。
+
+### 八个实现判断（每一个都有出处，也每一个都可以被推翻）
+
+| # | 判断 | 出处 / 理由 |
+|---|---|---|
+| ① | 支付方式**不由客户端声明**，服务端固定 `WECHAT` | 卡片 494 括号写死；`pay_method` 四值里 ALIPAY/CASH 在本系统没有任何通道。真 HTTP 3b 实测：传 `ALIPAY` 被忽略，落库 `WECHAT` |
+| ② | 金额只有 `@NotNull @Positive`，**不自造上限** | PRD 与卡片都没给限额。编一个"单笔最多 5000 元"就是替规格编数字（同 T09 不给住院号编正则、T11 不校验过去日期） |
+| ③ | 一个事务四步：建单 → prepay → `markSuccess` → `addBalance`，审计同事务 | 单据 SUCCESS 但余额没加 = 钱进虚空；余额加了但单据 PENDING = 两张表对账说法不一致 |
+| ④ | 成功页显示**到账后余额**（`balanceFen`） | PRD 98「实时到账」。**只写"充值成功"三个字，患者无从判断钱有没有进卡** |
+| ⑤ | **列表不给余额，只有详情给** | 详情/列表共用 `RechargeResponse`，但 `list()` 传的是 `nameOnly` 桩 → `balanceFen` 为 null 被 Jackson NON_NULL 省键。理由：这一个字段是就诊人**此刻**的余额，历史行各显示一遍同一个数字，会被读成"当时到账后还剩这么多"，那是个错误的账。真 HTTP 7c2 实测列表 keys 无 `balanceFen`；前端详情页标签据此写「当前卡内余额」而非「到账后余额」 |
+| ⑥ | 归属校验写进 UPDATE 的 WHERE：`WHERE id = #{patientId} AND user_id = #{userId} AND deleted = 0` | 一条 SQL 同时做"是不是你的卡"和"原子加法"，返回值 0/1 就是判定本身（沿用 T11/T12/T13 的 affected-row 纪律）。0 → 1003，与"没这个就诊人"同码，不给枚举机会 |
+| ⑦ | 住院充值单从门诊侧打不到 → 5001 | `detail()` 里 `record.getPatientId() == null` 直接 5001。`SEED-RC-0003` 是住院单（`inpatient_id` 走账），属 T23；出参也不含 `inpatientId` 字段 |
+| ⑧ | 三张流水表**必须** `@TableId(type = IdType.AUTO)` | 见下一节，本卡 UI 验收撞出来的跨卡缺陷 |
+
+### 本卡最贵的发现：流水表缺 `@TableId(AUTO)` → 雪花 id 越过 JS 安全整数 → 小程序详情整页打不开
+
+**症状**（第一轮 UI 验收 `t14_ui.sh` 第 10 步）：路由确实跳到了 `pages/recharge/detail`，但页面 `detail: null`，`.rit-amount` / `.rit-balance` / `.rit-status` 三个 `el text` 全部 `no such element`，而第 13 步的 toast 台账里躺着一条 `数据不存在`（= 后端 5001 的 message）。
+
+**定位**：那一轮打印出来的充值记录 id 是 `2104748291255717890`，而同一个患者的 `patient.id` 是 `898`。
+
+| 观察 | 含义 |
+|---|---|
+| `recharge_record.id` 建表是 `BIGINT AUTO_INCREMENT PRIMARY KEY`（V1:141） | 数据库侧本来就是自增 |
+| 实体里 `private Long id;` **裸着，没有 `@TableId`** | MyBatis-Plus 退回默认 `IdType.ASSIGN_ID`（雪花）→ 显式插入 2.1e18 的 id |
+| `Patient` / `Appointment` 都 `extends BaseEntity`，其 `BaseEntity.java:13` 有 `@TableId(type = IdType.AUTO)` | 业务表没事，**流水表出事** |
+| `RechargeRecord` / `PaymentRecord` / `RefundRecord` 三张为什么不继承 BaseEntity | 它们**没有 `deleted` 列**（财务流水不做软删），继承会带进 `@TableLogic` 生成出不存在的列条件 |
+
+**后果链**：2.1e18 > `Number.MAX_SAFE_INTEGER`（2^53-1 = 9007199254740991）→ 小程序 `JSON.parse` 把尾数舍掉 → 前端拿着被篡改的 id 去 `GET /user/recharges/{id}` → 必然 5001。**MockMvc 和真 HTTP 都看不见这个损失**（Java/Python 解析 JSON 是精确整数），所以 48 步真 HTTP 全绿的同时，前端详情页是整页空白。
+
+**修法**：三个实体各补一行 `@TableId(type = IdType.AUTO)`，并把推导写进 `RechargeRecord` 的字段注释（另两张指向它）。同时补两道闸门，防止下次谁动实体又滑回雪花：
+
+| 闸门 | 位置 | 断言 |
+|---|---|---|
+| MockMvc | `RechargeIntegrationTest.j33_recordIdStaysInsideJsSafeInteger` | `0 < id <= 9007199254740991`，且原样回传 id 能查到同一笔 |
+| 真 HTTP | `t14_http.py` 第 `3i` 步 | 同上判据（这轮实测 `ids=[49,48,47,46,45]`） |
+
+**为什么顺带修了 `payment_record` / `refund_record`**：同一根因、同一种表（无 `deleted` 列的流水表）。它们的 id 目前没被任何客户端回传过，所以缺陷一直潜伏；而 **T15 自助缴费要把缴费单 id 传回详情/确认缴费页**，不在此刻修掉就是在下一张卡原样复发。改完后 T12/T13 的全部支付、退款测试重跑无红（198 例），证明主键策略切换没有波及既有链路。
+
+**开发库的次生污染（必须手工处理）**：MP 之前显式插入过 2.1e18 的行，把三张表的 `AUTO_INCREMENT` 计数器一起顶到了 2.1e18。改成 AUTO 之后若不复位，新单仍然是巨大 id，等于"修了却验不到"。处理：`ALTER TABLE … AUTO_INCREMENT = max(id)+1`（4/5/3）。
+**这一条踩到的取证陷阱**：`information_schema.TABLES.AUTO_INCREMENT` 是**统计缓存**，ALTER 之后回读仍是旧值（`2104750878809935875`），看着像没生效；`SHOW CREATE TABLE` 读的才是活定义（`AUTO_INCREMENT=4/5/3`）。**判断库的实时状态用 `SHOW CREATE TABLE`，不要用 I_S 缓存视图**——同一轮里 `t14_ui2.sh` 第 0 步又打印了一次那个陈旧值。
+
+### 端点清单（3 个，全在 `/api/user/**` 患者侧）
+
+| 方法 | 路径 | 卡片出处 | 归属校验 |
+|---|---|---|---|
+| `POST` | `/api/user/recharges` | 494「充值页面」+ 495「支付成功」 | `addBalance` 的 `WHERE user_id = ?` |
+| `GET` | `/api/user/recharges` | 496「充值记录」+ PRD 296 | 先取本人全部 `patient.id`，再 `IN` 过滤；无就诊人 → `List.of()` |
+| `GET` | `/api/user/recharges/{id}` | PRD 297「账单详情」 | 单据的 `patient_id` 必须落在本人就诊人里，否则 5001 |
+
+`userId` 一律由 token 注入、**不在入参里**（附录 B「小程序端新接口是否强制注入 userId 归属校验」）。没有 `DELETE`、没有 `PUT`：卡片 498 行红线明写不做退款。
+
+### 文件清单（新增 22 个 / 修改 13 个）
+
+| 层 | 新增 | 修改 |
+|---|---|---|
+| 后端 main | `V4__patient_balance.sql`、`RechargeCreateRequest`、`RechargeResponse`、`RechargeController`、`RechargeService`（5） | `Patient`（加 `balanceFen`）、`PatientMapper`（`addBalance`）、`RechargeRecordMapper`（`markSuccess`）、`RechargeRecord`/`PaymentRecord`/`RefundRecord`（`@TableId(AUTO)`）、`seed.sql`（9b 回填段）（7） |
+| 后端 test | `RechargeIntegrationTest`（1，13 例） | — |
+| 小程序 | `pages/recharge/{recharge,result,records,detail}.{js,wxml,wxss,json}`（16） | `app.json`（4 条路由）、`pages/index/index.js`（门诊充值入口）、`pages/index/index.wxml`（`qe-{{item.id}}` 唯一类名）、`pages/mine/mine.js`（门诊充值记录入口）、`utils/format.js`（`rechargeStatusLabel` + `payMethodLabel` 单一来源）（5） |
+| 文档 | — | `docs/WORK_LOG.md`（1） |
+| 三方依赖 | **零新增**（附录 B「有没有多装 T01 清单外的三方库」） | — |
+
+### 门禁证据：`mvn -o clean test` 全绿 198 例
+
+```
+[INFO] Tests run: 13, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.495 s -- in com.hospital.service.RechargeIntegrationTest
+[INFO] Tests run: 198, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+21 个测试类分项计数（逐条抄自 `t14-mvn2.log`，合计恰为 198）：
+
+| 类 | 例 | 类 | 例 | 类 | 例 |
+|---|---|---|---|---|---|
+| AuditFieldFillTest | 3 | CatalogIntegrationTest | 19 | RechargeIntegrationTest | **13** |
+| AuditLogTest | 3 | InpatientIntegrationTest | 11 | ScheduleIntegrationTest | 29 |
+| AuthIntegrationTest | 7 | PatientIntegrationTest | 17 | SerialNumberServiceTest | 3 |
+| FlywayMigrationTest | 1 | PermissionServiceTest | 9 | UserAuthIntegrationTest | 9 |
+| MoneyMaskingTest | 7 | AppointmentIntegrationTest | 27 | TaskKernelTest | 7 |
+| SeedCheckTest | 4 | AppointmentManageIntegrationTest | 10 | CaptchaIntegrationTest | 8 |
+| SeedConstraintTest | 4 | AppointmentPayFailureTest | 2 | CaptchaServiceTest | 5 |
+
+`RechargeIntegrationTest` 的 13 例分组：J33 六例（到账+记录、累加不覆盖、4 线程并发一分不丢、拒绝非正、忽略客户端 `payMethod`、越权 1003 且不落任何行）、J34 四例（列表倒序带姓名 / 空数组 / 详情归属 / 住院单不可见）、种子自洽 1 例（`p1=10000`、`p5=0`）、审计主体 1 例（`operator_type=PATIENT`）、**id 安全整数 1 例（本轮新增的回归闸门）**。收尾按 `recharge_record → patient → user → audit` 顺序删，并比对**六个计数**（含 `balance_total`）回基线。
+
+### 真 HTTP 验收（修复后重跑）：**48 步 48/48 PASS，退出码 0**
+
+第一版脚本报 44/47（2 FAIL + 1 假 PASS），三条都是脚本自身的错，逐条记录如下——**这是本卡最值得留档的一段，因为"验收脚本自己抬绿"比业务缺陷更难发现**：
+
+| 编号 | 症状 | 根因 | 处理 |
+|---|---|---|---|
+| `7c`/`7d` | expect 与 actual 明明一致却判 FAIL | `record(no,name,expect,actual,ok,note)` 的 `ok` 位被我填成了 `''`（note 挤位） | 逐条重排参数 |
+| `4e` | 打印 `actual=False` 却标 PASS | `ok` 位落了一个**非空字符串** → 恒为真。这条 PASS 是假的，而它恰好掩盖了真错误：我用 `ORDER BY id` 判 CF 序号递增，而 id 是雪花号、与序号不同向 | ① 给 `record()` 加类型闸门 `isinstance(ok, bool)` 否则抛 `TypeError`；② 判据改成 `ORDER BY order_no` 并断言 5 个序号互不相同且递增 |
+| `7c`（原判据） | 要求列表项含 `balanceFen` | 后端**故意**不给（见判断⑤） | 断言改为只列列表页真渲染的 8 个字段，并新增 `7c2` 显式断言"列表不带 balanceFen" |
+
+分组结果（共 48 步）：
+
+| 组 | 步数 | 内容 | 关键读数 |
+|---|---|---|---|
+| 1 | 4 | V4 在真库生效 + 种子自洽 | `1d` 逐人核对不一致人数 **0**；`p1=10000`、`p5=0` |
+| 3 | 8 | J33 首笔充值 | `['SUCCESS',5000,5000]`；`3b` 传 `ALIPAY` 落 `WECHAT`；`3d` `tradeNo` 非空（**回归本轮早期一个真 bug**：`markSuccess` 只写库没同步内存对象，出参回了 null）；`3h` 审计 `['PATIENT','1971','recharge_record']`；`3i` id 在 2^53 内 |
+| 4 | 5 | 累加与并发 | 5000→8000；**3 线程各 1000 后精确 11000**；流水 5 笔合计 11000；`4e` 序号 `['0064','0065','0066',…]` 互不相同且递增（表格里的 actual 被脚本自己的 `[:24]` 显示宽度截断了） |
+| 5 | 4 | 金额校验 | 0 元 / 负数 / 缺失 全部 400 且余额不动、不多流水 |
+| 6 | 3 | 越权充值 | `1003` + **余额一分没动** + **连 PENDING 单都没留下**（整笔事务回滚的直接证据） |
+| 7 | 6 | J34 列表 | 5 条、倒序 `ids=[49,48,47,46,45]`、中文姓名往返、`7c2` 列表无余额、`7e` 他人 `[]`、`7f` HEX 比对 utf8mb4 |
+| 8 | 5 | 账单详情 | 单号一致、`balanceFen=11000`（此刻实时值）、他人/不存在/住院单三处都是 `5001` |
+| 9 | 4 | 角色隔离 | 医生 `403`+`4001`（列表与 POST 各一）、匿名 `401`（列表与详情各一） |
+| 10 | 5 | 自净核查 | `recharge_record 3 / patient 10 / user 4 / audit 0 / balance_total 10000` 五项全回基线 |
+
+### T14-M · 小程序四页 UI 自动化验收（skill-cli，两轮）
+
+| # | 验收项 | 证据 | 判定 |
+|---|---|---|---|
+| 1 | 首页「门诊充值」入口真接上（此前 `url: ''` 只会 toast 即将开放） | `el tap .qe-recharge` → `route: pages/recharge/recharge` | 确凿 |
+| 2 | 空状态文案 | `el text .empty-title` → `还没有添加就诊人` | 确凿 |
+| 3 | 空状态按钮跳添加就诊人 | `el tap .rc-empty-btn` → `route: pages/patient/edit` | 确凿 |
+| 4 | **提交新人回来后立刻可见**（`onShow` 重拉的设计点） | `patientCount: 1`、`patients: "980|复验甲|本人|77101301"` | 确凿 |
+| 5 | 选中就诊人的 ✓ | 第二轮 `el text .rc-patient-check` → `✓` + `selectedPatientId: 980` | 确凿（第一轮只有数据层，属降级，第二轮补成渲染层） |
+| 6 | 支付方式是**一行信息**而非假选择器 | `el text .rc-pay-name` → `微信支付` | 确凿 |
+| 7 | 0 元被前端拦下且不发请求 | `toasts: ['请输入大于 0 的充值金额']`、`route` 未变、库 `recharge_rows_after_zero=3`（基线值） | 确凿 |
+| 8 | 充值 50 元 → 成功页三要素 | `result: CF20260929-0045|充值验甲|¥50.00|¥50.00`（**到账后余额**即 PRD 98 的证据） | 确凿 |
+| 9 | **元→分 `Math.round` 收口**（前端独有，接口层测不到） | 输入 `19.99` → 库 `fen_19_99=1999 status=SUCCESS`；成功页 `¥19.99 / ¥69.99` | 确凿。若写 `parseInt(19.99*100)` 就会是 1998，患者少一分钱 |
+| 10 | 记录列表内容与三色徽章 | 第二轮 `rows: "51|复验甲|¥20.00|充值成功|ok|微信支付|2026-09-29 10:10"`、`el text .rrc-status-ok` → `充值成功`、`el text .rrc-amount` → `+¥20.00` | 确凿（第一轮因 `pretty.js` 把数组折叠成 `"[Array 2]"`，行内容没落到日志，第二轮改为探针函数内 `join(' ;; ')` 才拿到） |
+| 11 | **账单详情整页渲染** | 第一轮 **FAIL**：`detail: null` + 三个 `el text` 全 `no such element` + toast「数据不存在」→ 追出雪花 id 缺陷；第二轮 **PASS**：`CF20260929-0070|充值成功|¥20.00|¥20.00|微信支付|2026-09-29 10:10:31|MOCK_TXN_RC_51`，`.rit-title`/`.rit-status`/`.rit-amount`/`.rit-balance` 全命中 | **第一轮确凿失败 → 修复 → 第二轮确凿通过** |
+| 12 | 详情页返回列表（栈行为） | `el tap .rit-back` → `route: pages/recharge/records`、`rowCount: 1` | 确凿 |
+| 13 | 个人中心「门诊充值记录」入口 | `fn/menutap.js` → `route: pages/recharge/records` | 确凿 |
+| 14 | 前端与库对账 | 第一轮：`patient=898 bal=6999`、`rows=2 fen_sum=6999 all_success=2 pay_methods=WECHAT`、`audit_rows=2 types=PATIENT`、`HEX(name)`= 充值验甲；第二轮清理后 5 项计数回基线 | 确凿 |
+| — | 控制台 error | 两轮都 `count: 0` | 确凿 |
+
+**一处必须如实打折的证据**：第二轮 `t14-toast.js` 里列出的 `请输入大于 0 的充值金额` / `数据不存在` **不能当作本轮发生的吐司**。原因是 `fn/install.js` 见 `wx.__accInstalled` 已为真就直接返回，`wx.__acc.toast` 数组**跨轮不清空**，而第二轮脚本没调 `clearlog`（`installrec` 自报 `toastCount: 2` 已经把这层陈旧暴露出来）。所以"本轮没有 5001"的判据换成渲染本身：详情页拿到了 `MOCK_TXN_RC_51` 并渲染出四个节点；而 5001 的形态就是第一轮那种 `detail: null` + 整页 `no such element`。
+
+**本轮新增的驱动陷阱（补进清单，第 15b/15c/16b 条）**：
+
+| # | 陷阱 | 解法 |
+|---|---|---|
+| 15b | `pretty.js` 把数组折叠成 `"[Array N]"`，探针返回 `rows: [...]` 时行内容一个字都落不到日志，而 `grep '"rows"'` 看着像成功了 | 探针函数必须 `map(...).join(' ;; ')` 成字符串再返回 |
+| 15c | `fn/t12-count.js` 在 T14 的硬失败形态是 `createSelectorQuery(...).exec is not a function`，`"ok": false` 但脚本仍 exit 0，随后的 `t12-read.js` 只会回 `"pending"` | 节点是否渲染改用**同步真实的 `el text <selector>`**：取到内容 = 真渲染，`no such element` = 真没渲染，两者都是硬证据 |
+| 16b | `installrec` 不重置 `wx.__acc` 缓冲，toast 台账跨轮累计 | 每轮开头必须显式 `clearlog`，或干脆不用 toast 当"本轮无错误"的证据 |
+| — | harness 的 `record()` 判定位被字符串占用 → 非空字符串恒为真 → **无条件 PASS** | 加 `isinstance(ok, bool)` 闸门直接抛 `TypeError`；这是"验收脚本自我抬绿"的根治手段 |
+
+### 附录 B · 全局红线检查表（14 条逐条扫）
+
+| # | 检查项 | 本卡结论 |
+|---|---|---|
+| 1 | 金额是否只在前端隐藏 | ✅ 无隐藏：本卡是患者看自己的账，`amountFen`/`balanceFen` 必须明文返回 |
+| 2 | 金额裁剪层是否被绕过 | ✅ `MoneyMaskingModifier` 只对 `nurse` 生效；`/user/**` 只有患者 token 进得来，看自己的余额是需求本身 |
+| 3 | 审计是否同事务 | ✅ 走 `@AuditLog` 切面（`AuditLogAspect` @Order(100) 在 `proceed()` 前写，同事务）。**没有用 `@Async`/`REQUIRES_NEW`/`afterCommit`** |
+| 4 | 外部通道是否 afterCommit | ✅ 本卡的 `wechatPayService.prepay` 是 mock、在同事务内（真实化时的事务边界记进遗留 TODO） |
+| 5 | 权限判断是否只写在 UI | ✅ 归属在 SQL 的 WHERE 里（`addBalance` 带 `user_id`、`detail` 带本人就诊人集合），角色隔离在 `SecurityConfig`（医生 403/匿名 401 已实测） |
+| 6 | 小程序新接口是否强制注入 userId 归属校验 | ✅ `userId` 取自 token，DTO 里没有 `userId` 字段 |
+| 7 | 身份证/手机号是否加密存储 | N/A（本卡不写这两列） |
+| 8 | 是否多装 T01 清单外的三方库 | ✅ 零新增依赖 |
+| 9 | 落地/跳转目标是否白名单 | ✅ 成功页只跳 `/pages/recharge/records`（`redirectTo`）与 `switchTab` 首页；`result.js` 只读 query 参数、不据参数跳任意页 |
+| 10 | 列表筛选/搜索/分页是否进 URL | N/A（充值记录无筛选；PRD 未要求分页，本卡照 §3.11.5「展示门诊充值历史」全量返回——记入遗留 TODO） |
+| 11 | 是否越界做了别的卡的活 | ✅ 没有缴费（T15）、没有退款（T19）、没有住院充值（T23）、没有发票（T19） |
+| 12 | 是否写了规格里没有的实体/表 | ✅ 只在 `patient` 上加一列，并逐处标注出处；未新建账户表 |
+| 13 | 是否自造了规格里没有的数字/规则 | ✅ 无金额上限、无频次限制、无最小充值额（这三条都是"看起来该有但规格没写"的候选，一律没编） |
+| 14 | 前端是否有唯一类名可复核 | ✅ 四页各自前缀（`rc-*`/`rrc-*`/`rit-*`），验收用的按钮补了 `rc-records-btn`/`rc-home-btn`/`qe-{{item.id}}` |
+
+### 本卡有意未做的事（附录 D 第 3 条）
+
+- 不做缴费与退款（卡片 498 行红线）。
+- 不做住院充值（T23）。
+- 不做充值记录分页/筛选/按日期搜索：PRD 296 行只写「展示门诊充值历史」。
+- 不做充值专属回调端点：见上文 §9.1 那一格的处理。
+- 不做真实微信支付：`mockTradeNo` 与 T12 的 mock 通道同源，注释里写明了真实化后要删。
+- 列表页不显示余额（判断⑤）。
+
+### 遗留 TODO
+
+| 归属 | 事项 |
+|---|---|
+| **T15** | 扣减余额必须写成 `UPDATE patient SET balance_fen = balance_fen - ? WHERE id = ? AND user_id = ? AND deleted = 0 AND balance_fen >= ?`，用 affected-row 判"余额不足"——这正是 V4 拒绝派生值的理由 |
+| **T15** | 缴费记录 `payment_record` 的 id 将首次被客户端回传；本轮已给它补上 `@TableId(AUTO)`，T15 只需在真 HTTP 里复验 id 量级 |
+| T15 | 一旦出现"余额支付"的缴费记录，`SeedCheckService` 必须补一条 `balance = SUM(SUCCESS 充值) - SUM(余额支付的缴费)` 的核对（当前 seed 的 4 笔缴费都是 WECHAT/CASH，故暂不减） |
+| 真实化 | 接真实微信后：`MockWechatPayService.prepay` 改为异步、`addBalance` 移到回调里、删除 `mockTradeNo`；回调仍复用 T12 的 `/payments/wechat/notify` 并按 `CF` 前缀分流，幂等只写一处 |
+| 提示 | 开发库三张流水表的 `AUTO_INCREMENT` 已是小整数区间；若将来重跑 `db:reset` 会由 V1+seed 重建，无需干预 |
+
+### 当前状态
+
+- **T14 收口**：后端 **198 例全绿**、真 HTTP **48/48 PASS**、UI **14 项（第一轮 13 确凿 + 1 确凿失败；第二轮把失败项补成确凿，并把第一轮 3 项降级补成渲染层确凿）**，库里五张相关表逐项回基线。
+- 跨卡缺陷（流水表主键策略）已修 + 已加两道闸门，T12/T13 全链路重跑无红。
+- 下一个推送点仍是 🚩 **M2 = T28**，本卡只提交不推送。
+
+
+
 
 
 

@@ -183,6 +183,31 @@ VALUES
 ('SEED-RC-0002', 5,    NULL,  5000, 'ALIPAY', 'PENDING',   NULL,               DATE_SUB(NOW(), INTERVAL 1 DAY),  DATE_SUB(NOW(), INTERVAL 1 DAY)),
 ('SEED-RC-0003', NULL, 1,    20000, 'WECHAT', 'REFUNDED',  'SEED-TXN-RC-0003', DATE_SUB(NOW(), INTERVAL 9 DAY),  DATE_SUB(NOW(), INTERVAL 2 DAY));
 
+-- ------------------------------------------------------------
+-- 9b. 就诊卡余额回填（V4 的 balance_fen 列）
+--
+-- 为什么要有这一步：加了余额列却不回填，种子里就会出现
+-- "SEED-RC-0001 那笔 100 元充值状态是 SUCCESS，可 patient 1 的余额是 0" 这种自相矛盾的数据。
+-- 患者端充值页要显示余额，T15 缴费更要拿它做扣减——演示数据自己对不上，
+-- 后面每张卡都得先解释一次"为什么余额是 0"。
+--
+-- 口径：只加 SUCCESS 的门诊充值。
+--   · PENDING 不算（SEED-RC-0002 那笔 50 元还没付成功，付成功才到账）；
+--   · REFUNDED 那笔是住院充值，patient_id 本来就是 NULL，join 不上，天然排除；
+--   · payment_record 一笔都不减：种子那 4 笔缴费的 pay_method 是 WECHAT/CASH
+--     （见下面 10 节），是"直接付掉"，不是"从余额里扣"。
+--     等 T15 真做出"余额缴费"的流水，这里要加一条减项，并且那时必须同步
+--     给 SeedCheckService 加一条"余额 = 充值 SUCCESS - 余额缴费 SUCCESS"的自检，
+--     否则回填口径会和真实扣减悄悄分叉。这句话就是留给 T15 的钩子。
+--
+-- 用一条相关子查询整体赋值而不是逐行写常量：种子以后加充值记录时不用记得来改这里。
+-- ------------------------------------------------------------
+UPDATE `patient` p
+SET p.`balance_fen` = COALESCE((
+    SELECT SUM(r.`amount_fen`) FROM `recharge_record` r
+    WHERE r.`patient_id` = p.`id` AND r.`status` = 'SUCCESS'
+), 0);
+
 -- ============================================================
 -- 10. 缴费记录（4 笔，覆盖 PENDING / SUCCESS；SEED-PY-0003 是被部分退款的那笔）
 -- ============================================================

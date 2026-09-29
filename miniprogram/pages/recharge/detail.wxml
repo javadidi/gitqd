@@ -1,0 +1,26 @@
+<view class="page-recharge-detail">
+  <view class="container">
+    <view wx:if="{{detail}}" class="card">
+      <view class="rit-head">
+        <text class="rit-title">门诊充值</text>
+        <text class="rit-status rit-status-{{detail.tone}}">{{detail.statusLabel}}</text>
+      </view>
+
+      <view class="rit-amount">+{{detail.amountText}}</view>
+
+      <view class="rit-row"><text class="rit-label">就诊人</text><text>{{detail.patientName}}</text></view>
+      <view class="rit-row"><text class="rit-label">支付方式</text><text>{{detail.payMethodLabel}}</text></view>
+      <view class="rit-row"><text class="rit-label">当前卡内余额</text><text class="rit-balance">{{detail.balanceText}}</text></view>
+      <view class="rit-row"><text class="rit-label">充值时间</text><text>{{detail.timeText}}</text></view>
+      <view class="rit-row"><text class="rit-label">充值单号</text><text class="rit-order">{{detail.orderNo}}</text></view>
+      <view class="rit-row"><text class="rit-label">交易流水号</text><text class="rit-order">{{detail.tradeNo}}</text></view>
+    </view>
+
+    <!-- 待支付说明为什么要等：首版是模拟通道，正常不会停在这一态，停住了就是没走完 -->
+    <view wx:if="{{detail && detail.status === 'PENDING'}}" class="rit-note">
+      该笔充值尚未完成支付，金额还未到账就诊卡
+    </view>
+
+    <button class="btn-primary rit-back" bindtap="onBack">返回记录列表</button>
+  </view>
+</view>

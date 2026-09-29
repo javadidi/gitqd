@@ -1,7 +1,9 @@
 package com.hospital.entity;
 
 import com.baomidou.mybatisplus.annotation.FieldFill;
+import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 
 import java.time.LocalDateTime;
@@ -9,6 +11,8 @@ import java.time.LocalDateTime;
 @TableName("payment_record")
 public class PaymentRecord {
 
+    /** 同 {@link RechargeRecord#getId()}：不继承 BaseEntity 就必须显式 AUTO，否则雪花 id 超出 JS 安全整数。 */
+    @TableId(type = IdType.AUTO)
     private Long id;
     private String orderNo;
     private Long patientId;

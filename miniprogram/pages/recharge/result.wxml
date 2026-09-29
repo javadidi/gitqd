@@ -1,0 +1,23 @@
+<view class="page-recharge-result">
+  <view class="container">
+    <view class="card rc-result-head">
+      <view class="rc-result-icon">✓</view>
+      <view class="rc-result-title">充值成功</view>
+      <view class="rc-result-sub">{{patientName || '—'}} 的就诊卡已到账</view>
+    </view>
+
+    <view class="card">
+      <view class="rc-row"><text class="rc-label">充值金额</text><text class="rc-amount">{{amountText}}</text></view>
+      <view class="rc-row">
+        <text class="rc-label">到账后余额</text>
+        <text class="rc-balance">{{balanceText}}</text>
+      </view>
+      <view class="rc-row"><text class="rc-label">充值单号</text><text class="rc-order">{{orderNo || '—'}}</text></view>
+    </view>
+
+    <view class="rc-note">余额用于门诊缴费（自助缴费暂未开放）；可在「我的 - 门诊充值记录」查看这笔账单</view>
+
+    <button class="btn-primary rc-btn rc-records-btn" bindtap="onGoRecords">查看充值记录</button>
+    <button class="btn-outline rc-btn rc-home-btn" bindtap="onBackHome">返回首页</button>
+  </view>
+</view>
