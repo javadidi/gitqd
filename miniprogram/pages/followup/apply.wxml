@@ -1,0 +1,85 @@
+<view class="page-followup-apply">
+  <view class="container">
+    <view class="card">
+      <view class="section-title">选择就诊人</view>
+
+      <view wx:if="{{!loadingPatients && patients.length === 0}}" class="fua-empty">
+        <view class="empty-icon">🧑</view>
+        <view class="empty-title">还没有添加就诊人</view>
+        <view class="text-muted empty-desc">申请复诊需要先有一位就诊人</view>
+        <button class="btn-outline fua-empty-btn" bindtap="onAddPatient">去添加就诊人</button>
+      </view>
+
+      <view
+        wx:for="{{patients}}"
+        wx:key="id"
+        class="fua-patient {{patientId === item.id ? 'fua-patient-on' : ''}}"
+        data-id="{{item.id}}"
+        bindtap="onPickPatient"
+      >
+        <view class="fua-patient-main">
+          <text class="fua-patient-name">{{item.name}}</text>
+          <text class="fua-patient-relation">{{item.relationLabel}}</text>
+        </view>
+        <view class="text-muted fua-patient-card">就诊卡 {{item.cardNo || '—'}}</view>
+        <view wx:if="{{patientId === item.id}}" class="fua-patient-check">✓</view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">选择科室</view>
+      <view wx:if="{{loadingDepartments}}" class="text-muted fua-loading">加载中…</view>
+      <view class="fua-dept-row">
+        <view
+          wx:for="{{departments}}"
+          wx:key="id"
+          class="fua-dept {{departmentId === item.id ? 'fua-dept-on' : ''}}"
+          data-id="{{item.id}}"
+          bindtap="onPickDepartment"
+        >{{item.name}}</view>
+      </view>
+      <view wx:if="{{departmentId}}" class="text-muted fua-dept-location">{{departmentName}}：{{departmentLocation || '—'}}</view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">选择医生</view>
+      <view wx:if="{{!departmentId}}" class="text-muted fua-doctor-tip">请先选择科室，医生按科室列出</view>
+      <view wx:if="{{loadingDoctors}}" class="text-muted fua-loading">加载中…</view>
+      <view wx:if="{{departmentId && !loadingDoctors && doctors.length === 0}}" class="text-muted fua-loading">该科室暂无出诊医生</view>
+
+      <view
+        wx:for="{{doctors}}"
+        wx:key="id"
+        class="fua-doctor {{doctorId === item.id ? 'fua-doctor-on' : ''}}"
+        data-id="{{item.id}}"
+        bindtap="onPickDoctor"
+      >
+        <view class="fua-doctor-main">
+          <text class="fua-doctor-name">{{item.name}}</text>
+          <text class="fua-doctor-title">{{item.titleName || '—'}}</text>
+        </view>
+        <view class="text-muted fua-doctor-specialty">擅长：{{item.specialty || '—'}}</view>
+        <view wx:if="{{doctorId === item.id}}" class="fua-doctor-check">✓</view>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">复诊信息</view>
+      <view class="fua-sum-row">
+        <text class="fua-sum-label">就诊人</text>
+        <text class="fua-sum-value">{{patientName || '未选择'}}</text>
+      </view>
+      <view class="fua-sum-row">
+        <text class="fua-sum-label">复诊科室</text>
+        <text class="fua-sum-value">{{departmentName || '未选择'}}</text>
+      </view>
+      <view class="fua-sum-row">
+        <text class="fua-sum-label">复诊医生</text>
+        <text class="fua-sum-value">{{doctorName || '未选择'}}</text>
+      </view>
+      <view class="text-muted fua-sum-tip">疾病信息在下一步填写</view>
+    </view>
+
+    <button class="btn-primary fua-next" bindtap="onNext">下一步，填写疾病信息</button>
+  </view>
+</view>

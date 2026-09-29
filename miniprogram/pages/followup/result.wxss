@@ -1,0 +1,89 @@
+.fures-head {
+  text-align: center;
+  padding: 48rpx 24rpx;
+}
+
+.fures-check {
+  width: 96rpx;
+  height: 96rpx;
+  line-height: 96rpx;
+  margin: 0 auto 20rpx;
+  border-radius: 50%;
+  background: #dcfce7;
+  color: #16a34a;
+  font-size: 48rpx;
+  font-weight: 600;
+}
+
+.fures-title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 12rpx;
+}
+
+.fures-sub {
+  font-size: 24rpx;
+}
+
+.fures-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.fures-row:last-of-type {
+  border-bottom: none;
+}
+
+.fures-label {
+  font-size: 26rpx;
+  color: #64748b;
+  flex-shrink: 0;
+  margin-right: 24rpx;
+}
+
+.fures-value {
+  font-size: 28rpx;
+  color: #1f2937;
+  text-align: right;
+}
+
+.fures-status {
+  font-size: 24rpx;
+  padding: 4rpx 20rpx;
+  border-radius: 8rpx;
+}
+
+/* 三个配色对应 format.js 的 FOLLOW_UP_STATUS_TONES，码值出处 V1:318 列注释 */
+.fures-status-pending {
+  color: #d97706;
+  background: #fffbeb;
+}
+
+.fures-status-progress {
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.fures-status-done {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.fures-detail-btn {
+  margin-top: 32rpx;
+}
+
+.fures-home-btn {
+  margin-top: 20rpx;
+}
+
+.fures-note {
+  font-size: 22rpx;
+  line-height: 1.6;
+  text-align: center;
+  margin-top: 32rpx;
+}

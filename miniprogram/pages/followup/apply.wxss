@@ -1,0 +1,192 @@
+.fua-empty {
+  padding: 48rpx 0;
+  text-align: center;
+}
+
+.fua-empty .empty-icon {
+  font-size: 80rpx;
+  margin-bottom: 20rpx;
+}
+
+.fua-empty .empty-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  margin-bottom: 12rpx;
+}
+
+.fua-empty .empty-desc {
+  font-size: 24rpx;
+  line-height: 1.6;
+  margin-bottom: 40rpx;
+}
+
+.fua-empty-btn {
+  width: 60%;
+}
+
+.fua-patient {
+  position: relative;
+  padding: 24rpx 60rpx 24rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.fua-patient:last-of-type {
+  border-bottom: none;
+}
+
+.fua-patient-main {
+  display: flex;
+  align-items: center;
+}
+
+.fua-patient-name {
+  font-size: 30rpx;
+  color: #1f2937;
+  margin-right: 12rpx;
+}
+
+.fua-patient-relation {
+  font-size: 22rpx;
+  color: #2563eb;
+  background: #eff6ff;
+  padding: 2rpx 12rpx;
+  border-radius: 6rpx;
+}
+
+.fua-patient-card {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+}
+
+.fua-patient-on {
+  background: #f8fafc;
+}
+
+.fua-patient-check {
+  position: absolute;
+  right: 16rpx;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #2563eb;
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.fua-dept-row {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 16rpx 0 4rpx;
+}
+
+.fua-dept {
+  font-size: 26rpx;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1rpx solid #e2e8f0;
+  border-radius: 32rpx;
+  padding: 10rpx 28rpx;
+  margin: 0 16rpx 16rpx 0;
+}
+
+.fua-dept-on {
+  color: #ffffff;
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+.fua-dept-location {
+  font-size: 22rpx;
+  margin-top: 8rpx;
+}
+
+.fua-loading {
+  font-size: 24rpx;
+  padding: 16rpx 0;
+}
+
+.fua-doctor-tip {
+  font-size: 24rpx;
+  padding: 12rpx 0;
+}
+
+.fua-doctor {
+  position: relative;
+  padding: 24rpx 60rpx 24rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.fua-doctor:last-of-type {
+  border-bottom: none;
+}
+
+.fua-doctor-main {
+  display: flex;
+  align-items: center;
+}
+
+.fua-doctor-name {
+  font-size: 30rpx;
+  color: #1f2937;
+  margin-right: 12rpx;
+}
+
+.fua-doctor-title {
+  font-size: 22rpx;
+  color: #2563eb;
+  background: #eff6ff;
+  padding: 2rpx 12rpx;
+  border-radius: 6rpx;
+}
+
+.fua-doctor-specialty {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.fua-doctor-on {
+  background: #f8fafc;
+}
+
+.fua-doctor-check {
+  position: absolute;
+  right: 16rpx;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #2563eb;
+  font-size: 32rpx;
+  font-weight: 600;
+}
+
+.fua-sum-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.fua-sum-row:last-of-type {
+  border-bottom: none;
+}
+
+.fua-sum-label {
+  font-size: 26rpx;
+  color: #64748b;
+}
+
+.fua-sum-value {
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+.fua-sum-tip {
+  font-size: 22rpx;
+  padding-top: 16rpx;
+}
+
+.fua-next {
+  margin-top: 32rpx;
+}

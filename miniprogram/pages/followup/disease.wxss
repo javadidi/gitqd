@@ -1,0 +1,75 @@
+.fud-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.fud-row:last-of-type {
+  border-bottom: none;
+}
+
+.fud-label {
+  font-size: 26rpx;
+  color: #64748b;
+}
+
+.fud-value {
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+.fud-sug-row {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 16rpx 0 4rpx;
+}
+
+.fud-sug {
+  font-size: 26rpx;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1rpx solid #e2e8f0;
+  border-radius: 32rpx;
+  padding: 10rpx 28rpx;
+  margin: 0 16rpx 16rpx 0;
+}
+
+.fud-sug-on {
+  color: #ffffff;
+  background: #2563eb;
+  border-color: #2563eb;
+}
+
+.fud-sug-tip {
+  font-size: 22rpx;
+  line-height: 1.6;
+  margin-bottom: 16rpx;
+}
+
+.fud-input {
+  width: 100%;
+  min-height: 160rpx;
+  box-sizing: border-box;
+  padding: 20rpx;
+  font-size: 28rpx;
+  color: #1f2937;
+  background: #f8fafc;
+  border: 1rpx solid #e2e8f0;
+  border-radius: 12rpx;
+}
+
+.fud-placeholder {
+  color: #cbd5e1;
+}
+
+.fud-count {
+  font-size: 22rpx;
+  text-align: right;
+  margin-top: 12rpx;
+}
+
+.fud-submit {
+  margin-top: 32rpx;
+}

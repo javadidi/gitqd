@@ -247,6 +247,32 @@ function invoiceStatusLabel(status) {
   return INVOICE_STATUS_LABELS[status] || status || '—'
 }
 
+// 复诊状态码 → 中文标签。码值出处 V1__init.sql:318 的列注释「PENDING/IN_PROGRESS/COMPLETED」。
+// 首版只会出现 PENDING：T20 只写这一值（FollowUpService 把状态写死，客户端提交不了它），
+// 而 PRD §4 后台没有复诊管理页、28 张卡里没有任何一张负责推进它。
+// 另外两个一并给出，理由与上面发票 PENDING 同一句：列注释把它们写成了合法值。
+const FOLLOW_UP_STATUS_LABELS = {
+  PENDING: '待处理',
+  IN_PROGRESS: '处理中',
+  COMPLETED: '已完成',
+}
+
+function followUpStatusLabel(status) {
+  return FOLLOW_UP_STATUS_LABELS[status] || status || '—'
+}
+
+// 复诊状态 → 配色键。三个键与上面标签表一一对应（同样只出自 V1:318 列注释）。
+// 页面写死 class 的话，等状态真有生产者那天，「已完成」会被渲染成待处理的橙色。
+const FOLLOW_UP_STATUS_TONES = {
+  PENDING: 'pending',
+  IN_PROGRESS: 'progress',
+  COMPLETED: 'done',
+}
+
+function followUpStatusTone(status) {
+  return FOLLOW_UP_STATUS_TONES[status] || 'pending'
+}
+
 module.exports = {
   formatMoney,
   formatDate,
@@ -279,4 +305,8 @@ module.exports = {
   reportItemsText,
   INVOICE_STATUS_LABELS,
   invoiceStatusLabel,
+  FOLLOW_UP_STATUS_LABELS,
+  followUpStatusLabel,
+  FOLLOW_UP_STATUS_TONES,
+  followUpStatusTone,
 }

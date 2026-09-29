@@ -1,0 +1,57 @@
+<view class="page-followup-disease">
+  <view class="container">
+    <view class="card">
+      <view class="section-title">复诊申请</view>
+      <view class="fud-row">
+        <text class="fud-label">就诊人</text>
+        <text class="fud-value">{{patientName || '—'}}</text>
+      </view>
+      <view class="fud-row">
+        <text class="fud-label">复诊科室</text>
+        <text class="fud-value">{{departmentName || '—'}}</text>
+      </view>
+      <view class="fud-row">
+        <text class="fud-label">复诊医生</text>
+        <text class="fud-value">{{doctorName || '—'}}</text>
+      </view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">选择疾病</view>
+
+      <view wx:if="{{suggestions.length}}" class="fud-sug-row">
+        <view
+          wx:for="{{suggestions}}"
+          wx:key="*this"
+          class="fud-sug {{disease === item ? 'fud-sug-on' : ''}}"
+          data-name="{{item}}"
+          bindtap="onPickSuggestion"
+        >{{item}}</view>
+      </view>
+      <view wx:if="{{suggestions.length}}" class="text-muted fud-sug-tip">
+        以上为该医生「擅长」里列出的病种，点一下填进下面，也可以自己写
+      </view>
+
+      <textarea
+        class="fud-input"
+        placeholder="请填写本次复诊的疾病信息"
+        placeholder-class="fud-placeholder"
+        maxlength="256"
+        value="{{disease}}"
+        bindinput="onDiseaseInput"
+      />
+      <view class="text-muted fud-count">{{diseaseLength}}/256</view>
+    </view>
+
+    <button
+      class="btn-primary fud-submit"
+      loading="{{submitting}}"
+      disabled="{{submitting}}"
+      bindtap="onSubmit"
+    >提交复诊申请</button>
+
+    <view class="text-muted fud-note">
+      首版为复诊申请流程演示，不涉及实际开药；用药请遵医嘱。
+    </view>
+  </view>
+</view>

@@ -5705,3 +5705,231 @@ Flyway 日志：`Migrating schema hospital to version "5 - invoice unique paymen
 ### 下一步
 
 P5 附加服务（T20 复诊配药 → T23 住院服务）。开工前须知：卡片 606 行 T20 的红线逐字是「**不做真实开药（二期做）；首版仅模拟流程**」（与 T19 的 586 行同一句式），而 `medical_record` 与 `report` 一样没有生产者 —— 复诊配药要选"历史病历"当资格凭证时，会直接撞上 T18 那条"没有生产者"的事实，届时要么按 T16/T17/T18 的同一口径处理（页面能表达空态、不造数据），要么先与用户确认是否补一个病历生产者。这条已写进 T20 的开工检查项。
+## T20 · 复诊配药（2026-09-29）
+
+### 任务卡原文 → 实现对照（598–612 行，**逐字**引用）
+
+| 卡片行 | 原文 | 实现 | 证据 |
+|---|---|---|---|
+| 601 | `- 选择就诊人/科室/医生。` | `pages/followup/apply` 一页三块选择器：就诊人卡列表 + 科室 chip + 医生列表 | UI 第 6–7 步：`el text .fua-patient-name` → `复诊界面`、`.fua-dept` → `消化内科`、`.fua-doctor-name` → `张伟`，三个 `el tap` 全 `success:true` |
+| 602 | `- 在线复诊申请：填写复诊信息。` | 同页第四块「复诊信息」汇总三行（名字不是 id）+ 下一步 | UI 第 8 步 `el text .fua-sum-value` → `复诊界面`；截图 `t20-2-apply-picked.jpg` 里三行是「复诊界面 / 消化内科 / 张伟」 |
+| 603 | `- 选择疾病：选择/填写疾病信息。` | `pages/followup/disease`：候选 chip（来自医生「擅长」）+ 自由文本框，两个动词都有落点 | UI 第 9–12 步：`.fud-sug` → `胃炎`；原生 `el input` 打 `abc123` → 计数 `6/256`；点 chip → `disease=胃炎`；args 文件喂中文 → `13/256` |
+| 604 | `- 复诊详情：查看复诊详情及配药信息。` | `pages/followup/detail` 七个字段，**「配药信息」有意不给**（见下一节） | UI 第 16–17 步 + 第二轮第 4 步：六项一次读全 `复诊界面二 \| 消化内科 \| 张伟 \| 慢性胃炎伴糜烂，需复查胃镜 \| 待处理 \| 2026-09-29 18:08:31` |
+| 606 | `**红线**：不做真实开药（二期做）；首版仅模拟流程。` | 没有药名清单、没有处方列、没有配药字段；页面用一行实话代替空栏目 | 门禁 `j46_detailShapeIsExactlySevenFieldsAndCarriesNoMedication`；HTTP 第 12 步；UI 第 15/17 步 `.fures-med`/`.fvd-med`/`.fvd-prescription` 全 `no such element` |
+| 609 | `- J45 复诊申请 → 记录创建。` | `POST /user/follow-ups` | 门禁 `j45_applyCreatesTheFollowUpRow`；HTTP 第 4–7 步；UI 第 14 步（库里 `row 1 1 PENDING 0`） |
+| 610 | `- J46 复诊详情 → 内容正确。` | `GET /user/follow-ups/{id}` | 门禁 `j46_detailCarriesExactlyWhatWasSubmitted`；HTTP 第 8–11 步；UI 第二轮第 3 步 HEX 逐字节相等 |
+| 612 | `**DoD**：复诊配药流程通。` | 首页入口 → 申请 → 疾病 → 成功 → 详情，全程真实点击 | UI 第 5 步 `.qe-followup` 真点击进页（`navErr:null` + 栈深 2），第 13/16 步两次真点击翻页 |
+
+### 范围判定：两接口、四页面（PRD 列了七个页面名）
+
+五处规格逐字对齐后的结论：
+
+| 出处 | 原文 | 判定 |
+|---|---|---|
+| PRD §6.1 520 行 | `\| 复诊配药 \| 选择就诊人、选择科室、科室详情、在线复诊申请、选择疾病、复诊申请成功、复诊详情 \|` | 七个**页面名** |
+| PRD §9.1 615 行 | `\| 复诊配药 \| 创建复诊申请、复诊详情 \|` | **只有两个接口**（对照 614 行病历那行是有「病历列表」的） |
+| PRD §3.6 186–192 行 | 七步流程，第 1–3 步是选择、第 4 步是填写、第 5 步疾病、第 6 步成功、第 7 步详情 | 页面拆分是 UI 结构，不是数据契约 |
+| PRD §10 664 行 | `\| 复诊配药 \| 已就诊患者在线申请复诊并开具处方药的服务 \|` | 资格门槛与开药，两条都落在红线上（见「有意未做」） |
+| PRD 数据字典 575–596 行 | 二十一行实体里**没有「复诊」这一行** | 字段清单只能由 `V1:312-323` 建表语句给 |
+
+**页面合并的口径**：第 1–4 步（选择就诊人 / 选择科室 / 科室详情选医生 / 复诊信息汇总）合并成 `apply` 一页，
+第 5–7 步各自一页，所以**七页落成四页**。这与 T14 完全同型 ——
+PRD 94 行也把「选择就诊人」单列成一步，而充值页是内联选择的（`pages/recharge/recharge.js`）。
+合并的是页面，不是数据：接口仍然只有规格给的那两个，一次申请仍然只有一次 POST。
+不拆成三个页面的另一个理由：`pages/department/detail`（T10 建的科室详情页）带的是「预约挂号」按钮，
+为复诊复用它要加一个模式参数，等于给 T10 的页面挂第二条业务线。
+
+### 本卡最大的判断：「配药信息」不给字段、不显示、不编造
+
+卡片 604 行与 PRD 192 行逐字都是 `查看复诊详情及配药信息`，但四路原文凑不出一个能放药的地方：
+
+| 证据路 | 逐字内容 | 结论 |
+|---|---|---|
+| 卡片 606 行红线 | `不做真实开药（二期做）；首版仅模拟流程。` | 首版不许开药 |
+| `V1__init.sql:312-323` | `follow_up` 只有 `patient_id / department_id / doctor_id / disease(256) / status / deleted` | 没有药名、剂量、处方、发药时间任何一列 |
+| 全仓 28 张建表语句 | `prescription` 这个列名只出现在 `V1:226 medical_record` | 没有处方表；那一列是病历里的**处方正文**（医师写好的病史内容，属 T18），不是患者能申请到的药品清单 |
+| PRD 575–596 数据字典 | 没有「复诊」这一行 | 字典层面从没定义过复诊该有哪些字段 |
+
+**取舍：七个字段就是七个，页面上刻意不留「配药信息：—」这种空栏目。** 三条理由：
+
+1. 红线写明首版不开药，"模拟"模拟的是**申请通路**（提交 → 落一条记录 → 详情能查看），
+   不是模拟出一份药品清单。
+2. 编一份药名（哪怕"阿莫西林"这种常见药）等于让患者在屏幕上看到一份"医院给我开的处方"，
+   而它没有任何真实性。这与 T19 把发票代码写成 `MOCK-` 前缀「一眼假」是同一条判断，
+   但**发票有金额与缴费单两个真实事实撑着，配药连一个真实事实都没有**。
+3. 与 T18「医嘱不加列」同一口径（用户 2026-09-29 已同意那条裁决，原话「全部同意」）。
+
+替代它的是一行实话，写在成功页与详情页：`首版为复诊申请流程演示，不涉及实际开药；用药请遵医嘱。`
+（UI 第 15/17 步用 `el text .fures-note` / `.fvd-note` 取到渲染原文，同时三个配药类名一律 `no such element`。）
+
+### 结构性事实：这是 P5 第一张**有生产者**的表
+
+T16/T17/T18 的 `queue_status` / `report` / `medical_record` 三张表 seed 零行、全仓无人写，
+页面只能表达"还没有数据"。`follow_up` 在本卡之前也只有三处痕迹
+（建表语句、实体、空 mapper —— 逐字 grep 全仓，`follow_up` 零命中除这三处与 V1），
+**但 J45 要求"记录创建"，所以本卡必须自己当生产者**。
+后果是取证方式反过来：门禁与 UI 里**没有任何一条 `INSERT INTO follow_up`**，
+复诊行全部由 `POST /user/follow-ups` 产生；只有就诊人走 T08 的真实添加接口。
+
+### 九个实现判断
+
+| # | 判断 | 依据与理由 |
+|---|---|---|
+| 1 | 只有两个端点，**不做列表** | PRD 615 行只给两项。门禁 `followUpEndpointsAreExactlyTheTwoTheSpecNamed` 读 Spring 注册表钉死为 2 把（比对 `info.toString()` 更稳，后者形状属内部实现）。代价：患者离开这条流程回不到详情页 —— 这条缺口记进遗留 TODO，不偷偷补一个列表页 |
+| 2 | `status` 不在入参里，服务端写死 `PENDING` | 客户端能声明"我的复诊已 COMPLETED"就是自己把待办勾掉。与 T15「塞 amountFen 也改不动账单」、T19「金额不在入参里」同一条纪律。HTTP 第 14 步实测：入参塞 `status=COMPLETED`，库里仍 `PENDING` |
+| 3 | 只产生 `PENDING`，但读路径原样回 `status` | V1:318 列注释给了 PENDING/IN_PROGRESS/COMPLETED；没有任何一侧负责推进（PRD §4 后台无复诊管理页）。与 T19 的 PENDING/ISSUED、T16 的 `queueStatus` 可空同一处理：不假设写入侧只写过一种值 |
+| 4 | `disease` 必填且上限 256 | 列可空（V1:317），但卡片 603 行把疾病信息定为流程一步，且它是本表唯一能承载复诊内容的列 —— 空着它 J46「内容正确」无物可对。超限**拦下不截断**：把「慢性胃炎伴糜烂」切成「慢性胃炎伴糜」是改写病史。HTTP 第 25–26 步：257 拒、256 过且 `CHAR_LENGTH=256` |
+| 5 | 医生必须属于所选科室，否则 400 | 不是新功能，是数据一致性守卫：详情页第 604 行要「内容正确」，而"消化内科 / 王建国（普外科）"是自相矛盾的复诊单。小程序结构上产生不了（医生列表按 `?departmentId=` 拉），只对手搓请求生效，所以用既有 400 不新开错误码 |
+| 6 | 科室/医生不存在 → 5001，与"就诊人不是你的"同码 | 三类都是"你提交的引用在库里找不到"，区分它们只是把库内形状泄露给猜的人。不回 403（403 等于承认"这条存在"）—— 与 T13/T16/T17/T18/T19 同一条口径 |
+| 7 | **不复制 T19 的唯一索引**：复诊可以申请多次 | 规格没有任何唯一性说法，而 PRD 664 行把复诊定义成一种常态服务。门禁 `j45_secondApplyCreatesASecondRow` + HTTP 第 16 步钉住：将来谁照 T19 加唯一索引，这两条会红 |
+| 8 | 「选择疾病」的候选取自医生「擅长」，不造疾病字典 | 库里没有病种表、字典没有疾病行、seed 没有病名清单。唯一真实存在病名的地方是 `doctor.specialty`（V1:89，seed.sql:60-64 形如「胃炎、胃食管反流、消化道息肉」），它就是"这位医生看哪些病"。前端按「、」切开后**不清洗、不排序、不补项**（UI 第 9 步实测切出三项与 seed 一字不差）。输入框仍可自由填写，覆盖式选择 |
+| 9 | 「已就诊」资格门槛**不实现也不假装实现** | PRD 664 行要求"已就诊患者"，唯一凭证是 `medical_record` 有病历行 —— 而那张表首版没有生产者（T18 已逐字确认）。任何"必须有病历才能申请复诊"都会把所有真实用户当场挡死，与 J45 直接冲突。能做的归属校验（就诊人属于本人）照做，不能做的记进遗留 TODO |
+
+### 门禁证据：`mvn -o clean test` 全绿 **291 例**（273 + 18）
+
+日志 `t20-mvn2.log`（`MVN_EXIT=0`，`Tests run: 291, Failures: 0, Errors: 0, Skipped: 0`，27 个测试类）。
+新增 `FollowUpIntegrationTest` 18 例：
+
+| 分组 | 用例 | 钉住什么 |
+|---|---|---|
+| J45 | `j45_applyCreatesTheFollowUpRow` | 回 id + 库里真落一行 + 科室/医生/疾病/状态四值逐个对 |
+| J45 | `j45_statusAndOtherInventedFieldsCannotBeSetByTheClient` | 塞 `status`/`medicines`/`id` 三个假字段全部无效 |
+| J45 | `j45_secondApplyCreatesASecondRow` | 复诊可多次申请（不复制 T19 唯一索引） |
+| J45 | `j45_missingRequiredFieldsAreRejectedByValidation` | 缺三个 id 任一 + 空白疾病，四次 400 且零落库 |
+| J45 | `j45_diseaseLongerThanTheColumnIsRejectedNotTruncated` | 257 拦、256 过且原样回出 |
+| J45 | `j45_foreignOrMissingPatientIs5001AndCreatesNothing` | 越权与不存在同码，都不落行 |
+| J45 | `j45_unknownDepartmentOrDoctorIs5001` | 引用不存在同 5001 |
+| J45 | `j45_doctorFromAnotherDepartmentIsRejected400` | 跨科室错配 400 且不落库 |
+| J45 | `j45_softDeletedPatientCannotFileAFollowUp` | `@TableLogic` 软删的就诊人不能挂新申请 |
+| J46 | `j46_detailCarriesExactlyWhatWasSubmitted` | 六个值逐条对 seed + 时间形状 |
+| J46 | `j46_detailShapeIsExactlySevenFieldsAndCarriesNoMedication` | 七键白名单 + 五个药名字样逐个不许出现 + 三个内部 id 不外放 |
+| J46 | `j46_detailOfNonexistentOrForeignFollowUpIsSameCode` | 猜 id 猜不到内容 |
+| J46 | `j46_detailAfterPatientSoftDeleteIs5001` | 归属跳尊重软删 |
+| 跨卡闸门 | `followUpIdStaysInsideJsSafeInteger` | T14 那条：`FollowUp extends BaseEntity`，`@TableId(AUTO)` 在 `BaseEntity:13`，所以本卡**不需要**像 Invoice/QueueStatus 那样自己补注解 —— 这条断言就是那个结论的实测（并把接口回的 id 原样送回详情，证明 JSON 往返没丢精度） |
+| 范围 | `followUpEndpointsAreExactlyTheTwoTheSpecNamed` | 注册表里 `/user/follow-ups` 恰好两把 |
+| 审计 | `auditIsWrittenInSameTransactionAndRollsBackWithRejection` | 成功留痕、被 400 拒掉的那次连审计行一起回滚（证没走 `@Async`/`REQUIRES_NEW`/`afterCommit`） |
+| 权限 | `staffAndAnonymousCannotReachFollowUpEndpoints` | 员工 403+4001、匿名 401 |
+| 只读纪律 | `readsWriteNothingIntoTheDatabase` | 读五次不多写一行、不留痕 |
+
+### 真 HTTP 验收：**39 步全 PASS**（`t20_http.py` → `t20-http-run2.log`，`EXIT=0`）
+
+| 步 | 取证 | 实测 |
+|---|---|---|
+| 1 | 基线：`follow_up` 零行 | `0` |
+| 4–7 | J45 申请 → 落库 | `200` / `id=40 status=PENDING` / `row 1\|1\|PENDING` / `HEX(disease)` 与提交的 UTF-8 字节**逐字节相等** |
+| 8–11 | J46 详情内容正确 | 七键正好；`复诊甲\|消化内科\|张伟\|慢性胃炎伴糜烂，需复查胃镜`；`createdAt=2026-09-29T17:53:24.887` |
+| 12 | 无配药字段 | 五个药名字段全不存在 |
+| 13 | 无列表端点 | `GET /user/follow-ups` → `http=500 code=500`（Spring 兜底，只钉"不是业务成功"） |
+| 14–16 | 状态不可声明 / 二次申请两条 | 库里 `PENDING`；`count=2` |
+| 17–22 | 五类引用与归属错误 | `5001/5001/5001/5001/400`，整表仍只有成功那两条 |
+| 23–26 | 校验与列上限 | 缺 disease `400/400`、空白 `400`、257 拒且零落库、256 过且 `CHAR_LENGTH=256` |
+| 27–29 | 越权详情 + JS 安全整数 | `5001/5001`；`id=40 < 2^53` 且往返一致 |
+| 30–32 | 审计同事务 | 三条成功 = 三条 `CREATE_FOLLOW_UP`；读不留痕；`PATIENT follow_up NULL`（`target_id` 空是既有约定，见 `ScheduleService:153` 同条说明） |
+| 33–34 | 角色隔离 | 员工 `403/4001`、匿名 `401` |
+| 35–37 | 软删就诊人后两路 | 详情 `5001`、新申请 `5001` |
+| 38 | 自净 | `follow=0 audit=0 pat=10 usr=10` 回到基线 |
+
+### UI 验收：21 步 + 一轮补证（`t20_ui.sh` → `t20-ui.log`；`t20_ui2.sh` → `t20-ui2.log`，两轮 `SCRIPT_EXIT=0`）
+
+第一轮 21 步跑完 19 步取证，**两处库侧证据被我自己的诊断 SQL 吃掉了**（见「本轮三处自错」），
+第二轮专补这两条，不重跑已验过的分支。
+
+| 步 | 取证 | 实测（原样引用） |
+|---|---|---|
+| 0 | 后端就绪三查 | `Started=1 BUILDFAILURE=0`，日志 PID `98444` == `netstat` 8080 属主 |
+| 2 | 新页面必须重编译 | `simulator_refresh` + sleep 18 → `recInstalled:true`、`navErr:null` |
+| 3–4 | 登录 + 真链路添加就诊人 | `.login-btn` 真点击；`本次就诊人 id=2587` |
+| 5 | **首页入口真点击** | `el text .qe-followup` → `💊复诊配药`；`el tap` → 栈 `[index, followup/apply]`、`navErr:null` |
+| 6 | 三块选择器渲染 | `.section-title` → `选择就诊人`；`.fua-patient-name` → `复诊界面`；`.fua-dept` → `消化内科`；`.fua-doctor-tip` → `请先选择科室，医生按科室列出` |
+| 7 | 选科室 → 医生现拉 | `doctorCount:2`（张伟/李慧敏，正是 seed 里科室 1 的两位）；`.fua-doctor-name` → `张伟`、`.fua-doctor-title` → `主任医师`；两个 ✓ 都渲染 |
+| 8 | 下一步 → 疾病页 | 栈 `[index, apply, disease]`；`topQuery` 里三个 id 与三个 `encodeURIComponent` 后的名字 |
+| 9 | 候选来自「擅长」 | `suggestions: ["胃炎","胃食管反流","消化道息肉"]` —— 与 seed.sql:60 张伟的 `擅长` 一字不差 |
+| 10 | **原生 textarea 事件** | `el input .fud-input --value abc123` → `.fud-count` 渲染 `6/256`、`diseaseLength:6` |
+| 11–12 | 中文走 args 文件 + 点候选覆盖 | `13/256`；`el tap .fud-sug` → `disease:"胃炎"` |
+| 13 | 提交 → 成功页（J45 真机形态） | 栈 `[index, apply, result]`（`redirectTo` 生效，退回不了表单）；`detail.statusLabel:"待处理"`、`statusTone:"pending"`、`timeText:"2026-09-29 18:03"` |
+| 14 | 库侧 | `row dept=1 doctor=1 status=PENDING deleted=0`、`follow_up 总数=1` |
+| 15 | 成功页负向取证 | `.fures-med` → `no such element`；`.fures-note` → 渲染出那行实话 |
+| 16 | 详情唯一入口真点击 | `.fures-detail-btn` → 栈 `[index, apply, detail]`、`id=43`、`hasDetail:1` |
+| 17 | 详情页负向取证 | `.fvd-med`、`.fvd-prescription` → `no such element`；`.fvd-note` 渲染 |
+| 18 | 未登录守卫 | `t12-logout.js` + `reLaunch apply` → 连读三次 `stack:["pages/login/login"]`、`token:""` |
+| 19 | 控制台错误 | `count:0 errs:[]` |
+| 20–21 | 清理回基线 | `after follow_up=0 patient=10 user=10 audit=0 dept=3 doctor=5`、`孤儿复诊行=0` |
+| 二轮 3 | **补上的两条库侧证据** | `HEX(disease)=E685A2...E9959C` 与期望**逐字节相等**；`CHAR_LENGTH=13 / LENGTH=39`（13 字 × 3 字节）；`audit CREATE_FOLLOW_UP PATIENT follow_up NULL reason-NULL 110`；审计 `detail` JSON 里 `LOCATE("disease")>0` 且 `LOCATE("慢性胃炎")>0` 双 1 |
+| 二轮 4 | 详情页六项一次读全 | `复诊界面二 \| 消化内科 \| 张伟 \| 慢性胃炎伴糜烂，需复查胃镜 \| 待处理 \| 2026-09-29 18:08:31` |
+| 二轮 5–6 | 错误计数 + 自净 | `count:0`；`after 0 10 10 0 3 5` |
+
+截图六张，逐张亲自看过：`t20-1-apply.jpg`（三块选择器 + 三行「未选择」+ 医生区那句提示）、
+`t20-2-apply-picked.jpg`（就诊人 ✓、消化内科 chip 蓝底、张伟带「主任医师」徽章与擅长行、汇总三行是名字）、
+`t20-3-disease.jpg`（三个候选 chip + 空文本框 + `0/256` + 那行实话）、
+`t20-4-result.jpg`（绿勾 + 六行 + 橙色「待处理」+ 两个按钮）、
+`t20-5-detail.jpg`（标题行带状态徽章 + 五行 + 灰底实话框 + 返回首页）、
+`t20-6-detail-full.jpg`（第二轮就诊人「复诊界面二」，时间带到秒）。
+**六张里没有任何一处出现药名、处方、剂量栏目**，也没有一处把内部 id 当文案显示。
+
+### 本轮三处自错（都在驱动/测试侧，不是业务错）
+
+1. **把 `spring.jackson.date-format` 当成了对 `LocalDateTime` 生效。** 门禁 `j46_detailCarries...`
+   第一次跑就红在时间形状上：我按 `application.yml:35` 的 `yyyy-MM-dd HH:mm:ss` 断言，
+   实际是 `2026-09-29T17:35:23.311`。那条配置只管 `java.util.Date`，
+   `java.time.*` 由 JavaTimeModule 按 ISO-8601 输出。改断言时把这条陷阱连理由一起写进了测试注释。
+   **这是"期望错、实现对"的第四次**（前三次是字母序 vs 声明序、医生行、NULL 时间分支）。
+2. **`MF` 助手用反了，把 SQL 文件清空。** 它的定义是 `cat > 文件; mysql < 文件`，
+   必须先 `printf ... | MF`；我写成 `printf > 文件` 再单独调 `MF`，
+   于是那句 `cat` 读空 stdin 把文件截成零字节，MySQL 跑了个空输入 —— **HEX 比对整条证据静默消失**。
+3. **`CONCAT(..., target_id, ...)` 遇上 NULL 返回 NULL。** 审计那行 `target_id` 本来就是 NULL，
+   整条 CONCAT 就变成孤零零一个 `NULL`，看着像"审计没写"。正解是 `CONCAT_WS` + `IFNULL`
+   （第二轮改完立刻拿到 `audit CREATE_FOLLOW_UP PATIENT follow_up NULL reason-NULL 110`）。
+   第 2、3 条同属一类：**错误不会让我红，只会让我在没写对的情况下继续往下走**
+   （见 [[acceptance-harness-silent-assertions]]）。第一轮没发现是因为脚本 `SCRIPT_EXIT=0` ——
+   这个脚本是取证器不是断言器，退出码不代表证据齐。判据只能是逐行读日志。
+
+### 附录 B · 全局红线检查表（14 条逐条扫）
+
+| # | 检查项 | 结论 |
+|---|---|---|
+| 1 | 金额有没有 FLOAT/DOUBLE | N/A —— 本卡零金额（复诊没有费用字段，PRD 也从没给） |
+| 2 | 护士视角新接口会不会吐金额 | N/A，同上；两个端点都在 `/user/**` 患者侧 |
+| 3 | 新写操作有没有写 audit_log、同事务吗 | ✅ `@AuditLog(CREATE_FOLLOW_UP)` + `@Transactional`，门禁与 HTTP 各钉一条"被拒不留痕"；没用 `@Async`/`REQUIRES_NEW`/`afterCommit` |
+| 4 | 跨表写入是否一个事务、外部调用是否 afterCommit | ✅ 只写一张表；本卡没有任何外部通道调用 |
+| 5 | 指标口径有没有在别处重算 | N/A，本卡无指标 |
+| 6 | 权限判断是否只写在 UI | ✅ 归属在服务层双条件；员工/匿名在 `SecurityConfig`；跨科室守卫也在服务层（手搓请求照样挡） |
+| 7 | 自动派发的任务是否幂等 | N/A，本卡无任务派发。**注意有意不做幂等**：复诊可多次申请（判断 7），与 T19 的 `uk_payment_id` 相反，两处断言各自钉住 |
+| 8 | 小程序端新接口是否强制注入 userId 归属 | ✅ `userId` 只从 token 取，入参里没有 `userId`；HTTP 第 17 步实测别人的就诊人 5001 |
+| 9 | `<Money>`/`<DataTable>`/`<StatusBadge>` | N/A（admin 侧零改动）；小程序侧状态用 `fvd-status-*` 三配色，与 `QUEUE_STATUS_TONES` 同法 |
+| 10 | 列表筛选/分页是否进 URL | N/A —— **本卡没有列表**（判断 1）。但疾病页的三项选择确实经 query 传递，刷新不丢（UI 第 8 步 `topQuery` 七个参数原样可见） |
+| 11 | 有没有多装三方库 | ✅ 零新增依赖、零新增 npm/maven 包 |
+| 12 | 有没有实现附录 A「首版不做」 | ✅ 真实开药、处方审核、药品配送全都没碰；红线 606 行逐字守住了 |
+| 13 | J 编号是否逐条真实通过 | ✅ J45 三层各一次（门禁 9 例 / HTTP 4–7 步 / UI 第 13–14 步），J46 三层各一次（门禁 4 例 / HTTP 8–11 步 / UI 第 16–17 步 + 二轮第 4 步） |
+| 14 | 身份证/手机号加密 | N/A —— 本卡零新列；就诊人的加密仍是 T07/T08 那套，响应里只有名字 |
+
+### 本卡有意未做的事（附录 D 第 3 条）
+
+| 未做 | 为什么 |
+|---|---|
+| 「配药信息」字段与栏目 | 卡片 606 行红线 + `follow_up` 无列 + 无处方表 + 字典无复诊行（四路证据见上文）。留空栏目＝假装有功能 |
+| 复诊列表端点与页面 | PRD 615 行只给两个接口。造列表等于给一条规格没要求的通路加鉴权与越权面 |
+| 「已就诊」资格校验 | 唯一凭证 `medical_record` 首版没有生产者（T18 已确认）。实现了会把所有真实用户挡死，与 J45 冲突 |
+| 疾病字典表 / 预设病名清单 | 规格里没有任何病种表。造一份"高血压/糖尿病/感冒"就是替产品编字典（[[no-speculative-additions]]）。候选改用库里真实存在的 `doctor.specialty`，不清洗不补项 |
+| 状态推进（IN_PROGRESS / COMPLETED） | 是院内医生侧动作，PRD §4 后台没有复诊管理页，28 张卡里没有一张负责写它。造一个自动推进会让 T21–T23 与真实对接方都以为接口已存在 |
+| 复诊申请唯一索引 / 幂等 | 规格无此要求，且复诊本可多次。与 T19 相反，两处断言各自钉住 |
+| 复诊费用 / 缴费 / 发票联动 | 卡片 601–604 行没有一步提到钱，`follow_up` 也没有费用列 |
+| 取消复诊申请 | 规格里没有"取消复诊"这个功能点（对照退号：卡片 448 行明写了「退号」） |
+
+### 遗留 TODO（交给后续卡或二期）
+
+1. **患者如何找回自己的复诊单**：现在详情页唯一入口是申请成功页。要么产品确认补「复诊列表」接口
+   （PRD 615 行需增一行），要么确认"复诊单看完即弃"是有意设计。**这条需要产品裁决，不该由实现方偷偷补。**
+2. **配药信息**：二期接开药时，最小改动是给 `follow_up` 加列或新建处方表 + 一个生产者（医生侧/后台），
+   然后补 `FollowUpDetailResponse` 字段与前端 `fu-med` 区块。本卡三处断言会提醒契约变了。
+3. **「已就诊」门槛**：等 `medical_record` 有生产者之后回来补，或由产品改口径。
+4. **状态推进的生产者**：与 T21–T23 的后台页面一起考虑；一旦有推进，`PENDING` 之外两个状态的配色与标签已备好。
+5. 分页：与 T17/T18/T19 的分页需求一并处理（复诊没有列表，暂时 N/A）。
+
+### 当前状态
+
+后端 291 例全绿、真 HTTP 39/39、UI 两轮取证齐、库回到 seed 基线
+（`follow_up=0 patient=10 user=10 audit=0 dept=3 doctor=5`）。
+本卡零迁移、零新列、`SecurityConfig` 一行未改，新增 4 个后端主文件 + 1 个测试类 + 16 个小程序文件，
+改动 3 个既有文件（`app.json` 加四条路由、`pages/index/index.js` 接线入口、`utils/format.js` 加两组标签/配色）。
+下一张：**T21 核酸检测**（卡片 616 行起）。
+

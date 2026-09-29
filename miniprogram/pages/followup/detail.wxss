@@ -1,0 +1,75 @@
+.fvd-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 20rpx;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.fvd-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.fvd-status {
+  font-size: 24rpx;
+  padding: 4rpx 20rpx;
+  border-radius: 8rpx;
+}
+
+/* 三个配色对应 format.js 的 FOLLOW_UP_STATUS_TONES，码值出处 V1:318 列注释 */
+.fvd-status-pending {
+  color: #d97706;
+  background: #fffbeb;
+}
+
+.fvd-status-progress {
+  color: #2563eb;
+  background: #eff6ff;
+}
+
+.fvd-status-done {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.fvd-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #f0f0f0;
+}
+
+.fvd-row:last-of-type {
+  border-bottom: none;
+}
+
+.fvd-label {
+  font-size: 26rpx;
+  color: #64748b;
+  flex-shrink: 0;
+  margin-right: 24rpx;
+}
+
+.fvd-value {
+  font-size: 28rpx;
+  color: #1f2937;
+  text-align: right;
+  line-height: 1.6;
+}
+
+.fvd-note {
+  font-size: 22rpx;
+  color: #94a3b8;
+  line-height: 1.7;
+  padding: 24rpx;
+  background: #f8fafc;
+  border-radius: 12rpx;
+  margin-top: 32rpx;
+}
+
+.fvd-home-btn {
+  margin-top: 32rpx;
+}

@@ -35,7 +35,11 @@
     "pages/invoice/pending",
     "pages/invoice/result",
     "pages/invoice/list",
-    "pages/invoice/detail"
+    "pages/invoice/detail",
+    "pages/followup/apply",
+    "pages/followup/disease",
+    "pages/followup/result",
+    "pages/followup/detail"
   ],
   "window": {
     "navigationBarBackgroundColor": "#ffffff",

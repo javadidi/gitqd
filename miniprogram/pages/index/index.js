@@ -10,7 +10,7 @@ Page({
       { id: 'payment', label: '自助缴费', icon: 'credit-card', url: '/pages/payment/confirm' },
       { id: 'report', label: '报告查询', icon: 'file-text', url: '/pages/report/type' },
       { id: 'record', label: '病历查询', icon: 'book', url: '/pages/record/list' },
-      { id: 'followup', label: '复诊配药', icon: 'pill', url: '' },
+      { id: 'followup', label: '复诊配药', icon: 'pill', url: '/pages/followup/apply' },
       { id: 'physical', label: '体检服务', icon: 'heart', url: '' },
     ],
     notices: [],

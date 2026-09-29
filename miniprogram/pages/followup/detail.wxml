@@ -1,0 +1,38 @@
+<view class="page-followup-detail">
+  <view class="container">
+    <view wx:if="{{detail}}" class="card">
+      <view class="fvd-head">
+        <text class="fvd-title">复诊申请</text>
+        <text class="fvd-status fvd-status-{{detail.statusTone}}">{{detail.statusLabel}}</text>
+      </view>
+
+      <view class="fvd-row">
+        <text class="fvd-label">就诊人</text>
+        <text class="fvd-value">{{detail.patientName}}</text>
+      </view>
+      <view class="fvd-row">
+        <text class="fvd-label">复诊科室</text>
+        <text class="fvd-value">{{detail.departmentName}}</text>
+      </view>
+      <view class="fvd-row">
+        <text class="fvd-label">复诊医生</text>
+        <text class="fvd-value">{{detail.doctorName}}</text>
+      </view>
+      <view class="fvd-row">
+        <text class="fvd-label">疾病信息</text>
+        <text class="fvd-value">{{detail.disease}}</text>
+      </view>
+      <view class="fvd-row">
+        <text class="fvd-label">申请时间</text>
+        <text class="fvd-value">{{detail.timeText}}</text>
+      </view>
+    </view>
+
+    <!-- 刻意没有「配药信息：—」这一栏。理由写在 detail.js 顶部与 FollowUpDetailResponse 注释里。 -->
+    <view class="fvd-note">
+      首版为复诊申请流程演示，不涉及实际开药；用药请遵医嘱。
+    </view>
+
+    <button class="btn-primary fvd-home-btn" bindtap="onBackHome">返回首页</button>
+  </view>
+</view>
