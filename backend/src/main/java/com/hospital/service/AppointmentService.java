@@ -21,7 +21,6 @@ import com.hospital.mapper.AppointmentMapper;
 import com.hospital.mapper.DepartmentMapper;
 import com.hospital.mapper.DoctorMapper;
 import com.hospital.mapper.PatientMapper;
-import com.hospital.mapper.RefundRecordMapper;
 import com.hospital.mapper.ScheduleMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -85,10 +84,6 @@ public class AppointmentService {
     static final String CONFIRMED = "CONFIRMED";
     static final String CANCELLED = "CANCELLED";
     static final String COMPLETED = "COMPLETED";
-    /** appointment / refund_record.related_type 的取值见 V1:176 列注释。 */
-    private static final String RELATED_TYPE_APPOINTMENT = "APPOINTMENT";
-    /** 退款单初始状态：V1:179 的 PENDING/APPROVED/REJECTED/COMPLETED 之首。 */
-    private static final String REFUND_PENDING = "PENDING";
 
     private final AppointmentMapper appointmentMapper;
     private final PatientMapper patientMapper;
@@ -98,7 +93,7 @@ public class AppointmentService {
     private final AppointmentFeeService feeService;
     private final SerialNumberService serialNumberService;
     private final WechatPayService wechatPayService;
-    private final RefundRecordMapper refundRecordMapper;
+    private final RefundTicketService refundTicketService;
 
     public AppointmentService(AppointmentMapper appointmentMapper,
                               PatientMapper patientMapper,
@@ -108,7 +103,7 @@ public class AppointmentService {
                               AppointmentFeeService feeService,
                               SerialNumberService serialNumberService,
                               WechatPayService wechatPayService,
-                              RefundRecordMapper refundRecordMapper) {
+                              RefundTicketService refundTicketService) {
         this.appointmentMapper = appointmentMapper;
         this.patientMapper = patientMapper;
         this.scheduleMapper = scheduleMapper;
@@ -117,7 +112,7 @@ public class AppointmentService {
         this.feeService = feeService;
         this.serialNumberService = serialNumberService;
         this.wechatPayService = wechatPayService;
-        this.refundRecordMapper = refundRecordMapper;
+        this.refundTicketService = refundTicketService;
     }
 
     /**
@@ -238,20 +233,15 @@ public class AppointmentService {
         response.setFeeFen(appointment.getFeeFen());
 
         if (CONFIRMED.equals(statusBefore)) {
-            RefundRecord refund = new RefundRecord();
-            refund.setOrderNo(serialNumberService.next(SerialType.TK));
-            refund.setRelatedId(appointment.getId());
-            refund.setRelatedType(RELATED_TYPE_APPOINTMENT);
-            // 金额取预约账上的，不接受任何外部传入（T12 那条「支付金额禁篡改」在退款侧的同一半句）
-            refund.setAmountFen(appointment.getFeeFen());
-            refund.setStatus(REFUND_PENDING);
-            refund.setReason(reason);
-            // reviewer_id 留空：审核是二期的事，现在没有任何人审过这笔
-            refundRecordMapper.insert(refund);
-            response.setRefundNo(refund.getOrderNo());
-            response.setRefundFen(refund.getAmountFen());
-            response.setRefundStatus(refund.getStatus());
-            response.setRefundRequired(true);
+            // 挂单规则（只有已支付才挂、金额取账上 fee_fen、状态只到 PENDING、reviewer_id 留空）
+            // 在 T25 抽成了 RefundTicketService——停诊要替一批人挂单，两处规则必须一字不差。
+            RefundRecord refund = refundTicketService.issueForAppointment(appointment, reason);
+            if (refund != null) {
+                response.setRefundNo(refund.getOrderNo());
+                response.setRefundFen(refund.getAmountFen());
+                response.setRefundStatus(refund.getStatus());
+                response.setRefundRequired(true);
+            }
         } else {
             // 待支付：没收过钱，无款可退
             response.setRefundRequired(false);

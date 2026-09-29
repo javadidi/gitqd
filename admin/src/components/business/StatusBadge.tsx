@@ -6,9 +6,8 @@ import {
   XCircle,
   type LucideIcon,
 } from 'lucide-react'
+import { STATUS_REGISTRY, type StatusTone } from '@/lib/statusRegistry'
 import { cn } from '@/lib/utils'
-
-export type StatusTone = 'success' | 'warning' | 'danger' | 'info' | 'neutral'
 
 interface ToneSpec {
   badgeClass: string
@@ -16,6 +15,7 @@ interface ToneSpec {
   Icon: LucideIcon
 }
 
+/** 色调 → 样式与图标。码值本身在 {@link STATUS_REGISTRY}，那份表是全仓库唯一的。 */
 const TONES: Record<StatusTone, ToneSpec> = {
   success: {
     badgeClass: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
@@ -42,30 +42,6 @@ const TONES: Record<StatusTone, ToneSpec> = {
     iconClass: 'text-zinc-400',
     Icon: MinusCircle,
   },
-}
-
-// 取值域来自 V1__init.sql 各表 status 列注释；色调来自任务卡 §2.1 设计令牌。
-const STATUS_REGISTRY: Record<string, { tone: StatusTone; label: string }> = {
-  PENDING_PAYMENT: { tone: 'warning', label: '待缴费' },
-  PENDING: { tone: 'warning', label: '待处理' },
-  WAITING: { tone: 'warning', label: '候诊中' },
-  SUCCESS: { tone: 'success', label: '成功' },
-  CONFIRMED: { tone: 'success', label: '已确认' },
-  APPROVED: { tone: 'success', label: '已通过' },
-  ISSUED: { tone: 'success', label: '已开票' },
-  DELIVERED: { tone: 'success', label: '已送达' },
-  REPLIED: { tone: 'success', label: '已回复' },
-  OPEN: { tone: 'info', label: '待办' },
-  IN_PROGRESS: { tone: 'info', label: '进行中' },
-  CALLING: { tone: 'info', label: '呼叫中' },
-  SERVING: { tone: 'info', label: '就诊中' },
-  SHIPPED: { tone: 'info', label: '配送中' },
-  COMPLETED: { tone: 'neutral', label: '已完成' },
-  DONE: { tone: 'neutral', label: '已结束' },
-  CLOSED: { tone: 'neutral', label: '已关闭' },
-  CANCELLED: { tone: 'danger', label: '已取消' },
-  REJECTED: { tone: 'danger', label: '已驳回' },
-  REFUNDED: { tone: 'danger', label: '已退款' },
 }
 
 interface StatusBadgeProps {

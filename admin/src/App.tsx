@@ -3,7 +3,15 @@ import AppLayout from './components/layout/AppLayout'
 import RequireAuth from './components/RequireAuth'
 import Dashboard from './pages/Dashboard'
 import LoginPage from './pages/LoginPage'
+import NucleicDetailPage from './pages/NucleicDetailPage'
+import NucleicListPage from './pages/NucleicListPage'
 import PlaceholderPage from './pages/PlaceholderPage'
+import PhysicalDetailPage from './pages/PhysicalDetailPage'
+import PhysicalListPage from './pages/PhysicalListPage'
+import PhysicalReportPage from './pages/PhysicalReportPage'
+import RegistrationDetailPage from './pages/RegistrationDetailPage'
+import RegistrationListPage from './pages/RegistrationListPage'
+import ScheduleManagePage from './pages/ScheduleManagePage'
 import { AuthProvider } from './store/AuthProvider'
 
 function App() {
@@ -20,22 +28,14 @@ function App() {
             }
           >
             <Route path="/" element={<Dashboard />} />
-            <Route
-              path="/appointments/registration"
-              element={<PlaceholderPage title="预约挂号管理" prd="4.3.1" card="T25" />}
-            />
-            <Route
-              path="/appointments/nucleic-acid"
-              element={<PlaceholderPage title="预约核酸检测管理" prd="4.3.2" card="T25" />}
-            />
-            <Route
-              path="/appointments/physical"
-              element={<PlaceholderPage title="预约体检管理" prd="4.3.3" card="T25" />}
-            />
-            <Route
-              path="/appointments/schedule"
-              element={<PlaceholderPage title="医生排班管理" prd="4.3.4" card="T25" />}
-            />
+            <Route path="/appointments/registration" element={<RegistrationListPage />} />
+            <Route path="/appointments/registration/:id" element={<RegistrationDetailPage />} />
+            <Route path="/appointments/nucleic-acid" element={<NucleicListPage />} />
+            <Route path="/appointments/nucleic-acid/:id" element={<NucleicDetailPage />} />
+            <Route path="/appointments/physical" element={<PhysicalListPage />} />
+            <Route path="/appointments/physical/:id" element={<PhysicalDetailPage />} />
+            <Route path="/appointments/physical/:id/report" element={<PhysicalReportPage />} />
+            <Route path="/appointments/schedule" element={<ScheduleManagePage />} />
             <Route
               path="/finance/outpatient-consume"
               element={<PlaceholderPage title="门诊消费记录" prd="4.4.1" card="T26" />}

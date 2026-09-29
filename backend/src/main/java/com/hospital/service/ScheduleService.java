@@ -5,11 +5,16 @@ import com.hospital.annotation.AuditLog;
 import com.hospital.annotation.AuditReason;
 import com.hospital.annotation.AuditTarget;
 import com.hospital.common.ErrorCode;
+import com.hospital.dto.AdminScheduleBatchResponse;
+import com.hospital.dto.AdminScheduleSuspendResponse;
 import com.hospital.dto.ScheduleAdminResponse;
+import com.hospital.dto.ScheduleBatchCreateRequest;
 import com.hospital.dto.ScheduleCreateRequest;
+import com.hospital.dto.ScheduleRescheduleRequest;
 import com.hospital.dto.ScheduleUpdateRequest;
 import com.hospital.entity.Appointment;
 import com.hospital.entity.Doctor;
+import com.hospital.entity.RefundRecord;
 import com.hospital.entity.Schedule;
 import com.hospital.enums.TimeSlot;
 import com.hospital.exception.BizException;
@@ -92,13 +97,16 @@ public class ScheduleService {
     private final ScheduleMapper scheduleMapper;
     private final DoctorMapper doctorMapper;
     private final AppointmentMapper appointmentMapper;
+    private final RefundTicketService refundTicketService;
 
     public ScheduleService(ScheduleMapper scheduleMapper,
                            DoctorMapper doctorMapper,
-                           AppointmentMapper appointmentMapper) {
+                           AppointmentMapper appointmentMapper,
+                           RefundTicketService refundTicketService) {
         this.scheduleMapper = scheduleMapper;
         this.doctorMapper = doctorMapper;
         this.appointmentMapper = appointmentMapper;
+        this.refundTicketService = refundTicketService;
     }
 
     // ============================================================
@@ -264,6 +272,184 @@ public class ScheduleService {
         if (scheduleMapper.cancelById(scheduleId) == 0) {
             throw new BizException(ErrorCode.SCHEDULE_NOT_FOUND);
         }
+    }
+
+    // ============================================================
+    // 批量排班 / 停诊 / 调班（T25 卡片 701 行）
+    // ============================================================
+
+    /**
+     * 批量排班：一位医生 × 连续日期 × 若干时段 × 统一号源数。
+     *
+     * <p><b>撞已存在的组合是"跳过"而不是"报错"</b>：理由写在
+     * {@link AdminScheduleBatchResponse} 的类注释里——"把下周排一遍"中途撞上一条就整批回滚，
+     * 是把数据库的正常约束变成用户体验灾难。前置查一次拿齐已存在的 (日期, 时段)，
+     * 只插缺的那些；并发下仍可能双双通过前置查，那时唯一索引会拒一个，
+     * 由 controller 翻译成 2002（与 {@link #create} 同一条 R2 第二层）。
+     */
+    @AuditLog(action = "CREATE_SCHEDULE_BATCH", targetType = "schedule")
+    @Transactional
+    public AdminScheduleBatchResponse batchCreate(ScheduleBatchCreateRequest request) {
+        Doctor doctor = requireDoctor(request.getDoctorId());
+        LocalDate from = request.getDateFrom();
+        LocalDate to = request.getDateTo();
+        if (to.isBefore(from)) {
+            throw new BizException(ErrorCode.BAD_REQUEST.getCode(), "结束日期不能早于起始日期");
+        }
+        List<String> slots = new ArrayList<>();
+        for (String raw : request.getTimeSlots()) {
+            String slot = raw == null ? "" : raw.trim();
+            if (!TimeSlot.isValid(slot)) {
+                throw new BizException(ErrorCode.BAD_REQUEST.getCode(),
+                        "时段只能是 MORNING/AFTERNOON/EVENING，收到：" + raw);
+            }
+            if (!slots.contains(slot)) {
+                slots.add(slot);
+            }
+        }
+
+        List<LocalDate> dates = new ArrayList<>();
+        for (LocalDate day = from; !day.isAfter(to); day = day.plusDays(1)) {
+            dates.add(day);
+        }
+        Set<String> taken = new HashSet<>();
+        for (Schedule existing : scheduleMapper.selectList(new LambdaQueryWrapper<Schedule>()
+                .eq(Schedule::getDoctorId, doctor.getId())
+                .in(Schedule::getDate, dates)
+                .in(Schedule::getTimeSlot, slots))) {
+            taken.add(existing.getDate() + "/" + existing.getTimeSlot());
+        }
+
+        List<Long> createdIds = new ArrayList<>();
+        List<String> skipped = new ArrayList<>();
+        for (LocalDate day : dates) {
+            for (String slot : slots) {
+                if (taken.contains(day + "/" + slot)) {
+                    skipped.add(day + "/" + slot);
+                    continue;
+                }
+                Schedule schedule = new Schedule();
+                schedule.setDoctorId(doctor.getId());
+                schedule.setDate(day);
+                schedule.setTimeSlot(slot);
+                schedule.setTotalSlots(request.getTotalSlots());
+                schedule.setRemainingSlots(request.getTotalSlots());
+                scheduleMapper.insert(schedule);
+                createdIds.add(schedule.getId());
+            }
+        }
+
+        AdminScheduleBatchResponse response = new AdminScheduleBatchResponse();
+        response.setCreatedCount(createdIds.size());
+        response.setCreatedIds(createdIds);
+        response.setSkippedCount(skipped.size());
+        response.setSkipped(skipped);
+        return response;
+    }
+
+    /**
+     * <b>临时停诊：取消一个已经有人订的班，并把这些预约一起退掉</b>。
+     *
+     * <p>这正是 T11 留给自己、T13 明确不接、最后落到本卡的那条 TODO
+     * （T13 的定案原文：「T11 留下的 2007 守卫不在 T13 改，挪给 T25」）。
+     * 与 {@link #cancel} 的分工是：<b>取消</b>用于还没人订的班（有活预约就 2007 拒绝），
+     * <b>停诊</b>用于医院主动撤掉一个已经有人订的班——此时拒绝没有意义，
+     * 班已经停了，剩下的问题只有"这些患者怎么办"，答案只能是同事务里替他们退号。
+     *
+     * <p>三条不变量：
+     * <ul>
+     *   <li>每张活预约走与 T13 同一套判定：{@code cancelIfActive} 受影响 0 行就跳过（并发下已被取消），
+     *       绝不重复挂单；</li>
+     *   <li>退款单由 {@link RefundTicketService} 统一挂，规则与患者端退号一字不差
+     *       （只有已支付才挂、金额取账上的 {@code fee_fen}、状态只到 PENDING）；</li>
+     *   <li><b>不还号源</b>：这个班马上就要被软删，把 {@code remaining_slots} 加回去
+     *       只会造出"一个已停的班还有 20 个空位"的假账。T13 的退号必须还，因为班还在。</li>
+     * </ul>
+     *
+     * <p>TODO(附录 A 二期)：停诊后通知患者属消息推送，首版不做——所以现在只有退款单
+     * 与审计留痕，患者自己要在预约记录里看到"已取消"。
+     */
+    @AuditLog(action = "SUSPEND_SCHEDULE", targetType = "schedule")
+    @Transactional
+    public AdminScheduleSuspendResponse suspend(@AuditTarget Long scheduleId, @AuditReason String reason) {
+        requireSchedule(scheduleId);
+
+        List<Appointment> active = appointmentMapper.selectList(new LambdaQueryWrapper<Appointment>()
+                .eq(Appointment::getScheduleId, scheduleId)
+                .ne(Appointment::getStatus, APPOINTMENT_CANCELLED));
+
+        int refundCount = 0;
+        long refundFen = 0L;
+        for (Appointment appointment : active) {
+            if (appointmentMapper.cancelIfActive(appointment.getId()) == 0) {
+                // 并发下患者自己已经退号了。跳过，不能替他再挂一张退款单。
+                continue;
+            }
+            RefundRecord refund = refundTicketService.issueForAppointment(appointment, reason);
+            if (refund != null) {
+                refundCount++;
+                refundFen += refund.getAmountFen();
+            }
+        }
+
+        if (scheduleMapper.cancelById(scheduleId) == 0) {
+            throw new BizException(ErrorCode.SCHEDULE_NOT_FOUND);
+        }
+
+        AdminScheduleSuspendResponse response = new AdminScheduleSuspendResponse();
+        response.setScheduleId(scheduleId);
+        response.setAppointmentCount(active.size());
+        response.setRefundCount(refundCount);
+        response.setRefundFen(refundFen);
+        return response;
+    }
+
+    /**
+     * 调班：把这个班挪到另一天/另一段。
+     *
+     * <p><b>有活预约就直接拒（2007），不自动挪人</b>：规格只写了"支持临时停诊/调班"六个字，
+     * 没说过"调班时把已订患者一并迁到新时段"。真要自动迁移，就得决定号源够不够、
+     * 单号换不换、原时段要不要腾出来——每一条都是替产品定规则。
+     * 所以本卡的调班只服务"还没人订的班挪个时间"，已经有人订的要先停诊或让患者退号，
+     * 错误文案里把这条路径说清楚。
+     *
+     * <p>撞 {@code uk_doctor_date_slot} 抛 {@code DuplicateKeyException}，由 controller 翻译成 2002，
+     * 与 {@link #create} 同一条 R2 第二层。
+     */
+    @AuditLog(action = "RESCHEDULE_SCHEDULE", targetType = "schedule")
+    @Transactional
+    public ScheduleAdminResponse reschedule(@AuditTarget Long scheduleId,
+                                            ScheduleRescheduleRequest request,
+                                            @AuditReason String reason) {
+        Schedule schedule = requireSchedule(scheduleId);
+        Doctor doctor = requireDoctor(schedule.getDoctorId());
+
+        Long active = appointmentMapper.selectCount(new LambdaQueryWrapper<Appointment>()
+                .eq(Appointment::getScheduleId, scheduleId)
+                .ne(Appointment::getStatus, APPOINTMENT_CANCELLED));
+        if (active != null && active > 0) {
+            throw new BizException(ErrorCode.SCHEDULE_HAS_APPOINTMENTS.getCode(),
+                    "该班已有 " + active + " 位患者预约，请先停诊或等患者退号后再调班");
+        }
+
+        String timeSlot = request.getTimeSlot().trim();
+        if (!TimeSlot.isValid(timeSlot)) {
+            throw new BizException(ErrorCode.BAD_REQUEST.getCode(),
+                    "时段只能是 MORNING/AFTERNOON/EVENING，收到：" + request.getTimeSlot());
+        }
+        Long live = scheduleMapper.selectCount(new LambdaQueryWrapper<Schedule>()
+                .eq(Schedule::getDoctorId, schedule.getDoctorId())
+                .eq(Schedule::getDate, request.getDate())
+                .eq(Schedule::getTimeSlot, timeSlot)
+                .ne(Schedule::getId, scheduleId));
+        if (live != null && live > 0) {
+            throw new BizException(ErrorCode.SCHEDULE_CONFLICT);
+        }
+
+        schedule.setDate(request.getDate());
+        schedule.setTimeSlot(timeSlot);
+        scheduleMapper.updateById(schedule);
+        return toResponse(schedule, doctor.getName());
     }
 
     // ============================================================

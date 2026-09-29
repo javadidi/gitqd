@@ -4,7 +4,12 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.hospital.entity.Schedule;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
+
+import java.time.LocalDate;
+import java.util.Collection;
+import java.util.List;
 
 @Mapper
 public interface ScheduleMapper extends BaseMapper<Schedule> {
@@ -89,4 +94,42 @@ public interface ScheduleMapper extends BaseMapper<Schedule> {
     @Update("UPDATE schedule SET remaining_slots = remaining_slots + 1 "
             + "WHERE id = #{scheduleId} AND deleted = 0 AND remaining_slots < total_slots")
     int releaseSlot(@Param("scheduleId") Long scheduleId);
+
+    /**
+     * 按 id 批量读排班，**故意不过滤软删行**（T25）。
+     *
+     * <p><b>为什么这里要绕过 {@code @TableLogic}</b>：T11 的取消排班有 2007 守卫
+     * （班下还有未取消的预约就撤不掉），所以在 T11 的世界里"已软删的班"永远没有活预约，
+     * 读它没关系。T25 的<b>停诊</b>恰好造出了这个前所未有的状态：
+     * 班被撤了（deleted=1），但那些预约作为历史事实还在，而且患者和后台都还要继续看它们。
+     * 此时若沿用 {@code selectBatchIds}，被停的那个班下的预约在列表里就会
+     * <b>集体丢掉就诊日期与时段</b>（实测就是详情页那两格变成「— —」）——
+     * 停诊这个动作本身不该改写历史的显示。
+     *
+     * <p><b>为什么不去 {@code @TableLogic} 上动刀</b>：那个注解管的是"这个班还能不能排号、
+     * 还在不在排班列表里"，那些读法全部必须继续过滤，改一处就会漏十处。
+     * 手写 SQL 不受逻辑删注入影响（{@link #reviveSoftDeleted} 的注释里有完整推导），
+     * 所以只在这一个读口上开口子，口子边界由调用点决定。
+     *
+     * <p>与 {@link #selectIdsByDateRange} 成对：一个供"按 id 反查名字"，一个供"按日期筛预约"。
+     */
+    @Select("<script>SELECT * FROM schedule WHERE id IN "
+            + "<foreach collection=\"ids\" item=\"id\" open=\"(\" separator=\",\" close=\")\">#{id}</foreach>"
+            + "</script>")
+    List<Schedule> selectByIdsIncludingDeleted(@Param("ids") Collection<Long> ids);
+
+    /**
+     * 日期区间内的排班 id，**含已停诊的班**（T25）。理由同
+     * {@link #selectByIdsIncludingDeleted}：管理员按就诊日期筛预约时，
+     * 被停那天的预约不该因为班没了就从结果里蒸发——那正是他最该看一眼的一批。
+     *
+     * <p>两个参数各自可为 null（{@code &gt;=} / {@code &lt;} 在 {@code <if>} 里，
+     * XML 里的比较号必须转义）。
+     */
+    @Select("<script>SELECT id FROM schedule WHERE 1 = 1"
+            + "<if test=\"dateFrom != null\"> AND `date` &gt;= #{dateFrom}</if>"
+            + "<if test=\"dateTo != null\"> AND `date` &lt;= #{dateTo}</if>"
+            + "</script>")
+    List<Long> selectIdsByDateRange(@Param("dateFrom") LocalDate dateFrom,
+                                    @Param("dateTo") LocalDate dateTo);
 }

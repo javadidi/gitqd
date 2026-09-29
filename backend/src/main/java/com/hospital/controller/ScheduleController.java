@@ -3,8 +3,12 @@ package com.hospital.controller;
 import com.hospital.annotation.RequireCap;
 import com.hospital.common.ErrorCode;
 import com.hospital.common.Result;
+import com.hospital.dto.AdminScheduleBatchResponse;
+import com.hospital.dto.AdminScheduleSuspendResponse;
 import com.hospital.dto.ScheduleAdminResponse;
+import com.hospital.dto.ScheduleBatchCreateRequest;
 import com.hospital.dto.ScheduleCreateRequest;
+import com.hospital.dto.ScheduleRescheduleRequest;
 import com.hospital.dto.ScheduleUpdateRequest;
 import com.hospital.enums.Capability;
 import com.hospital.service.ScheduleService;
@@ -109,5 +113,53 @@ public class ScheduleController {
                                @RequestParam(required = false) String reason) {
         scheduleService.cancel(id, reason);
         return Result.success();
+    }
+
+    /**
+     * 批量排班（T25 卡片 701 行「支持批量排班」）。撞已存在的组合是"跳过"不是失败，
+     * 返回体里 created / skipped 各有多少、跳过的是哪天哪段。
+     */
+    @PostMapping("/batch")
+    @RequireCap(Capability.MANAGE_DOCTOR)
+    public Result<AdminScheduleBatchResponse> createBatch(
+            @Valid @RequestBody ScheduleBatchCreateRequest request) {
+        try {
+            return Result.success(scheduleService.batchCreate(request));
+        } catch (DuplicateKeyException | ConcurrencyFailureException e) {
+            // 前置查与插入之间被另一个管理员抢了同一个槽位——与单条 create 同一条翻译。
+            return Result.error(ErrorCode.SCHEDULE_CONFLICT);
+        }
+    }
+
+    /**
+     * 临时停诊（T25 卡片 701 行）。与上面的"取消"是两件事：
+     * <b>取消</b>只处理没人订的班（有活预约就 2007 拒绝），
+     * <b>停诊</b>是医院主动撤掉一个已经有人订的班，同事务把这些预约退掉、
+     * 已付过的挂退款单——这是 T11 留给自己、T13 明确移交本卡的那条 TODO。
+     * 返回体带三个数字，管理员要点完就知道自己动了几个人的账。
+     */
+    @PostMapping("/{id}/suspend")
+    @RequireCap(Capability.MANAGE_DOCTOR)
+    public Result<AdminScheduleSuspendResponse> suspend(@PathVariable Long id,
+                                                        @RequestParam(required = false) String reason) {
+        return Result.success(scheduleService.suspend(id, reason));
+    }
+
+    /**
+     * 调班：把这个班挪到另一天/另一段。班上有未取消的预约 → 2007 并给出下一步（先停诊）；
+     * 撞唯一索引 → 2002。规格没写"调班时把已订患者一起搬走"，所以本端点不做迁移，
+     * 理由写在 {@link ScheduleService#reschedule}。
+     */
+    @PostMapping("/{id}/reschedule")
+    @RequireCap(Capability.MANAGE_DOCTOR)
+    public Result<ScheduleAdminResponse> reschedule(
+            @PathVariable Long id,
+            @Valid @RequestBody ScheduleRescheduleRequest request,
+            @RequestParam(required = false) String reason) {
+        try {
+            return Result.success(scheduleService.reschedule(id, request, reason));
+        } catch (DuplicateKeyException | ConcurrencyFailureException e) {
+            return Result.error(ErrorCode.SCHEDULE_CONFLICT);
+        }
     }
 }

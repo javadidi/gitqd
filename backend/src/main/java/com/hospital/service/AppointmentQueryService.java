@@ -127,8 +127,12 @@ public class AppointmentQueryService {
                     .collect(Collectors.toMap(Department::getId, Department::getName));
         }
 
-        List<Schedule> schedules = scheduleMapper.selectBatchIds(distinct(rows.stream()
-                .map(Appointment::getScheduleId).collect(Collectors.toList())));
+        // 读排班不过滤软删行：T25 的停诊会留下"预约还在、班已撤"的历史，
+        // 而时段只有 schedule 表里有——按默认的 selectBatchIds 那些记录会集体丢掉时段。
+        Collection<Long> scheduleIds = distinct(rows.stream()
+                .map(Appointment::getScheduleId).collect(Collectors.toList()));
+        List<Schedule> schedules = scheduleIds.isEmpty() ? List.of()
+                : scheduleMapper.selectByIdsIncludingDeleted(new java.util.HashSet<>(scheduleIds));
         names.slots = schedules.stream().collect(Collectors.toMap(Schedule::getId, Schedule::getTimeSlot));
         return names;
     }

@@ -6944,3 +6944,320 @@ T23 收口时记录的是 14 行孤儿退款、`user=4`；本卡一轮门禁之�
 （新表首版零行，与 T22 的 `physical_*` 同一条纪律：seed 只清自己负责插的表）。
 
 下一张：**T25 管理后台 · 预约管理**（卡片 694 行起，`grep -n '## T25'` 实测标题在 694 行）。
+
+---
+
+## T25 · 管理后台 - 预约管理（2026-09-30）
+
+这张卡有三重身份：**本项目第一张真正起 admin React 业务页的卡**（T10/T11/T13 都是纯后端，
+`admin/src/pages/` 在动手前只有 Dashboard/Login/Forbidden/Placeholder 四个文件）；
+**T11→T13→T25 那条停诊交接的终点**；以及**整条流水线里第一个往 `report` 表写行的端点**
+（T17 建读侧、T22 放开 PHYSICAL 白名单，两边都写着"生产者是 T25"）。
+
+### 卡片原文（694–709 行，逐字）
+
+```
+## T25 · 管理后台 - 预约管理
+
+**要做什么**
+- 预约挂号列表：展示所有预约记录，支持筛选。
+- 挂号详情：查看单笔预约的详细信息。
+- 预约核酸检测列表/详情。
+- 预约体检列表/详情/报告详情。
+- 医生排班管理：设置医生排班，支持批量排班、临时停诊/调班。
+
+**红线**：不做费用管理（T26）。
+
+**测试场景（必做）**
+- J55 预约列表 → 数据正确。
+- J56 排班管理 → CRUD 通。
+
+**DoD**：预约管理通。
+```
+
+### 十二把新端点（逐把给出处；「出处」两列一是卡片行、一是 PRD 行）
+
+| # | 端点 | 卡片行 | PRD 行 | 备注 |
+|---|---|---|---|---|
+| 1 | `GET /admin/appointments` | 697 | 347 | 四个筛选参数逐字对应「按日期/科室/医生/状态」 |
+| 2 | `GET /admin/appointments/filters` | — | 347（间接） | **规格没点名**，是"管理员要按科室/医生筛"这件事的支撑；理由见下文 |
+| 3 | `GET /admin/appointments/{id}` | 698 | 348 | 唯一带退款三键的一把 |
+| 4 | `GET /admin/nucleic-appointments` | 699 | 351 | 只有 `status` 一个筛选（351 行只说「展示…预约记录」） |
+| 5 | `GET /admin/nucleic-appointments/{id}` | 699 | 352 | 352 行是「查看检测预约详情」，**没有"录入"二字** |
+| 6 | `GET /admin/physical-appointments` | 700 | 355 | 同上，只有 `status` |
+| 7 | `GET /admin/physical-appointments/{id}` | 700 | 356 | 套餐名/价格读时现带（预约表没这两列，T22 同一条） |
+| 8 | `GET /admin/physical-appointments/{id}/report` | 700 | 357 | 「报告详情 — **查看**/录入体检报告」的前一半 |
+| 9 | `POST /admin/physical-appointments/{id}/report` | 700 | 357 | 后一半，见「报告录入」一节 |
+| 10 | `POST /admin/schedules/batch` | 701 | 361 | 「支持批量排班」 |
+| 11 | `POST /admin/schedules/{id}/suspend` | 701 | 362 + 630 | 「临时停诊」；630 行「停诊设置」也在同一行 |
+| 12 | `POST /admin/schedules/{id}/reschedule` | 701 | 362 | 「调班」 |
+
+排班页因此是 7 把（T11 的 GET/POST/PUT/DELETE 四把 + 本卡三把），注册表测试
+`t25EndpointsAreExactlyWhatTheCardNamed` 把 16 条端点逐字符钉住，并额外断言
+`/admin/appointments/**` 下**不存在**以 `/cancel` 结尾的映射——卡片 697–698 行只要列表与详情，
+给管理员开一个单点退号按钮是规格没要的能力。
+
+### 停诊、取消、调班：为什么必须分成三个动作（三张卡的交接史）
+
+这条线在本仓库里留了三处白纸黑字：
+
+1. **卡片 437 行（T11）**：`**⚠️ 易混淆**：排班取消时，已预约的记录需处理（通知患者/自动退号）。`
+   T11 当时选的是**拒绝取消**（新码 2007），并把"自动退号"记给别人。
+2. **WORK_LOG 3855 行（T11 收尾）**：`T13 落地退号后，回来把 ScheduleService.cancel 的 2007 守卫
+   **换成**"同事务把这些预约置 CANCELLED + 生成退款记录"`。
+3. **WORK_LOG 4337 行（T13 收尾）**：T13 没有认领这件事——「我上一轮给自己留的 TODO，
+   但 T13「要做什么」里没有它，而「临时停诊/调班」明写在 T25（卡片 701 行）→ **改记给 T25**，
+   T11 的 2007 保持原样」。
+
+本卡兑现的方式是**不换掉 2007，而是新开一把**：
+
+| 动作 | 语义 | 有活预约时 | 号源 | 退款单 |
+|---|---|---|---|---|
+| `DELETE /admin/schedules/{id}`（T11 的取消） | 撤一个还没人订的班 | **2007 拒绝**，一行不改 | `cancelById` 把 remaining 抬回 total | 不挂 |
+| `POST .../{id}/suspend`（本卡停诊） | 医院主动撤一个**已有人订**的班 | 级联置 CANCELLED | **故意不还**（见下） | 已付的挂 `PENDING` |
+| `POST .../{id}/reschedule`（本卡调班） | 空班挪时间 | **2007 拒绝**，文案指路"先停诊" | 随班走 | 不涉及 |
+
+**为什么取消要还号、停诊不还**：取消的前提是"没人订"，还完就是干净的满位；
+停诊是把一个已经排出去的班整体撤走，`remaining_slots` 加回去只会造出
+"一个 deleted=1 的班还有 20 个空位"的假账——`cancelById` 顺手写的 `remaining=total`
+本来就跟着行走的墓碑，没有任何列表会再读它。这条判断写在 `ScheduleService.suspend` 的注释里，
+HTTP 第 46 步和单测都按"班已软删"取证，不假装号源被归还。
+
+**退款规则只有一份实现**：停诊挂单与患者端退号挂单必须一字不差（只有已付才挂、金额取账上
+`fee_fen`、状态只到 `PENDING`），所以抽了 `RefundTicketService.issueForAppointment`，
+`AppointmentService.cancel` 与 `ScheduleService.suspend` 同调它。
+抽的时候顺手把 `AppointmentService` 里的 `RefundRecordMapper` 依赖和两个常量删了——
+不是清理癖，是**两处各写一遍退款规则**才是债。
+
+### /filters 那把是规格没点名的第三把，为什么仍算必要
+
+`GET /admin/appointments` 要四个筛选参数，前端得能把"科室"和"医生"变成下拉框。
+现成的两把 `GET /user/departments`、`GET /user/doctors`（T10）在 `/user/**` 下，
+`SecurityConfig:46` 是 `hasRole(patient)`——管理员 token 打进去 403。三条路：
+①把患者端点放开（错，等于给后台开患者身份）；②让管理员以患者身份登录一次（更错）；
+③**开一把只回 id + 名字 + 所属科室号的筛选项**（选它）。
+不算越界到 T27「医生管理：CRUD」：这里没有增删改，也不回简介/擅长/职称/头像。
+医生项多带一个 `departmentId` 只为前端在选了科室时就地过滤下拉——这仍是下拉框的形状，不是医生档案。
+
+注册表测试之外另加一把锁：`filterOptionsEndpointIsNotEatenByTheIdPath` 断言
+`/admin/appointments/filters` 命中字面量映射（若被 `/{id}` 吃掉，`"filters"` 转 `Long`
+会抛类型不匹配、兜到 catch-all 变 500），并断言下拉项**键集合恰为** `{id,name,departmentId}`。
+
+### 报告录入：第一个写 report 的通道，以及核酸为什么不开
+
+PRD 357 行原话：`3. **报告详情** — 查看/录入体检报告`。**「录入」两个字只在体检这一节出现**。
+PRD 352 行（核酸）是「预约详情 — 查看检测预约详情」，一个字都没提录入，
+而 T21 的红线是「不做真实检测……产品代码永不写 report 列」。
+同一张 `report` 表，一个开写通道、一个不开——**差别只在规格自己写没写**，
+不是我对"哪一类报告更该由系统出"的判断。
+
+本卡这一把的形状：入参**只有 `result`**（`@NotBlank @Size(max=2000)`）。
+不收 `items`——V1:257 那列没有键名约定，填了就是编结构；不收 `report_no`——服务端
+`SerialType.YJ` 发（T17 建编号时用的就是 YJ，不分报告类型）；不收 `type`——它是
+`physical_appointment` 派生出来的 `PHYSICAL`，不是调用方能写的字段。
+撞唯一性走 5002 `DATA_ALREADY_EXISTS`（"一页一份"，且**第二次一行都不写**，HTTP 第 34 步取证）。
+
+**跨卡闭环**：录入之后患者侧 `GET /user/reports?type=PHYSICAL` 立刻可见——
+这是 T17 留的钩子（当年 PHYSICAL 被两处挡住）和 T22 的承诺（「生产者是 T25」）在这里兑现，
+由单测 `recordedPhysicalReportIsImmediatelyReadableByThePatient` 与 HTTP 第 33 步双向钉住。
+
+**有意没加 `@RequireCap`**：三个能力常量（审批退款 / 修改系统设置 / 管理医生排班）没有一个覆盖
+"出报告"，而新增一个能力值就等于替产品决定"谁能出报告"——角色能力表是 T28 系统设置的范围。
+现在的边界是 `/admin/**` 的四个后台角色 + 按钮只出现在体检详情页 + 每次录入落一条审计。已记 TODO。
+
+### 停诊之后，就诊日期不能消失（浏览器验收抓到的真缺陷）
+
+**症状**：后台挂号详情里「就诊时间」两格变成 `— —`，按就诊日期筛选也把被停那天的预约整批漏掉。
+**HTTP 61 步与 21 例 MockMvc 全绿，没人发现**——因为它们断的是业务码与计数，
+只有渲染出来的那一格会暴露"字段取不到"。
+
+**根因**：就诊日期与时段只存在于 `schedule` 表；`Schedule` 继承 `BaseEntity`，
+`deleted` 上的 `@TableLogic` 让 MyBatis-Plus 给 `selectBatchIds` 自动追加 `deleted = 0`。
+停诊把班软删，于是那个班查不出来，日期与时段一起空。
+**为什么这状态是 T25 才造出来的**：T11 的取消有 2007 守卫，所以在 T11 的世界里
+"已软删的班"名下永远没有预约，读不读得到无所谓。
+
+**修法**：`ScheduleMapper` 开两个**故意不过滤软删**的读口——
+`selectByIdsIncludingDeleted`（按 id 反查名字用）与 `selectIdsByDateRange`（按日期筛预约用），
+后台列表/详情与患者端列表三处改走它们；
+**不去动 `@TableLogic`**：那个注解管的是"这个班还能不能排号、还在不在排班列表里"，
+那些读法全部必须继续过滤，改一处就会漏十处。
+**回归钩子三处**：单测 `j56_suspendedScheduleStillRendersVisitDateAndSlotOnBothSides`
+（含患者侧那条同一根因的时段断言）、HTTP 第 46b/46c 两步、以及后台详情的 UI 复看。
+
+### 管理后台前端：第一次真起页面，立了三条规矩
+
+`admin/src/pages/` 新增 8 个页面 + 3 个测试文件；`App.tsx` 里 4 条 `card="T25"` 占位路由
+换成真页面并补 4 条详情路由（`registration/:id`、`nucleic-acid/:id`、`physical/:id`、
+`physical/:id/report`）。三处形状值得单独记，因为后面三张后台卡会照抄：
+
+1. **`src/api/appointments.ts`**：后端 `default-property-inclusion: non_null` 会把 null 字段
+   **整个键**去掉，所以 TS 类型里那些字段一律写 `?:` 而不是 `| null`——类型如实反映之后，
+   页面里的空值分支不用骗自己"它可能是 null"。停诊/退号的 `reason` 走 query 而非 body
+   （`api.delete` 不支持 params，所以 `reasonQuery()` 自己拼并 `encodeURIComponent`）。
+2. **`src/hooks/useUrlFilters.ts` + `useResource.ts`**：前者把筛选条件读写 URL（附录 B 第 10 条），
+   并且**每次换筛选删掉 `page`**——停在第 4 页改筛选会停在一个不存在的新页码上；
+   后者自带 `cancelled` 标志，防"晚到的响应盖在旧条件上"。
+   错误文案优先取 `ApiError.message`，那就是 `GlobalExceptionHandler` 给的人话原话。
+3. **`src/lib/statusRegistry.ts`**：状态码表从 `StatusBadge` 里搬出来。起因是 lint 的
+   `react-refresh/only-export-components`——筛选下拉的 `<option>` 只能放纯文本、放不进徽标，
+   我一开始在组件文件里 `export function statusLabel`，被规则挡下。
+   结果反而更对：现在全仓库只有一份状态码表，不会出现"下拉写待缴费、徽标写待支付"。
+
+按钮可点性上有一条踩坑：本项目的 `Button` **不支持 `asChild`**（不是 shadcn 那版带 Slot 的实现），
+所以 `<Button asChild><Link/></Button>` 编译不过，而 `<Link><Button/></Link>` 是非法嵌套
+（`a` 里套 `button`）。四处链接一律改成"带按钮类的 `Link`"，类名 `reg-go-detail` /
+`phy-go-report` 等同时是 vitest 与浏览器验收的钩子。
+权限上：`ScheduleManagePage` 读 `useAuth().profile.caps`，没有 `MANAGE_DOCTOR` 就不渲染
+任何写按钮并把原因写在页面上——但**真正的门在 `@RequireCap`**（附录 B 第 6 条），
+HTTP 第 7 步用 doctor token 打 `POST /admin/schedules/batch` 拿到 4001 且**库里零新增**。
+
+### 门禁
+
+`mvn -o clean test` → **`Tests run: 383, Failures: 0, Errors: 0, Skipped: 0` + `BUILD SUCCESS` + `MVN_EXIT=0`**
+（362 → 383，新增 `AdminAppointmentIntegrationTest` 21 例；日志 `E:/qdspace/_mp-driver/t25-mvn-gate2.log`）。
+分布：J55 九例（列表形状/退款键缺席/四把筛选/日期口径/filters 两例/详情退款/不存在 2004）、
+核酸三例、体检与报告四例（含跨卡闭环）、排班五例（批量三例 + 停诊两例 + 调班两例，
+其中显示缺陷那例是修完补的）、越权与能力两例、端点注册表一例。
+
+admin 前端四道：**`tsc --noEmit` 0** / **`eslint --max-warnings 0` 0** /
+**`vitest run` 17 文件 102 例全过**（76 → 102，新增 26 例：
+`RegistrationPages.test.tsx` 7、`BookingPages.test.tsx` 9、`ScheduleManagePage.test.tsx` 10）/
+**`vite build` 成功**（373.05 kB / gzip 115.22 kB）。
+
+### 真 HTTP 验收：**61 步全 PASS**（`t25_http.py` → `t25-http-result.txt`，`EXIT=0`）
+
+第一跑 56 步里 FAIL 2 步，两步都是**我自己脚本的错**（不是代码错）：
+第 49 步给"撤有人的班"铺数据时把 URL 写成 `POST /admin/appointments`（真端点是
+`/user/appointments`），预约没建成 → 取消合法返回 200 → 第 50 步的调班撞上一条被软删的班变 2001。
+另一处：清理脚本里 `payment_record WHERE related_type='APPOINTMENT'` 直接抛错——
+`payment_record`（V1:156-167）**根本没有 `related_id`/`related_type` 两列**，它只有
+`patient_id` + `items`，挂号缴费是靠 `order_no` 等于预约单号关联的（`AppointmentPaymentService:171`）。
+改成按探针就诊人清之后全绿。
+
+| 步段 | 取证 | 实测 |
+|---|---|---|
+| 1–3 | 就绪三查 + 基线 + 三种身份 | `captcha=200 Started>=1 BUILDFAILURE=0`；`appointment=13 report=0`；admin caps 含 `MANAGE_DOCTOR`、doctor caps 为空 |
+| 4–7 | 鉴权三层 | 匿名 401；患者 token 403；doctor 读列表 200；doctor 写排班 **4001 且库里零新增** |
+| 8–10 | J55 列表形状 | 15 行起；行内解析出 `patientName/doctorName/departmentName`；**无 `refund*` 键** |
+| 11–17 | 四把筛选逐个 | `doctorId` 恰 1；`status=CONFIRMED` 零条杂状态；`NOT_A_STATUS` 退回空集；`departmentId` 走 `doctor.department_id` 集合（含探针）；两筛取交集 1；日期口径 = `schedule.date` 且回显同日 |
+| 18–19 | `/filters` | 不被 `/{id}` 吃掉（200/200）；下拉行数 = 库里未软删数；医生项键集合恰 `{id,name,departmentId}` |
+| 20–22 | 退款与详情 | 患者退号 → 后台详情 `refundStatus=PENDING`、`refundNo` 前缀 TK、`refundFen == feeFen`；不存在 id → 2004 |
+| 23–26 | 核酸 | 下单 → 后台列表含该单且姓名解析；**详情无 `report` 键**；`status=COMPLETED` 不含探针 |
+| 27–28 | 体检列表 | `priceFen=28800`（读时现带） |
+| 29–36 | 报告四步 | 未录入只回 `{appointmentId}`；空结论 HTTP 400 + code 400；录入 → `reportId` + `YJ` 前缀；库里 `type=PHYSICAL`、`HEX(result)` 与脚本自 encode **逐字节相等**、`items` 仍 NULL、挂对就诊人；患者侧 `/user/reports?type=PHYSICAL` **立刻含该报告号**；重复录入 5002 且表行数不变；审计 `CREATE_PHYSICAL_REPORT` 1 行 `ADMIN/report` |
+| 37–41 | 排班增与批量 | 同班再建 2002；时段 `NOPE` → 400 且零行；批量 3 天 × 2 段 = 6 与库内新增逐一对账；重放同区间 → `created=0 skipped=4` 且明细回显；区间倒置 400 且零行 |
+| 42–48 | 停诊主戏 | 靶班两条预约（已付 + 待付）→ 回包 `2/1/5000`；库里两条 CANCELLED、退款单恰新增 1 行 `PENDING`、待付那张**零张**、班 `deleted=1`；审计 `SUSPEND_SCHEDULE` 的 `reason` 列含中文原因；再停一次 → 2001 且退款单不再增长 |
+| 46b–46c | **显示缺陷的回归钩子** | 班软删后按就诊日期仍筛得到那两条；详情仍带 `appointmentDate=2030-…` + `timeSlot=MORNING` + `refundStatus=PENDING` |
+| 49–53 | 取消与调班 | 有活预约的班走 T11 老取消 → **2007 且班还活着**；调班同样 2007 且文案含「停诊」；撞别人已占组合 → 2002；空班调班 → 库里日期时段真的改了；本段审计计数 |
+| 54–56 | 卡片边界三把**不存在**的端点 | `POST /admin/appointments/{id}/cancel`、`GET /admin/refunds`、`PUT .../report` 全部非 200 |
+| 57–58 | 自净 | 十张表回到基线；十一类探针痕迹（含审计水位之上）全 0 |
+
+### 浏览器 UI 验收：**14 步全过**（browser-use MCP 驱动 `http://localhost:3000`，截图 9 张在 `_mp-driver/shots/`）
+
+**这一轮没有可重放的脚本**（小程序那几轮有 `t2x_ui.sh`，后台这轮是 MCP 逐步驱动），
+所以下表把每步读到的 DOM 值原样抄下来，以便复核。登录页本身属 T06（四角色已验收过），
+这轮为绕开验证码用 API 签发的 token 注入 `localStorage`（`hospital_token` + `hospital_auth`），
+每步证据取自 `evaluate_script` 的 DOM 读数与网络面板。
+
+| 步 | 取证 | 实测 |
+|---|---|---|
+| 1 | 预约挂号列表首屏 | 15 行、9 列表头齐全；首行 `YY20260930-0297 / 验收乙 / 消化内科 / T25UI 探针医生 / 2030-09-29 上午 / ¥50.00 / 待缴费 / 详情`；三个下拉选项数 4/7/5（=seed+全部、6 医生+全部、4 状态+全部） |
+| 2–3 | 筛选进 URL、回第 1 页 | 选「已确认」→ `?status=CONFIRMED`，5 行且状态集合只有 `已确认`；点「清除筛选」→ `search=''`、15 行、下拉回空 |
+| 4 | 挂号详情（有退款单） | 两栏卡片；`状态=已取消`、`退款单号=TK20260930-0061`、`退款金额=¥50.00`、`退款状态=待处理` |
+| 5 | 核酸列表 + 空态 | `?status=COMPLETED&page=2` 直接进 URL → 空态「没有符合筛选条件的核酸预约」+「清除筛选条件」按钮，点它回 `search=''` 且行回来（URL→视图双向） |
+| 6 | 核酸详情 | 两栏卡片，报告栏是那句话：`核酸报告由检测机构出具，本系统不做真实检测、也不代为出结论，因此这一栏没有内容可展示` |
+| 7–8 | 体检详情 → 报告页未录入态 | 详情两栏含 `套餐费用 ¥288.00（预约时不扣费，见 T22 定案）`；报告页给表单、`0/2000` 计数、**提交键 disabled** |
+| 9 | 录入报告 | 填 19 字 → 计数 `19/2000`、键启用 → 提交 → 卡片翻成「已录入报告」，`报告号：YJ20260930-0019`、出具时间、结论原样、`textbox` 消失 |
+| 10 | 排班列表 + 四个动作 | `?doctorId=262` 出 3 行；每行 `调号源/调班/临时停诊/取消排班` 四把 |
+| 11 | 新建排班 | 弹窗填 医生/日期/时段/号源 → 提交 → 弹窗关、表变 4 行、新行 `2030-10-25 上午 15 15`、无 alert |
+| 12 | 批量排班 | 区间 × 上午+下午 → 面板回包 `新建 5 个班，跳过 1 个已存在的组合。跳过明细：2030-10-25/MORNING`，表变 9 行 |
+| 13 | 调号源 / 取消（空班）/ 取消（有人） | 号源 20 → 25（行内两格同步）；空班取消：原因空着时确认键 `disabled=true`，填了就消失、行从表里掉出去；有人班取消：页面 alert 显示后端原话 `该排班已有预约，请先退号后再取消` |
+| 14 | 停诊 + doctor 角色只读 | 停诊回包横幅：`停诊完成：这个班原有 2 条预约，其中 1 张需要退款， 合计 ¥50.00。退款单停在「待审核」，由费用管理那页审批。`；换 doctor 会话（caps 空）→ 横幅「当前角色没有『管理医生排班』能力…隐藏按钮只是省得你白点」，`新建排班/批量排班/临时停诊` 全部不存在 |
+
+**两点如实说明**：① 第 14 步那屏表格里没出现「只读」格，因为切会话前我的操作已经把
+探针班全部取消/停诊掉了，列表是空的——"没有写按钮 + 说明横幅"这两条成立，
+「只读」那一格由 vitest 的 `ScheduleManagePage` 用例覆盖。
+② 第 4 步之后停诊详情页一度显示 `就诊时间=— —`，那是上面「停诊之后，就诊日期不能消失」
+一节记的真缺陷，修复后重验。
+③ 控制台零 error（只有 vite 与 React Router 的 future-flag 警告），网络面板后台读端点全 200。
+
+### 附录 B 逐条
+
+| # | 检查项 | 本卡判定 |
+|---|---|---|
+| 1 | 金额有没有 FLOAT/DOUBLE | ✅ 无新表新列；`refundFen`/`feeFen`/`priceFen`/`totalSlots` 全 `Long`/`Integer` |
+| 2 | 护士视角新接口会不会吐金额 | ✅ 本卡金额一律直出（后台四个角色都要看账），裁剪规则在患者端；nurse 打 `/admin/appointments` 是 200 与 admin 同一形状——这是后台，不是裁剪位 |
+| 3 | 新写操作有没有写 audit_log？同事务吗 | ✅ 五把写端点全中：`CREATE_SCHEDULE_BATCH`/`SUSPEND_SCHEDULE`/`RESCHEDULE_SCHEDULE`/`CREATE_PHYSICAL_REPORT` + 停诊级联产生的预约取消；HTTP 第 36/47/53 步逐个取到行，`operator_type=ADMIN` |
+| 4 | 跨表写入是否包在一个 `@Transactional`？外部调用放 afterCommit？ | ✅ `suspend` 一个事务里做完"取消预约 + 挂退款单 + 软删班 + 审计"；本卡零外部调用（无支付无短信），故无 afterCommit |
+| 5 | 指标口径有没有在别处重算 | ✅ N/A：本卡无统计口径（数据看板在 T28） |
+| 6 | 权限判断是否只写在 UI | ✅ 写操作 `@RequireCap(MANAGE_DOCTOR)`（HTTP 第 7 步 doctor 4001 且零新增）；读走 `hasAnyRole`；前端藏按钮只是省事，不是门 |
+| 7 | 自动派发的任务是否幂等 | ✅ N/A：本卡无任务派发（退款审核任务流在 T26/T28） |
+| 8 | 小程序端新接口是否强制注入 userId 归属校验 | ✅ 本卡小程序端零改动；患者侧既有端点未动 |
+| 9 | 金额 `<Money>`、列表 `<DataTable>`、状态 `<StatusBadge>` | ✅ 首次全部真用：四张列表页（挂号/核酸/体检/排班）用 `DataTable`，六处金额位用 `Money`，状态位一律 `StatusBadge`（下拉的纯文本走同源的 `statusLabel`） |
+| 10 | 列表筛选/搜索/分页是否进 URL | ✅ 本卡是这条规矩在后台**落地**的一次：`useUrlFilters` 读写 searchParams，`DataTable` 自己管 `?page=`；换筛选删 `page`。UI 第 2–3、5 步是双向证据 |
+| 11 | 有没有多装 T01 清单外的三方库 | ✅ 零安装（`package.json` 一行未改；下拉用原生 `<select>`，没引 radix select） |
+| 12 | 有没有实现附录 A 中「首版不做」的东西 | ✅ 零实现。停诊**不发通知**（附录 A 第 787 行「消息推送」二期）——`suspend` 注释里显式留 TODO；也没有做真实地图/对账/票据 |
+| 13 | 本卡 J 编号是否逐条真实通过 | ✅ J55 九例 + J56 五例真跑（`Tests run: 21, Failures: 0`），且真 HTTP 再证一遍；不是"应该通过" |
+| 14 | 身份证/手机号是否加密存储 | ✅ N/A：本卡零新列零新加密面；后台列表**不回** `idCard`/`phone`，只回就诊卡号（与 T08 对 `cardNo` 的处理一致） |
+
+### 本卡有意未做的事
+
+| 未做 | 理由 |
+|---|---|
+| 后台单点退号 / 退款审批按钮 | 卡片 697–698 行只有"列表"和"详情"；退款审批是 T26 费用管理（PRD 630 行把「退款审核」写在费用那一行）。注册表测试把 `/cancel` 钉成不存在 |
+| 核酸报告录入 | PRD 352 行没写"录入"，T21 红线禁写 report（同一张表，体检能写是因为 357 行写了） |
+| 报告编辑 / items 结构 / 删除 | PRD 357 行只有"查看/录入"；`items` 无键名约定，不收不摆表 |
+| 停诊通知患者 | 附录 A 第 787 行「消息推送/企微公众号」二期；`suspend` 注释留 TODO |
+| 停诊后自动迁移已订患者 | 卡片 701 行只说"调班"；迁移要定号源够不够、单号换不换、原时段腾不腾——每条都是替产品立法。所以调班撞有人就 2007，文案指路"先停诊" |
+| 给"录入报告"新增一个 Capability | 等于替产品决定谁能出报告；角色能力表属 T28（已记 TODO） |
+| 分页（服务端） | 与 T17–T24 一致，全部列表端点不分页，前端 `DataTable` 的 `?page=` 撑着；归入 T28 前统一的跨卡 TODO |
+| 就诊人管理页 / 医生管理页 / 科室管理页 | `App.tsx` 里它们标的是 T27（`/hospital/*`），本卡不动 |
+| 导出报表 | 卡片与 PRD §4.3 都没写；「报表与导出」这条 TODO 早在 T04 就记给 T25–T28，本卡不提前做 |
+
+### 跨卡 TODO / 观察
+
+- **T26 落地时会感谢 `RefundTicketService`**：退款单的挂法现在只有一份，T26 的退款审核
+  只需把 `PENDING` 推到 `APPROVED/REJECTED`，不必再对一遍"什么条件下该挂单"。
+- **`payment_record` 没有 related 列**（只有 `patient_id` + `items` + `order_no`），
+  挂号缴费靠 `order_no` 等于预约单号关联。T26 做"按预约查缴费"时要么沿这条隐式关联，
+  要么加迁移补列——现在不动，但别再踩一次（本卡清理脚本第一次就栽在这儿）。
+- **未映射路径现在仍是 500**（跨卡 TODO 沿用）：本卡第 54–56 步"证明端点不存在"用的就是
+  "非 200"，而不是干净的 404。这条迟早要修，否则每次"确认没开某把"都得拿 500 当证据。
+- **审计 `operator_id` 是多态列**（T12 的债）：本卡管理端页面还没做"操作日志"视图，
+  所以那条"按 id 关联人名前先看 `operator_type`"的规矩暂未兑现；T28 若做审计页必须兑现。
+- **探针数据与集成测试的清理窗口会撞**：本卡测试的 `@AfterEach` 删
+  `schedule WHERE date >= CURDATE + 4 YEAR`，而我给浏览器轮准备的探针正好也在 +4 年窗口里
+  ——中途跑一次 mvn 就会把 UI 那轮的靶数据扫掉。以后做 UI 轮要么用别的年份，要么别在轮中跑门禁。
+- **停诊没有生产者写 `announcement`**：T24 那把 `GET /user/stop-notices` 至今仍然没有写入口
+  （本卡停诊只写 `schedule.deleted` 与审计）。"医生停诊/调班通知"这句话的**发布侧**仍然没人认领，
+  继续挂在跨卡观察里，等 T27/T28 或用户拍板。
+- **`report` 与来源单据没有关联列**：体检报告现在靠 `patient_id` + `type=PHYSICAL` 反查，
+  同一就诊人第二份体检就分不出是谁的。T28 之前若加列要一次改三处（T17 读侧、T22 页、本卡写侧）。
+
+### 改动清单
+
+后端新增 **17 个文件**（3 个 controller + 10 个 DTO + 3 个 service + 1 个测试类）：
+`AdminAppointmentController`、`AdminNucleicAppointmentController`、`AdminPhysicalAppointmentController`、
+`AdminAppointmentQueryService`、`AdminBookingQueryService`、`RefundTicketService`、
+`AdminAppointmentResponse`/`AdminNucleicResponse`/`AdminPhysicalResponse`/`AdminPhysicalReportRequest`/
+`AdminPhysicalReportResponse`/`AdminFilterOptionsResponse`/`AdminScheduleBatchResponse`/
+`AdminScheduleSuspendResponse`/`ScheduleBatchCreateRequest`/`ScheduleRescheduleRequest`、
+`AdminAppointmentIntegrationTest`（21 例）。
+后端改动 5 个：`ScheduleService`（批量/停诊/调班三把 + 退款依赖换成 `RefundTicketService`）、
+`ScheduleController`（三把 + `DuplicateKeyException` 翻译）、`AppointmentService`（退号改调
+`RefundTicketService`，删掉自带的 `RefundRecordMapper` 依赖）、
+`ScheduleMapper`（两个不过滤软删的读口，显示缺陷的修法）、
+`AppointmentQueryService`（患者端列表时段同样穿软删）。
+
+admin 前端新增 **15 个文件**：`src/api/appointments.ts`、`src/hooks/useUrlFilters.ts`、
+`src/hooks/useResource.ts`、`src/lib/statusRegistry.ts`、8 个页面、3 个测试文件。
+改动 3 个：`App.tsx`（4 条占位 → 8 条真路由）、`lib/format.ts`（`timeSlotLabel`）、
+`StatusBadge.tsx`（码表搬到 lib，组件只留渲染）。
+`package.json`、`SecurityConfig`、`seed.sql`、`app.json` 与 `miniprogram/` 一行未动。
+
+下一张：**T26 管理后台 · 费用管理**（卡片 713 行起）。六页逐字是
+「门诊消费记录/详情、门诊充值记录/详情、住院充值记录/详情、住院消费记录/详情、病案配送记录/详情、
+**退款记录/详情：支持审核通过/拒绝**」，测试场景 J57 消费记录 + **J58 退款审核 → 状态更新**。
+这条正好接住本卡的下游：T13 与 T25 挂出来的退款单全部停在 `PENDING`（本卡日志里那句
+"由费用管理那页审批"就是写给它兑现的），`APPROVE_REFUND` 这个能力目前只在 T04 的靶接口上挂过。
