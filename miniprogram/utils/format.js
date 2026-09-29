@@ -183,6 +183,58 @@ function queueStatusIcon(status) {
   return QUEUE_STATUS_ICONS[status] || '⏳'
 }
 
+// 报告类型码 → 中文标签。码值出处 V1__init.sql:206「LAB/IMAGING/PHYSICAL」，
+// 中文名出处 PRD 161 行「选择检查报告类型（检验报告/检查报告等）」。
+// PHYSICAL（体检报告）在这里也给了标签，但 T17 的页面与接口都拿不到它 ——
+// 体检报告查询属 PRD §3.4.2、承接卡是 T22；这里备好只是为了 T22 不必再造一份映射。
+const REPORT_TYPE_LABELS = {
+  LAB: '检验报告',
+  IMAGING: '检查报告',
+  PHYSICAL: '体检报告',
+}
+
+function reportTypeLabel(type) {
+  return REPORT_TYPE_LABELS[type] || type || '—'
+}
+
+// T17 卡片 548 行「选择报告类型」这一页要列的两类。
+// 只有两个，且规格（PRD 161 行）把它们写死成词而不是数据，所以这里是一个常量而不是接口。
+const REPORT_QUERY_TYPES = [
+  { type: 'LAB', label: '检验报告', icon: '🧪', desc: '抽血、尿检等化验结果' },
+  { type: 'IMAGING', label: '检查报告', icon: '🩻', desc: '超声、CT、X 光等影像结论' },
+]
+
+/**
+ * 检查项目（report.items）的兜底渲染。
+ *
+ * <p><strong>这一份兜底是必需的，因为这一列的形状没有任何规格出处</strong>：
+ * V1:207 只给了「检查项目」四个字，seed 零行可抄，后端也刻意原样透传不解释
+ * （理由见 ReportDetailResponse 的类注释）。所以前端不能假设它是数组还是对象、
+ * 里面有没有 name 键 —— 一旦假设了，真实生产者（HIS）给出别的形状时这一栏就白屏。
+ *
+ * <p>规则只做"怎么都能显示出来"，不做"这是什么意思"：
+ * 字符串数组直接顿号连接；对象优先取 name（这是中文项目名最常见的键），
+ * 取不到就把这个对象自己序列化出来；非数组一律转成字符串。
+ * 两条 REPORT 页面都用它，避免出现第二种兜底写法。
+ */
+function reportItemsText(items) {
+  if (items === null || items === undefined || items === '') {
+    return ''
+  }
+  if (!Array.isArray(items)) {
+    return typeof items === 'object' ? JSON.stringify(items) : String(items)
+  }
+  return items.map((row) => {
+    if (row === null || row === undefined) {
+      return '—'
+    }
+    if (typeof row === 'object') {
+      return row.name !== undefined ? String(row.name) : JSON.stringify(row)
+    }
+    return String(row)
+  }).join('、')
+}
+
 module.exports = {
   formatMoney,
   formatDate,
@@ -209,4 +261,8 @@ module.exports = {
   queueStatusTone,
   QUEUE_STATUS_ICONS,
   queueStatusIcon,
+  REPORT_TYPE_LABELS,
+  reportTypeLabel,
+  REPORT_QUERY_TYPES,
+  reportItemsText,
 }

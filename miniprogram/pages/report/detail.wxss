@@ -1,0 +1,76 @@
+.rdd-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 20rpx;
+  border-bottom: 2rpx solid #f1f5f9;
+}
+
+.rdd-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.rdd-patient {
+  font-size: 24rpx;
+  color: #64748b;
+}
+
+.rdd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 20rpx;
+  font-size: 26rpx;
+}
+
+.rdd-label {
+  font-size: 24rpx;
+  color: #64748b;
+}
+
+.rdd-no {
+  font-family: Menlo, Consolas, monospace;
+  color: #374151;
+}
+
+.rdd-block {
+  display: flex;
+  flex-direction: column;
+  margin-top: 28rpx;
+  padding-top: 20rpx;
+  border-top: 2rpx solid #f1f5f9;
+}
+
+.rdd-items {
+  margin-top: 10rpx;
+  font-size: 26rpx;
+  line-height: 1.6;
+  color: #1f2937;
+}
+
+.rdd-result {
+  margin-top: 10rpx;
+  font-size: 28rpx;
+  line-height: 1.7;
+  color: #1f2937;
+  white-space: pre-wrap;
+}
+
+.rdd-none {
+  margin-top: 10rpx;
+  font-size: 24rpx;
+}
+
+.rdd-note {
+  margin-top: 24rpx;
+  font-size: 22rpx;
+  line-height: 1.6;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.rdd-back-btn {
+  margin-top: 40rpx;
+}

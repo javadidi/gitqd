@@ -26,7 +26,10 @@
     "pages/payment/pay",
     "pages/payment/records",
     "pages/payment/detail",
-    "pages/queue/queue"
+    "pages/queue/queue",
+    "pages/report/type",
+    "pages/report/list",
+    "pages/report/detail"
   ],
   "window": {
     "navigationBarBackgroundColor": "#ffffff",

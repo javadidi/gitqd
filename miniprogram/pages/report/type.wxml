@@ -1,0 +1,27 @@
+<view class="page-report-type">
+  <view class="container">
+    <view class="card rt-head">
+      <text class="rt-title">查看报告</text>
+      <text class="text-muted rt-sub">请先选择报告类型</text>
+    </view>
+
+    <view
+      wx:for="{{types}}"
+      wx:key="type"
+      class="card rt-option rt-opt-{{item.type}}"
+      data-type="{{item.type}}"
+      bindtap="onPick"
+    >
+      <text class="rt-icon">{{item.icon}}</text>
+      <view class="rt-body">
+        <text class="rt-label">{{item.label}}</text>
+        <text class="text-muted rt-desc">{{item.desc}}</text>
+      </view>
+      <text class="rt-arrow">›</text>
+    </view>
+
+    <view class="text-muted rt-tip">
+      报告由医院相关科室出具；还没出结果时，下一层列表会是空的。
+    </view>
+  </view>
+</view>

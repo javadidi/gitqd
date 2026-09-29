@@ -5041,3 +5041,215 @@ T14 已经证明"不继承 `BaseEntity` 的流水实体若漏这条注解，MyBa
 - **T16 收口**：后端 **227 例全绿**（214 + 13）、真 HTTP **37/37 PASS**、UI **12 步全过**、库里六项计数逐项回基线、种子排班 `schedule.id=22` 号源已还原（19 → 20）。
 - `SecurityConfig`、`pom.xml`、两个 `package.json` 一行未动；零迁移、零新列。
 - P3（T14–T16）到此**三张卡全部收口**。下一个推送点仍是 🚩 **M2 = T28**，本卡只提交不推送。
+
+## T17 · 报告查询（2026-09-29）
+
+### 任务卡原文 → 实现对照（545–558 行，**逐字**引用）
+
+| 行号 | 卡片原文 | 落点 |
+|---|---|---|
+| 548 | `- 选择报告类型：检验报告/检查报告。` | `pages/report/type.*`（独立一页，见下面范围判定）+ `utils/format.js` 的 `REPORT_QUERY_TYPES` 常量 |
+| 549 | `- 报告列表：展示报告列表。` | `pages/report/list.*` + `GET /api/user/reports?type=LAB\|IMAGING` |
+| 550 | `- 报告详情：查看报告详细内容。` | `pages/report/detail.*` + `GET /api/user/reports/{id}` |
+| 552 | `**红线**：不做病历查询（T18）。` | 全卡零碰 `medical_record`（只在测试的基线快照里数它一行，证明本卡一条没写）；`MedicalRecordMapper` 一行未动 |
+| 555 | `- J39 报告列表 → 数据正确。` | MockMvc 8 例 + 真 HTTP 第 2 组（8 步） |
+| 556 | `- J40 报告详情 → 内容正确。` | MockMvc 4 例 + 真 HTTP 第 3 组（6 步）+ UI 第 6/7 步 |
+| 558 | `**DoD**：报告查询通。` | 三层证据：**242 例**门禁 / 真 HTTP **44/44** / UI **12 步全过**（含两张我亲自看图确认的截图） |
+
+### 范围判定：三页两接口（五路来源逐条核对）
+
+| 来源 | 行号 | 原文 | 判定 |
+|---|---|---|---|
+| 卡片「要做什么」 | 548–550 | 三条：选择报告类型 / 报告列表 / 报告详情 | 三条都是**名词短语 + 冒号后一句说明**，与 T15 的 511/512（同为"列表 + 确认"却是一页）不同形 |
+| 卡片 DoD | 558 | `**DoD**：报告查询通。` | 只要求"通"，不扩页 |
+| PRD §3.4.1 | 161–163 | `1. **选择报告类型** — 选择检查报告类型（检验报告/检查报告等）`<br>`2. **报告查询** — 展示报告列表`<br>`3. **报告详情** — 查看报告详细内容` | 三步是**流程**，本身不足以定页面数 |
+| PRD §6.1 页面清单 | 518 | `\| 报告查询 \| 选择报告类型、报告查询、报告详情、体检报告查询 \|` | **决定性证据**：这一格把「选择报告类型」单列成一个页面名（同表其他格如 513 行「候诊查询」只有一页时确实只写一个词），所以是 **3 页**，不是"列表页顶部两个 tab" |
+| PRD §9.1 接口概览 | 613 | `\| 报告查询 \| 报告列表、报告详情 \|` | **两个端点**，没有"报告类型"接口（两类是 PRD 161 行写死的词，不是数据） |
+| PRD §10 数据字典 | 589 | `\| 报告 \| 报告ID、就诊人ID、类型、检查项目、结果、时间 \|` | 详情六个字段就是这一行；列表取其中四个（见判断④） |
+
+**第四格「体检报告查询」不在本卡**：它属 PRD §3.4.2（165–169 行），承接卡是 **T22**（卡片 642 行「体检报告：查看体检报告」/ 648 行 J50）。这条边界落到代码里就是 `ReportType.isQueryable` 只放 LAB/IMAGING（判断③）。
+
+### 结构性事实：`report` 和 `queue_status` 同构，**首版没有生产者**
+
+三条独立证据（写进 `ReportService` 类注释）：
+
+1. `seed.sql` 里 `insert into report` **零匹配**（真 HTTP 第 `0` 步实测 `report=0`）；
+2. 28 张卡里没有任何一张写这张表 —— 卡片提到"报告"的四处分别是 T17 自己（545–558）、T21 核酸报告（622/628 行）、T22 体检报告（642/648 行）、T25 后台报告详情占位（700 行），**没有一处是"录入检验/检查报告"**；
+3. PRD §4 后台章节、§6.2 后台页面清单里都没有报告录入页。
+
+**但"报告由院内系统推入"这句话不是规格内容，是我的推断**：全仓 grep 过 PRD，`LIS`/`PACS`/`HIS`
+一个都没有（只有 486 行提过一次「对接微信支付安全接口」）；PRD 662 行那句
+「候诊叫号 | 医院排队叫号系统」讲的是**队列**，不能借来当报告的出处。
+所以这条只能作为设计背景陈述，代码注释里也已改成明确标注的推断（第一版我把它写成了事实，自查后改正）。
+
+所以：**本卡一律只读**；验收要取证只能裸插探针行，并标成「人工取证探针」。反面也钉住一条：PRD 499 行「报告数据需长期保存（≥ 5年）」→ 本卡不删不改，测试删的只有自己的探针行。
+
+### 八个实现判断
+
+| # | 判断 | 出处 / 理由 |
+|---|---|---|
+| ① | **`items` 原样透传，后端不解释形状** | V1:207 只有 `` `items` JSON DEFAULT NULL COMMENT '检查项目' `` 一句，**没有键名约定、没有 CHECK、seed 零行可抄**。T15 的 `payment_record.items` 能绑强类型是因为 `seed.sql:192` 摆着真实形状；这里没有那个证据。自造 `{name, value}` 等于给一张没有生产者的表编契约 |
+| ② | 但仍在**后端**解析成 `JsonNode`，不让前端 `JSON.parse` | 透传的是"结构"，不是"文本"——T15 定下的「明细由后端解析、前端不碰 JSON 文本」这条不破 |
+| ③ | 类型白名单 `LAB/IMAGING`，**列表与详情两处都挡** | 只筛列表等于留一扇门：`/user/reports/{id}` 照样能把体检报告读出来。PHYSICAL 归 T22；越界读回 5001 而不是 403（不确认存在性） |
+| ④ | 列表五个字段、详情七个 | 全部可追到 PRD 589 行那一行数据字典；列表**不放** `items`/`result`（与 T15「记录列表不带 items」同一条纪律，且 `result` 是 TEXT，一屏铺开没法看）。`reportNo` 属**我的选择**，依据是 V1:204 有这列 + V1:214 建了索引，不是规格写了要显示 |
+| ⑤ | `type` **必填**，且缺参/未知值都回业务码 400 | 卡片 548 行与 PRD 161 行把"选择类型"定为第一步，§6.1 518 行还把它单列成页 → 不存在"返回全部类型"这种形态。未知值回 400 而不是空列表：空列表会被患者读成「你没有这类报告」（T11 的非法 timeSlot 同形） |
+| ⑥ | `@RequestParam(required = false)` + 服务层判空，**不用 Spring 的必填参数** | `GlobalExceptionHandler` 只映射 `BizException`/`MethodArgumentNotValid`/`Bind` 三类，`MissingServletRequestParameterException` 会落到兜底 `Exception` → **HTTP 500**。真 HTTP 第 `5` 步实测 `[200, 400]` 钉住这个决定 |
+| ⑦ | 归属跳一次：`report.patient_id → patient.user_id` | `report` 没有 `user_id`（V1:202–215）。列表 `patient_id IN (我的就诊人)` 收口；详情双条件，越权/不存在/软删/PHYSICAL 四路同为 5001 |
+| ⑧ | 列表按 `report_time` **倒序**（与 T16 候诊列表的升序刻意相反） | 那边是"下一个该我了吗"，这边是翻历史（T13 预约记录同口径）。`report_time` 可空（V1:209），MySQL 的 `DESC` 会把 NULL 排最后，正好是"没出时间的排最后"，不需要特判 |
+
+另外两点跨卡事实：
+
+- **`SecurityConfig` 一行没改**：两个端点在 `/user/**` 下，天然继承 T07 的 `hasRole("patient")`。真 HTTP `9/9b/9c/9d` 实测医生 403+4001、匿名 401。
+- **本卡对既有后端文件零改动**：`Report` 实体与 `ReportMapper` 是 T01/T02 建的，`Report extends BaseEntity` 已带 `@TableId(AUTO)` 与 `@TableLogic` → T14 那条"流水表必须 AUTO"的跨卡缺陷在这里**天然不成立**（这一点也单独测了一例，见 `reportIdStaysInsideJsSafeInteger`）。`git diff --stat` 里后端只有新增文件，没有一行修改。
+
+### 门禁证据：`mvn -o clean test` 全绿 **242 例**（227 + 15）
+
+```
+[INFO] Tests run: 15, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.407 s -- in com.hospital.service.ReportIntegrationTest
+[INFO] Tests run: 242, Failures: 0, Errors: 0, Skipped: 0
+[INFO] BUILD SUCCESS
+```
+
+24 个测试类分项计数（逐条抄自 `t17-mvn4.log`，合计 242）：
+
+| 类 | 例 | 类 | 例 | 类 | 例 |
+|---|---|---|---|---|---|
+| FlywayMigrationTest | 1 | AuditFieldFillTest | 3 | AuditLogTest | 3 |
+| SeedCheckTest | 4 | SeedConstraintTest | 4 | TaskKernelTest | 7 |
+| AuthIntegrationTest | 7 | MoneyMaskingTest | 7 | service.CaptchaServiceTest | 5 |
+| service.CaptchaIntegrationTest | 8 | service.PermissionServiceTest | 9 | service.UserAuthIntegrationTest | 9 |
+| service.SerialNumberServiceTest | 3 | service.AppointmentPayFailureTest | 2 | service.PatientIntegrationTest | 17 |
+| service.CatalogIntegrationTest | 19 | service.InpatientIntegrationTest | 11 | service.ScheduleIntegrationTest | 29 |
+| service.AppointmentIntegrationTest | 27 | service.AppointmentManageIntegrationTest | 10 | service.RechargeIntegrationTest | 13 |
+| service.PaymentIntegrationTest | 16 | service.QueueIntegrationTest | 13 | **service.ReportIntegrationTest（本卡新增）** | **15** |
+
+`ReportIntegrationTest` 十五个方法：
+
+| # | 方法 | 钉住什么 |
+|---|---|---|
+| 1 | `j39_labListReturnsOnlyMyLabReportsNewestFirst` | 类型是真筛选 + 倒序 + 就诊人/编号/类型都对 |
+| 2 | `j39_imagingIsASeparateList` | 两个类型各一份清单 |
+| 3 | `j39_listRowShapeIsExactlyFiveFields` | 键白名单（`items`/`result`/`patientId` 都不许出现） |
+| 4 | `j39_missingTypeIsBusinessCode400_notHttp500` | 判断⑥：缺参不能落到兜底 500 |
+| 5 | `j39_unknownTypeIsRejected` | 未知码值 400，不是空列表 |
+| 6 | `j39_physicalReportsAreNotReadableByThisCard` | PHYSICAL 列表 400 + 详情 5001（T22 边界） |
+| 7 | `j39_softDeletedReportIsInvisibleEverywhere` | `@TableLogic` 让软删行在读路径上彻底不存在 |
+| 8 | `j39_anotherPatientsListCannotSeeMineAndGuessingIdsGives5001` | 越权与不存在同码，不泄露存在性 |
+| 9 | `j40_detailCarriesItemsAndResultVerbatim` | 结果原文 + 字符串数组原样透传 |
+| 10 | `j40_itemsArePassedThroughUninterpreted_evenWithKeysWeNeverHeardOf` | **判断①的机械证明**：插 `{"name":…,"hounsfield":42,"impression":[…]}` 这种后端从没听过的键，一个不落地回来 |
+| 11 | `j40_absentItemsAndResultBecomeAbsentKeys` | Jackson NON_NULL：三列皆可空时键整个消失，前端必须 `|| '—'` |
+| 12 | `j40_detailOfNonexistentReportIsSameCodeAsNotMine` | 5001 同码 |
+| 13 | `reportIdStaysInsideJsSafeInteger` | T14 跨卡闸门，这次落在 `report` 上 |
+| 14 | `staffAndAnonymousCannotReachReportEndpoints` | 角色隔离回归 |
+| 15 | `readsWriteNothingIntoTheDatabase` | 内容指纹 + 行数 + 审计三件套，机械证明只读 |
+
+**自净纪律**：`@AfterEach` 按主键删探针报告、按 id 删就诊人与用户，再比对六项计数（`report/medical_record/patient/user/appointment/audit_log`）回到基线。
+
+### 真 HTTP 验收：**44 步全 PASS**（`t17_http.py` → `t17-http-result.txt`，`PY_EXIT=0`）
+
+基线 = 收尾：`{"report": 0, "medical_record": 0, "patient": 10, "user": 10, "audit_log": 35}`；探针 `patient=1895/1896`、六条报告 id 76–81（`2b` 读到的倒序就是 `[81, 80]`）。
+
+> **`audit_log` 为什么这一轮是 35 而 UI 那一轮是 34**：这张表有一个已知的"移动基线"——每跑一次 `mvn test`，`AuditLogTest` 之类的用例会留下一条它自己没删的残留行（T05 就记过：1 条 → 3 条）。本卡在 UI 验收之后又为了两处注释更正复跑了一次全量门禁，所以基线自己 +1。**这恰恰证明"计数断言必须按 action + target_type + target_id 过滤，绝不能数 `COUNT(*)`**（[[medical-appointment-project-overview]] 里那条规矩的又一次现形）；本卡的 `8c` 用的是"跑前十次读之前采一次、读完再采一次"的**同轮自比**，所以基线怎么漂都不影响它证明的东西。
+
+| 组 | 步数 | 覆盖 |
+|---|---|---|
+| 0 前置 | 5 | `0` 实测 `report` 真的是 0 行；两个账号真登录；两个探针就诊人（中文名经 HTTP 走 T08 加密） |
+| 1 造数据 | 1 | 裸插六条：LAB×2（不同时间）+ IMAGING×2（一条常规、一条"怪形状"）+ PHYSICAL×1 + 软删×1 |
+| 2 J39 列表 | 8 | 命中两条、倒序、就诊人名、类型只回码、编号原样、**五字段白名单**、IMAGING 另算、LAB 不串味 |
+| 3 J40 详情 | 6 | 业务成功、结果原文、字符串数组透传、七字段白名单、**怪形状键全回来**、id 在 JS 安全整数内 |
+| 4 T22 边界 | 3 | `type=PHYSICAL` → 400；PHYSICAL 详情 → 5001；PHYSICAL 不混进 LAB 列表 |
+| 5 参数边界 | 3 | 缺 type → `[200, 400]`（不是 500）；未知码值 → 400；不存在的 id → 5001 |
+| 6 越权 | 3 | 他人列表为空；猜真实 id 也 5001；反向拿对方 `patient_id` 当报告 id 同样 5001 |
+| 7 软删 | 2 | 不进列表、详情 5001 |
+| 8 只读证明 | 3 | 内容指纹一字不变、`report` 计数不变、`audit_log` 零新增（同轮自比 35→35） |
+| 9 角色 | 4 | 医生 403+4001（列表与详情各一次）、匿名 401（列表与详情各一次） |
+| 10 编码 | 2 | 就诊人名与报告结果**整句**入库字节 = Python 端同一字面量的 UTF-8 字节（`报告甲`→`E68AA5E5918AE794B2`；结果 16 字 48 字节） |
+| 11 自净 | 5 | 五张表逐项回基线 |
+
+**一处措辞在跑完后被改正**：`9d` 原本写「匿名读详情 → 401（不是 404，路径确实存在）」——这个括号是错的推论（T16 已记过：`/user/**` 下鉴权先于路由映射，**不存在的路径同样回 401**，所以 401 证明不了路由存在）。已删掉该括注，路由存在由第 `3` 步"带 token 拿到 200 + 数据"证明。
+
+### UI 验收：12 步全过（`t17_ui.sh` → `t17-ui.log`，`UI_EXIT=0`）
+
+`report` 没有生产者 → 报告行一律 SQL 裸插（UTF-8 文件 + stdin）；**就诊人走 T08 的真实添加页**（加密、卡号唯一、归属都由产品代码负责），只有报告是探针。
+
+| 步 | 取证 | 结果 |
+|---|---|---|
+| 0 | 后端就绪 + 五项基线 + 记下登录前 `MAX(user.id)=3025` | `base report=0 medical_record=0 patient=10 user=10 audit=34` |
+| 1 | 装录制器 + `clearlog` + `console.error` 钩子 | `installed/cleared: true` |
+| 2 | 清登录态 → 微信登录 → 「稍后再说」 | token 到位（`sub=3445`，即本次新建的 user） |
+| 3 | 首页 `.qe-report` **真点击**进选择页（此前 url 是空串） | `route: pages/report/type`、`types: "LAB\|检验报告 ;; IMAGING\|检查报告"`、`el text .rt-title → 查看报告`、`.rt-label → 检验报告` |
+| 4 | 点 `.rt-opt-LAB` → 列表页空态 | `query: {"type":"LAB"}`、`typeLabel: 检验报告`、`rowCount: 0`、`.rl-title → 检验报告`、`.empty-title → 暂无检验报告` |
+| 5 | 真链路添加就诊人「候报告」→ 裸插三条报告 → 重新进列表 | `inserted=3`、`rowCount: 2`、`rows: "56\|T17UI-LAB-NEW\|检验报告\|候报告\|2026-09-29 11:45 ;; 55\|T17UI-LAB-OLD\|…\|2026-09-21 13:45"`、`.rl-sub → 共 2 份`、`.rl-no → T17UI-LAB-NEW` |
+| 6 | 点 `.rl-card` 进详情 | `query: {"id":"56"}`、`detail: T17UI-LAB-NEW\|检验报告\|候报告\|2026-09-29 11:45:15\|肝功能、肾功能\|true\|肝功能正常；肌酐轻度升高，建议复查。`、`.rdd-result` 与 `.rdd-items` 两条文本都对 |
+| 7 | **未出结果分支**：插一条 `items/result/report_time` 三列皆空的报告，用详情 URL 直接打开 | `detail: T17UI-LAB-NULL\|检验报告\|候报告\|—\|\|false\|`、`.rdd-none → 本次报告没有列出项目明细`（不白屏、不冒充时间） |
+| 8 | 类型筛选在 UI 上是真的：回选择页 → 点 `.rt-opt-IMAGING` | `rowCount: 1`、`rows: "57\|T17UI-IMG-01\|检查报告\|候报告\|…"`、`.rl-title → 检查报告`（LAB 两条一条不见） |
+| 9 | 越界读不到：插一条 PHYSICAL 后 `reLaunch /pages/report/list?type=PHYSICAL` | `rowCount: 0`、`.empty-title → 暂无体检报告`、**toast 台账恰好一条**：`报告类型只支持 LAB（检验报告）或 IMAGING（检查报告）`（后端 400 的人话消息原样到前端，且没有双弹） |
+| 10 | 未登录进两页必须被弹回登录 | 两次 `reLaunch`（选择页与列表页）之后栈都只剩 `[pages/login/login]` → **守卫在页面上** |
+| 11 | 控制台 error 台账 + 库侧读数 | `errs: []`；`probe_lab_rows=3`、`null_result_rendered=1` |
+| 12 | 清理 + 回基线 | `after report=0 medical_record=0 patient=10 user=10 audit=34`、`残留探针报告=0` |
+
+**截图我亲自看了两张**（渲染层最终判据）：`t17-3-list-lab` 是「检验报告 / 共 2 份」抬头 + 两张卡（就诊人名、蓝色「检验报告」角标、等宽字体的报告编号、时间、右箭头，NEW 在 OLD 之上）；`t17-4-detail` 是「报告详情」抬头 + 四行（报告编号 / 报告时间）+ 检查项目「肝功能、肾功能」+ 结果整句「肝功能正常；肌酐轻度升高，建议复查。」+ 底部说明与「返回报告列表」按钮。**中文没有任何一处乱码，顿号连接与等宽编号都按设计渲染。**
+
+### 驱动层：本轮新踩/复发的三条
+
+1. **复发但代价最大的一条**：三页新增后必须先 `simulator_refresh`（T16 刚记的陷阱 17）。这次我一开始就做了，并用 `evalfn fn/t12-naverr.js` 确认 `navErr: null` + 栈深 +1 才往下跑 —— 省掉了一整轮白跑。附带收获：刷新后那次"未登录点入口被弹回 login"其实是**守卫的第一次真实取证**。
+2. **bash 双引号里的反引号 = 命令替换**（T16 陷阱 19 的余波）：本轮全程 SQL 不写反引号，`date` 列名一律裸写。
+3. **中文 SQL 必须走 UTF-8 文件 + stdin**：本轮把它固化成脚本内的 `MF()` 助手（`cat > t17-ui-probe.sql` 再灌），第 5、9 步的中文报告名/结果都靠它；写在 `-e` 里会以 GBK 到达 `mysql.exe`，**语句照样成功、存进去的是乱码**，比报错隐蔽得多。
+
+### 验收脚本自己的两处错误（都不是业务错）
+
+| 症状 | 根因 | 修法 |
+|---|---|---|
+| 第一轮 `ValueError: unsupported format character 'Y'` | 指纹 SQL 里有 MySQL 的 `DATE_FORMAT(..., '%Y-%m-%d …')`，而这句话又用 Python 的 `% report_id` 插值 → `%Y` 被当成格式说明符 | 改成字符串拼接（`report_id` 是自己算出来的整数，无注入面），并在注释里写明"这条 SQL 里带 `%`，永远别用 `%` 插值" |
+| 崩掉的那轮**证据全丢**（日志只剩 traceback） | 表格只在脚本最后一行打印，`die()` 又只覆盖"我自己判定的前置失败" | 加 `@atexit.register` 的兜底：任何退出路径上，只要已经有步骤跑过，就先把表打出来 |
+| 预清顺序错 | `user` 行是靠 `patient.card_no` 反查删的，而原顺序先删了 `patient` → 子查询空转，上一轮的账号变永久孤儿 | 顺序改成 report → **user** → patient，并在注释里写清为什么 |
+
+顺带把两处 `LIKE 'T17H%%'`（不在 `%` 插值串里，`%%` 会原样进 MySQL）改回单个 `%`。
+
+### 顺手发现、**有意未修**的一个缺陷
+
+`miniprogram/pages/index/index.js:34` 的 `onQuickEntryTap` 对所有快捷入口一律 `wx.navigateTo`，而「预约挂号」这一项的 url 是 **tabBar 页** `pages/appointment/appointment` → 微信会直接失败（`can not navigateTo a tabbar page`）。这是 T12 时代留下的，与报告链路无关，且修法要么按页判断 `switchTab`/`navigateTo`、要么给入口表加一个 `tab: true` 标记，属独立小卡。已记进下面的遗留项，**没有**在本卡顺手改（附录 B 第 11 条：不越界）。
+
+### 附录 B · 全局红线检查表（14 条逐条扫）
+
+| # | 检查项 | 本卡结论 |
+|---|---|---|
+| 1 | 严禁前端隐藏金额 | N/A：本卡一个金额字段都没有（报告与费用无关） |
+| 2 | 金额裁剪层是否被绕过 | N/A（同上）；`/user/**` 只有患者 token 进得来 |
+| 3 | 审计必须同事务 | N/A：全卡只读，零写操作 → 按 T10/T13/T16 先例不留痕（真 HTTP `8c` 实测同轮 `audit_log` 35→35） |
+| 4 | 外部通道用 afterCommit | N/A：本卡不碰任何外部通道（一律只读，不拉也不推） |
+| 5 | 权限判断是否只写在 UI | ✅ 归属在 SQL（`patient_id IN (我的就诊人)`）+ 类型白名单在 SQL 条件与服务层 + 角色隔离在 `SecurityConfig`；页面 `onLoad` 的 token 守卫是第二道（UI 第 10 步实测被弹回 login） |
+| 6 | 小程序新接口是否强制注入 userId 归属校验 | ✅ 两个端点都**没有 userId 入参**，一律 `SecurityUtils.currentUserId()`；`type` 只当筛选用，不参与定位 |
+| 7 | 身份证/手机号是否加密存储 | N/A（本卡不写这两列）；探针就诊人经 T08 真接口创建，加密路径照旧走 |
+| 8 | 有没有多装 T01 清单外的三方库 | ✅ 零新增依赖（`pom.xml` 与两个 `package.json` 一行未动）；`JsonNode` 用的是 Spring Boot 自带的 Jackson |
+| 9 | 落地/跳转目标是否白名单 | ✅ 三页跳转全是字面量（`/pages/report/list?type=…`、`/pages/report/detail?id=…`、`switchTab('/pages/index/index')`、`navigateBack()`）；`type` 只取 `LAB/IMAGING` 两个值，非法值由后端 400 兜住，不会拼出任意 URL |
+| 10 | 列表筛选/搜索/分页是否进 URL | ✅ **类型筛选进了 URL**（`?type=LAB`），所以列表页可被直接打开/转发/回退不丢筛选 —— UI 第 9 步正是靠直接 `reLaunch …?type=PHYSICAL` 才验出越界分支。分页 N/A：PRD 没要求，且首版无生产者（记入遗留 TODO） |
+| 11 | 是否越界做别的卡的活 | ✅ 不做病历查询（卡片 552 行红线 → T18）、不做体检报告（PHYSICAL 挡在两处 → T22）、不做核酸报告（→ T21）、不做报告录入/生成（没有任何卡负责）、不修 index 快捷入口的 tabbar 缺陷（另记遗留） |
+| 12 | 是否写了规格里没有的实体/表/字段 | ✅ 零迁移、零新列、零新表；DTO 字段逐个可追到 PRD 589 行或 V1:202–215 的列，`reportNo` 这一处已明确标成"我的选择，依据是列存在" |
+| 13 | 是否自造了数字或规则 | ⚠️ **一处，已就地标注**：`items` 的兜底渲染规则（数组顿号连接 / 对象优先取 `name` / 其余 `JSON.stringify`）规格从没定义，因为这一列的形状本身就没有规格。它只做"怎么都能显示出来"，不声称"这是什么意思"；后端一侧**没有**跟着编形状（判断①） |
+| 14 | 前端是否有唯一类名可复核 | ✅ 三页各自前缀（`rt-*` / `rl-*` / `rdd-*`），两个类型选项额外带 `rt-opt-LAB` / `rt-opt-IMAGING` 保证验收能分别点到（T12-M 的同一条纪律） |
+
+### 本卡有意未做的事（附录 D 第 3 条）
+
+| 未做 | 为什么 |
+|---|---|
+| 报告录入 / 生成 / 状态流转（未出→已出） | 28 张卡里没有一张负责写 `report`；PRD §4 后台也没有报告录入页。造一个生成器等于替不存在的对接方编契约 |
+| `items` 的强类型结构 | 见判断①。等真实生产者来了，形状由它定，后端只需把 `JsonNode` 换成绑定类 |
+| 体检报告（PHYSICAL）查询 | PRD §3.4.2 独立小节，承接卡 T22（卡片 642 行 / J50）。本卡两处挡死，T22 只需扩 `isQueryable` 一行 |
+| 报告分页 / 时间范围筛选 / 关键字搜索 | PRD 518/613 行都只写"列表"，没有这三个诉求。附录 B 第 10 条要求的是"筛选进 URL"，本卡已满足（`type` 进 URL） |
+| PDF 下载 / 打印 / 报告对比 / 异常项高亮 | 规格里一次没出现。`result` 就是一段 TEXT，页面按纯文本渲染 |
+| 缺参 500 的通用修法 | 判断⑥只是本卡的规避；真正的修法是在 `GlobalExceptionHandler` 加 `MissingServletRequestParameterException` 映射，与 T07 记下的 `HttpMessageNotReadableException` 同族，属独立小卡 |
+
+### 遗留 TODO（交给后续卡或二期）
+
+1. **首页快捷入口对 tabBar 页用了 `navigateTo`**（`pages/index/index.js:34`）→ 「预约挂号」这一项点了跳不动。修法：入口表加 `tab: true` 或按 `tabBar.list` 判断改用 `switchTab`。
+2. **`GlobalExceptionHandler` 缺参一律 500**（同族两处：缺 query 参数、请求体 JSON 畸形）。
+3. **报告分页**：PRD 499 行要求报告保存 ≥5 年，真实患者几年后会有几十条。等有了生产者再与 T18 一起补分页/时间筛选（并遵守附录 B 第 10 条）。
+4. **`items` 形状待定**：等真实生产者（规格从没说过是谁，见上面「结构性事实」一节的更正）定了形状之后，把 `ReportDetailResponse.items` 从 `JsonNode` 换成绑定类，并把前端 `reportItemsText` 的兜底分支删掉。
+5. **`SerialType.YJ`（报告编号）本卡未用**：与 T15 的 `JF` 同理 —— 报告号由出报告的系统给，不由本院小程序生成。若二期改为自生成，落点在这里。
+
+### 当前状态
+
+- **T17 收口**：后端 **242 例全绿**（227 + 15）、真 HTTP **44/44 PASS**、UI **12 步全过**（两张截图我逐张看过渲染）、库里五项计数逐项回基线、`report` 表回到 0 行（本卡没留任何数据）。
+- `SecurityConfig`、`pom.xml`、两个 `package.json` 一行未动；零迁移、零新列；**既有后端文件零修改**（只有新增）。
+- 下一个推送点仍是 🚩 **M2 = T28**，本卡只提交不推送。

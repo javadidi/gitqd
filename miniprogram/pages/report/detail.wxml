@@ -1,0 +1,31 @@
+<view class="page-report-detail">
+  <view class="container">
+    <view wx:if="{{detail}}" class="card">
+      <view class="rdd-head">
+        <text class="rdd-title">{{detail.typeLabel}}</text>
+        <text class="rdd-patient">{{detail.patientName}}</text>
+      </view>
+
+      <view class="rdd-row"><text class="rdd-label">报告编号</text><text class="rdd-no">{{detail.reportNo}}</text></view>
+      <view class="rdd-row"><text class="rdd-label">报告时间</text><text>{{detail.timeText}}</text></view>
+
+      <view class="rdd-block">
+        <text class="rdd-label">检查项目</text>
+        <text wx:if="{{detail.hasItems}}" class="rdd-items">{{detail.itemsText}}</text>
+        <text wx:else class="text-muted rdd-none">本次报告没有列出项目明细</text>
+      </view>
+
+      <view class="rdd-block">
+        <text class="rdd-label">结果</text>
+        <text wx:if="{{detail.result}}" class="rdd-result">{{detail.result}}</text>
+        <text wx:else class="text-muted rdd-none">结果尚未出具，出报告后这里会更新</text>
+      </view>
+    </view>
+
+    <view wx:if="{{detail}}" class="rdd-note">
+      报告内容由医院出具，本页面只负责展示；如对结果有疑问请携带报告编号到相应科室咨询。
+    </view>
+
+    <button class="btn-primary rdd-back-btn" bindtap="onBack">返回报告列表</button>
+  </view>
+</view>

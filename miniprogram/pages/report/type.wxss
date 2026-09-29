@@ -1,0 +1,56 @@
+.rt-head {
+  display: flex;
+  flex-direction: column;
+  padding: 20rpx 24rpx;
+}
+
+.rt-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.rt-sub {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+}
+
+.rt-option {
+  display: flex;
+  align-items: center;
+  padding: 32rpx 24rpx;
+}
+
+.rt-icon {
+  font-size: 48rpx;
+  margin-right: 24rpx;
+}
+
+.rt-body {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.rt-label {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.rt-desc {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+}
+
+.rt-arrow {
+  font-size: 40rpx;
+  color: #9ca3af;
+}
+
+.rt-tip {
+  margin-top: 24rpx;
+  font-size: 22rpx;
+  line-height: 1.6;
+  text-align: center;
+}
