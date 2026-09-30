@@ -8093,8 +8093,27 @@ console.log('innerWidth=', window.innerWidth,           // 必须 ≥1024，否�
 补的用例 `SystemPages.test.tsx`「两条队列都是 0 时只说"当前没有待处理事项"，不列两行 0 条」
 同时断 `.dashboard-pending-row` 不存在，防住"只改文案不删行"这种半修。四道门复跑：tsc / eslint / vitest **20 files 202 tests** / build 全绿。
 
-**没做的事**：44 行孤儿 `user`（ids 8901–8914、9119、9349–9362、9571、9744–9757）也来自同一泄漏，
-但微信模拟器可能有会话正持有其中一个 token，且 `db:reset` 会连坐清掉全部流水表，属破坏性动作，交给人工决定。
+**同一批泄漏里的 44 行孤儿 `user` 也清了（2026-10-01，用户裁决「不留了，按定向删除」）**。
+判据不是 id 清单而是列形状——`user` 表的区分键是 **`wechat_openid`**（不是 `openid`，`SHOW COLUMNS` 现场纠正过），
+seed 那四行是 `SEED_OPENID_USER_001..004`，测试与模拟器登录造的都是 `MOCK_OPENID_<sha256 前 32 位>`，两种前缀互斥，
+所以谓词 `wechat_openid LIKE 'MOCK\_OPENID\_%'`（下划线是 LIKE 的单字符通配，必须转义）就是精确的那一刀。
+**删前先数子记录**：全库带 `user_id` 列的表只有 `patient` / `inpatient` / `feedback` 三张
+（`information_schema.COLUMNS WHERE COLUMN_NAME='user_id'` 逐表列出），三者对这批 id 的引用**全是 0**，
+`patient=10 / inpatient=5 / feedback=0` 也正好是 seed 数——删掉不会把就诊人甩成孤儿。
+id 清单删除前已存 `E:/qdspace/_mp-driver/t28-orphan-users.txt`（44 行）。
+删除后 `user=4`（四行 seed，昵称 张小明/李静/王丽华/赵国强 俱在）、`MOCK 前缀=0`。
+
+**清完做了一次全库对账**（`E:/qdspace/_mp-driver/t28-db-check.sql`，只读）：
+`user 4 / patient 10 / inpatient 5 / schedule 150 / appointment 13 / payment_record 4 / recharge_record 3 /
+refund_record 2 / admin 4 / role 4 / title 3 / department 3 / doctor 5 / announcement 0 / task 0 / task_handover 0`
+——**16 项逐项等于 seed 基线**；另 `soft_deleted_rows = 0`（九张带 `deleted` 的表一起数，`task`/`task_handover` 无该列故不入账）
+、`admin.phone` 非空 0 行（V8 的清空没被探针复填）、用户名/角色/职称里没有 `probe`/`T2*` 前缀残留。
+
+**`audit_log` 有意不清（164 行，含 T04 那批 `APPROVE_REFUND` 54 行）**，三条理由：
+① 它是首版唯一"跨测试运行只增不减"的表，这是 T04/T05 定下的设计而不是漏项；
+② 看板与红点都不读它，清它对 UI 数字毫无影响；
+③ WORK_LOG 里多处验收证据是按 `action`+`target_type`+`target_id` 引用具体审计行的，删了那些原话就失去可追溯性。
+顺带确认这次删 user 没在审计里留悬空引用：`target_type='user'` 的审计行本来就是 0（患者侧不审计，PRD 485 行限定管理后台）。
 
 ## 12. 本卡六条教训
 
@@ -8146,7 +8165,12 @@ console.log('innerWidth=', window.innerWidth,           // 必须 ≥1024，否�
 3. 全量 `mvn test` 每跑一次会泄漏孤儿 `user`/`refund_record` 行（T24 记的）。**本卡的看板第一次把它照到明面上**：
    浏览器轮里顶栏红点是 3、库里确实是 3 条 PENDING 退款，但那三条单号全是 `TK20261001-…` 这样的测试行。
    数字没错、来源是垃圾。以后凡是带"待处理/统计"的卡，跑完 suite 要 `db:reset` 再看板/截图，
-   否则人看到的是一条"真的错着"的待办队列。根治办法（测试自己删退款行，或 seed 清场扩到退款）不在本卡范围内。
+   否则人看到的是一条"真的错着"的待办队列。
+   **本轮收口时已手工清到 seed 基线**（第 11c 节：3 行孤儿退款 + 44 行孤儿 `user`，16 表逐项对账回基线），
+   但那是**手工动作，不是根治**——下一次全量 `mvn test` 还会再造一批。
+   根治办法两条都还在卡外：① 退号链的测试自己删 `refund_record`（现在只删 appointment 与流水）；
+   ② `--seed-check` 扩到覆盖孤儿引用（`refund_record.related_id → appointment.id`、`patient.user_id → user.id`），
+   让"跑完 suite 顺手一条命令"替代人肉对账。
 4. `announcement` 表里 `NOTICE`/`ACTIVITY` 两类**有生产者但没有读者**（本卡补了生产者，小程序仍只有 STOP_CLINIC 一条读口）；`queue_status` 仍无生产者（T16）；`case_delivery.tracking_no` 仍无写者（T23/T26）；`feedback.CLOSED` 仍无写者（T27）。这四格是"有主的空"，各自的消费者都在二期。
 5. 小程序「问题反馈」提交页仍无人认领（T27 只做了后台的处理侧）。
 
@@ -8156,7 +8180,7 @@ console.log('innerWidth=', window.innerWidth,           // 必须 ≥1024，否�
 
 **测试**：`AdminSystemIntegrationTest`（新，19 例）；`PermissionServiceTest`（+4 例模块解析等价性，构造器补 ObjectMapper，能力矩阵表头改为动态计数）。
 
-**管理端**：`src/api/system.ts`（新）；页面 5 个（Admin/Role/Title/Announcement/ChangePassword）+ `Dashboard.tsx` 填实；`App.tsx` 五条 `/system/*` 路由替换占位；`components/layout/nav.ts`（`requiresSystemCap`/`SYSTEM_CAPABILITY`/`filterNav` 第二参）+ `AuthProvider.tsx`/`store/auth.ts`（`hasCap`）+ `AppLayout.tsx`（403 判定同步）+ `TopBar.tsx`（任务红点，T06-E 欠项）；`SystemPages.test.tsx`（新，33 例）+ `nav.test.ts`（+4）+ `TopBar.test.tsx`（+3，并 mock 掉顶栏新增的看板取数）。
+**管理端**：`src/api/system.ts`（新）；页面 5 个（Admin/Role/Title/Announcement/ChangePassword）+ `Dashboard.tsx` 填实；`App.tsx` 五条 `/system/*` 路由替换占位；`components/layout/nav.ts`（`requiresSystemCap`/`SYSTEM_CAPABILITY`/`filterNav` 第二参）+ `AuthProvider.tsx`/`store/auth.ts`（`hasCap`）+ `AppLayout.tsx`（403 判定同步）+ `TopBar.tsx`（任务红点，T06-E 欠项）；`SystemPages.test.tsx`（新，34 例；第 34 例是 `b98b482` 补的看板全 0 空态，见第 11c 节）+ `nav.test.ts`（+4）+ `TopBar.test.tsx`（+3，并 mock 掉顶栏新增的看板取数）。
 
 **小程序**：本卡无改动。
 
