@@ -7261,3 +7261,350 @@ admin 前端新增 **15 个文件**：`src/api/appointments.ts`、`src/hooks/use
 **退款记录/详情：支持审核通过/拒绝**」，测试场景 J57 消费记录 + **J58 退款审核 → 状态更新**。
 这条正好接住本卡的下游：T13 与 T25 挂出来的退款单全部停在 `PENDING`（本卡日志里那句
 "由费用管理那页审批"就是写给它兑现的），`APPROVE_REFUND` 这个能力目前只在 T04 的靶接口上挂过。
+
+---
+
+# T26 · 管理后台 - 费用管理
+
+## 1. 卡片原文（逐字，行号为仓库文件实际行号）
+
+`医疗预约挂号小程序-任务卡开发流程-Java版.md` 713–729 行：
+
+```
+## T26 · 管理后台 - 费用管理
+
+**要做什么**
+- 门诊消费记录/详情。
+- 门诊充值记录/详情。
+- 住院充值记录/详情。
+- 住院消费记录/详情。
+- 病案配送记录/详情。
+- 退款记录/详情：支持审核通过/拒绝。
+
+**红线**：不做医院管理（T27）。
+
+**测试场景（必做）**
+- J57 消费记录 → 数据正确。
+- J58 退款审核 → 状态更新。
+
+**DoD**：费用管理通。
+```
+
+`医疗预约挂号小程序-需求文档.md` 366–390 行（§4.4 全章，逐字）：
+
+```
+### 4.4 费用管理
+
+#### 4.4.1 门诊消费记录
+1. **消费记录列表** — 展示门诊消费记录
+2. **订单详情** — 查看消费明细
+
+#### 4.4.2 门诊充值记录
+1. **充值记录列表** — 展示门诊充值记录
+2. **充值详情** — 查看充值明细
+
+#### 4.4.3 住院充值记录
+1. **充值记录列表** — 展示住院充值记录
+2. **充值详情** — 查看充值明细
+
+#### 4.4.4 住院消费记录
+1. **消费记录列表** — 展示住院消费记录
+2. **订单详情** — 查看消费明细
+
+#### 4.4.5 病案配送记录
+1. **配送记录列表** — 展示病案邮寄申请记录
+2. **配送详情** — 查看配送信息及物流状态
+
+#### 4.4.6 退款记录
+1. **退款记录列表** — 展示退款申请记录
+2. **退款详情** — 查看退款明细，支持审核通过/拒绝
+```
+
+另两处出处：PRD 631 行（§9.1「费用管理 | 消费/充值/退款记录查询、订单详情、**退款审核**」）、
+PRD 584 行（§7 数据字典「退款记录 | 退款ID、关联充值/缴费ID、金额、原因、状态、**审核人**」）。
+
+## 2. 六个落点逐一定位：五件有表，一件没有
+
+| 卡片条目 | 落在哪张表 | 表结构出处 | 结论 |
+|---|---|---|---|
+| 门诊消费记录/详情 | `payment_record` | V1:156-167（order_no/patient_id/items/amount_fen/pay_method/status/trade_no） | 两把端点 |
+| 门诊充值记录/详情 | `recharge_record` 且 `inpatient_id IS NULL` | V1:140-151，143 行注释「就诊人（门诊充值）」 | 两把端点 |
+| 住院充值记录/详情 | `recharge_record` 且 `inpatient_id IS NOT NULL` | V1:144 行注释「住院人（住院充值）」；T23 已定"同一张流水" | 两把端点 |
+| **住院消费记录/详情** | **没有这张表** | V1 十七张表逐张查过；`payment_record.patient_id` 是 `NOT NULL`（V1:159）且无住院人列、无费用类别列 | **零端点**，页面改为一句说明 |
+| 病案配送记录/详情 | `case_delivery` | V1:328-339 | 两把端点，只读 |
+| 退款记录/详情 + 审核 | `refund_record` | V1:172-183 | 两把读 + 两把审核 |
+
+「住院消费」这条不是"懒得做"，是**记不出主语**：住院的花费只能记到住院人身上，
+而唯一记钱的 `payment_record` 结构上只能记到就诊人身上（`patient_id NOT NULL`，没有一列能挂住院人）。
+塞进这张表 = 把住院的钱挂到某个门诊就诊人头上去，那是假账，
+而且会顺着 T19 的开票链（发票按缴费单开）继续假下去。
+T23 为小程序侧的同一件事（PRD 308 行「住院费用清单」）已经下过同一个结论——「零端点零页面」，
+本卡后台执行同一口径，两处不许一个做一个说"有"。
+
+## 3. 12 把新端点
+
+| # | 方法与路径 | 出处 | 能力 |
+|---|---|---|---|
+| 1 | `GET /admin/payments` | 卡片 716 / PRD 369 | 员工角色 |
+| 2 | `GET /admin/payments/{id}` | 卡片 716 / PRD 370「查看消费明细」 | 员工角色 |
+| 3 | `GET /admin/recharges` | 卡片 717 / PRD 373 | 员工角色 |
+| 4 | `GET /admin/recharges/{id}` | 卡片 717 / PRD 374 | 员工角色 |
+| 5 | `GET /admin/inpatient-recharges` | 卡片 718 / PRD 377 | 员工角色 |
+| 6 | `GET /admin/inpatient-recharges/{id}` | 卡片 718 / PRD 378 | 员工角色 |
+| 7 | `GET /admin/case-deliveries` | 卡片 720 / PRD 385 | 员工角色 |
+| 8 | `GET /admin/case-deliveries/{id}` | 卡片 720 / PRD 386 | 员工角色 |
+| 9 | `GET /admin/refunds` | 卡片 721 / PRD 389 | 员工角色 |
+| 10 | `GET /admin/refunds/{id}` | 卡片 721 / PRD 390 | 员工角色 |
+| 11 | `POST /admin/refunds/{id}/approve` | 卡片 721「支持审核通过」/ PRD 390 / J58 | **`APPROVE_REFUND`** |
+| 12 | `POST /admin/refunds/{id}/reject` | 同上 | **`APPROVE_REFUND`** |
+
+读端点全部只要员工角色（四个角色都进得来，护士由金额裁剪层管），
+写端点两把挂 `@RequireCap(Capability.APPROVE_REFUND)`——这是该能力枚举第一次挂在**真业务**上，
+此前它只在 T04 的靶接口 `GET /payments/{id}/refund-approve`（返回一句硬编码字符串）上出现过。
+
+`/admin/payments` 与 T04 的 `/payments/{id}` 不是一把：前缀不同、数据源不同（真表 vs mock VO），
+`AdminPaymentController` 的类注释写明了这一点，免得后来人以为后台消费页在演靶接口。
+
+## 4. 三个要算账的取舍
+
+### 4.1 `items` 用强类型而不是裸 JSON —— 因为裁剪层按 bean 属性名挂
+
+`payment_record.items`（V1:160）是 `JSON NOT NULL` 列，形状只有 `seed.sql:217` 与 T12/T15 两处写入方各抄一遍。
+T17 对 `report.items` 的处理是"规格没定义键名 → 后端原样透传 JsonNode"，本卡**故意不照抄**：
+
+| | T17 `report.items` | T26 `payment_record.items` |
+|---|---|---|
+| 里面装的东西 | 检验项数值（不是钱） | **每一项都是钱**（`amountFen`） |
+| 裁剪层能否命中 | 不需要命中 | `MoneyMaskingModifier` 只给 **Number 型 bean 属性**套序列化器；JsonNode 节点不在任何属性表上 |
+| 透传的后果 | 无害 | 护士会照常看见明细金额 → 破附录 B「护士视角新接口会不会吐金额」 |
+
+所以 `AdminPaymentResponse.items` 是 `List<OutpatientPaymentResponse.Item>`，
+解析复用 `OutpatientPaymentService.parseItems`（包级可见就是给这种复用留的，T19 票据详情也走它）。
+两条断言钉住：单测 `j57_nurseSeesNoMoneyDigitsAnywhereInFinanceEndpoints` 逐键问 `items[].amountFen` 是不是 null，
+HTTP 步 34 在原始 JSON 上确认"键在、值为 null"。
+
+### 4.2 五个列表一个筛选参数都不接
+
+| 证据 | 内容 |
+|---|---|
+| PRD §4.4（366–390 行） | 全章只有「展示××记录」「查看××明细」两种句子，**没有一处"筛选"** |
+| PRD 347 行（§4.3.1） | 「支持按日期/科室/医生/状态筛选」——同一份文档里作者会筛的时候是明写的 |
+| 结论 | 作者没写的筛子不给他补；前后端各一道锁 |
+
+后端 `j57_listsAcceptNoFilterParamsBecausePrd44NeverAskedForThem` 给五个列表各塞
+`status/patientId/dateFrom`，断言结果一条不变；前端 `FinancePages.test.tsx`
+「五个列表都不给筛选入口」那组断言页面上没有 `input[type=date]` 也没有 `select`。
+代价写在页头：「规格未要求筛选，故本表列出全部流水」。
+
+### 4.3 退款审核 = 只改状态，不出钱
+
+| 出处 | 原文 | 由此决定 |
+|---|---|---|
+| PRD 390 行 | 「查看退款明细，**支持审核通过/拒绝**」 | 只有状态动作，没有"退款""出账""原路返回" |
+| 卡片 721 行 | 「退款记录/详情：支持审核通过/拒绝」 | 同上 |
+| J58 | 「退款审核 → **状态更新**」 | 判定口径本身就是状态 |
+| PRD 141 行（§3.3.7 在线退款） | 「退款金额**原路返回微信钱包**」 | 这句才是"出钱"，而它在小程序那节，依赖微信退款 API = 附录 A 二期 |
+
+所以 `approve` 之后：`PENDING → APPROVED`、`reviewer_id` 落下审核人，
+`patient.balance_fen` / `payment_record` / `recharge_record` 三个数字一分不动（HTTP 步 53 逐一对账），
+原缴费单也不被反写成 `REFUNDED`（V1:163 那个取值意味着"钱已退给客户"，没有出款通道就声称它 = 假账）。
+V1:179 的第四个取值 `COMPLETED` 在产品代码里没有任何写入路径——库里现存那一行是 `seed.sql:235` 的演示数据。
+
+状态机只开两条边：
+
+| 从 | 到 | 允许 | 拒因 |
+|---|---|---|---|
+| PENDING | APPROVED | ✅ | PRD 390「审核通过」 |
+| PENDING | REJECTED | ✅ | PRD 390「审核拒绝」 |
+| APPROVED | REJECTED | ❌ 3006 | 规格没有"改判"；改判等于推翻别人已做的决定，需要第二次留痕，规格给不出这个理由 |
+| REJECTED | APPROVED | ❌ 3006 | 同上 |
+| 任意 | COMPLETED | ❌ 不开 | 那属于"钱真的出去了" |
+
+**3006 是新码，不复用 3003「不允许退款」**：3003 是说给刚点"申请退款"的人听的（这单本来就不该退），
+3006 是说给第二个审核人的（"这张已经有人表过态了，去刷新看结果"）。
+与 T11 加 2007、T15 加 3004、T19 加 3005 同一条规矩，编号接在 3005 之后。
+
+## 5. `reviewer_id` 只能从 token 取
+
+`refund_record.reviewer_id`（V1:180「审核人」）是业务表里第一列记"谁批的"的字段。
+一旦能从请求参数传，任何持有 `APPROVE_REFUND` 的人都能把审核记录挂到别的管理员名下——
+审计流水当场失去追责价值。所以：
+
+- `SecurityUtils.currentAdminId()` 新增（与 `currentUserId()` 并排，两个主体各一条来源）；
+- 两把审核端点**一个入参都不收**（无 body、无 query），路径里那两个词就是全部输入；
+- `reviewerName` 取 `admin.username`：`admin` 表（V2）只有 username/password_hash/role_id/phone 四列，
+  没有姓名列，不为一行好看去给管理员表加列（审计流水从 T04 起就是同一口径）。
+
+HTTP 步 51 把 `{"reviewerId": 999, "amountFen": 1}` 塞进 body 打进去，库里落的仍然是 `reviewer_id=1`、
+金额仍然是挂单时的 5000。并发那一侧由 `RefundRecordMapper.review()` 的
+`WHERE status = 'PENDING'` 影响行数兜住——与 `markSuccess`/`markPaidByBalance`/`confirmIfPending` 同族。
+
+## 6. 后台读流水必须穿软删（T25 教训的第二次兑现）
+
+| 表 | 有 `deleted` 吗 | 谁会写它 | 后果与做法 |
+|---|---|---|---|
+| `payment_record` / `recharge_record` / `refund_record` | ❌（V1:138 注释「财务单据，不软删」） | 没人 | 只增不删 |
+| `patient` | ✅ | T08 允许本人删就诊人 | **正常状态是"钱还在、人已被删"** → 必须 `PatientMapper.selectByIdsIncludingDeleted`，否则管理员看到一批不知道是谁的钱 |
+| `inpatient` | ✅（列在，但没人写） | `InpatientController` 只有 list/detail/bind 三把，全系统没有代码置 1 | 用默认 `selectBatchIds` 就够；**不提前给没有生产者的状态修管道** |
+| `case_delivery` | ✅ | T23 不删 | 财务页读的是活申请，默认读法正是对的一侧，不需要绕 |
+
+## 7. 门禁（后端全量 + admin 四道）
+
+| 门禁 | 命令 | 结果 |
+|---|---|---|
+| 后端全量 | `mvn -o test` | **402 例，0 failures，BUILD SUCCESS**（T25 基线 383 + 本卡 `FinanceIntegrationTest` 19） |
+| admin 类型 | `npx tsc --noEmit` | 0 错 |
+| admin lint | `npx eslint . --max-warnings 0` | 0 错 0 警 |
+| admin 单测 | `npx vitest run` | **18 文件 128 例全绿**（T25 基线 102 + 本卡 `FinancePages` 26） |
+| admin 构建 | `npm run build` | ✓ 1811 modules，4.72s |
+
+`FinanceIntegrationTest` 19 例分组：J57 十例（列表字段 / 明细金额 / 充值切分 / 跨栏 5001 /
+配送主语 / 软删仍有姓名 / 五处 5001 口径 / 护士裁剪 / 无筛选参数 / 端点清单），
+J58 九例（通过 / 拒绝 / 不动钱 / 二次 3006 / 审核人不可传 / 能力 4001 / 审计三元组 / 关联单号尽力解析 / 端到端）。
+
+端点清单那条断言同时是"住院消费零端点"的锁：`forbidden` 集合里放着
+`*inpatient-consume*`、`*inpatient-payment*`、`/admin/refunds/*/revoke`、`/admin/case-deliveries/*ship*`，
+任何人给本卡多开一把都会红。
+
+## 8. 真 HTTP 验收（`t26_http.py`，71 步，0 FAIL，退出码 0）
+
+| 段 | 步 | 覆盖 |
+|---|---|---|
+| 0 准备 | 01–04 | 后端日志、十表基线计数 + 审计水位、三个员工 token 的能力分布、两个探针就诊人 |
+| 1 鉴权三层 | 05–08 | 匿名 401 / 患者 token 403 / 三个员工角色 200 |
+| 2 门诊消费 | 09–13 | 列表四列与 `payment_record` 逐字段一致、列表不带 `items`、详情两项明细**之和 = 单上 10000**、明细名与库内 JSON 一致 |
+| 3 充值切分 | 14–22 | 两把列表交集为空且并集 = 全表、SEED-RC-0001/0003 各归各页、住院行主语解析、住院行不给 `patientName` 键、门诊行不给 `inpatient*` 键、跨栏 id 双向 5001、不存在 5001 |
+| 4 病案配送 | 23–27 | 患者侧提交、后台看到并解析住院人主语、`trackingNo` 键不出现、`idCardPhoto` 不出现、列表与详情同源 |
+| 5 软删的人 | 28–31 | 本人删除 → 库里 `deleted=1` → 他名下那笔钱在列表与详情都仍带得出姓名 |
+| 6 护士裁剪 | 32–38 | 逐键遍历响应断言金额键全 null、被裁键仍在 JSON 里（不是缺键）、`items[].amountFen` 也 null、项目名保留、另三把列表同样全 null、`case_delivery` 本就没金额列、admin 读同一金额得原值 |
+| 7 无筛选 | 39–40 | 消费与退款列表塞参数结果条数不变 |
+| 8 退款审核 | 41–61 | 端到端：预约 → 支付 → 退号挂 PENDING → 后台读到并解出关联单号 → doctor/nurse 各两次 4001 且库里不动 → 通过（含 spoof body）→ 审核人=admin → **四个钱的数字全不变** → 二次 3006 → 另一张拒绝 → 关联原单缺失留空 → 词表外 related_type 不炸 → 审计按 `action+target_type+target_id` 各一行、操作人 ADMIN/1 |
+| 9 边界 | 62–67 | 住院消费四个候选路径全无、无 revoke、无 ship、无整单修改、费用流水无 DELETE |
+| 10 自净 | 68–70 | 十张表回到基线、十一类残行全 0、seed 的钱一张没少 |
+
+**两处真错是我自己的脚本错，不是产品错，记在这里以免下次重犯：**
+
+1. 步 32/36 第一版扫"响应文本里有没有 `10000`"来判金额泄漏——**seed 的就诊卡号就叫 `1000000003`**，
+   于是假 FAIL。正确问法是逐个金额键问"你是 null 吗"（新增 `money_nodes()` 递归遍历响应），
+   而不是在字符串里找数字。这条与「验收脚本会自我抬绿」是同一族坑：
+   断言问错了问题，绿与红都不说明事实。
+2. 清理谓词只写了 `order_no LIKE 'T26-PAY%'`，漏了挂号支付顺带写的 `YY*` 缴费单
+   （`/user/appointments/{id}/pay` 会落一张挂号费流水）。补成
+   `payment_record WHERE patient_id IN (探针就诊人)`——谓词落在"我这几个人名下"，
+   而不是"我以为的单号长什么样"。前两轮跑出的 2 行孤儿（id 1930/1933）已手工删除，库回 4 行。
+
+## 9. 管理后台浏览器验收（14 步）
+
+| # | 页面/动作 | 实测 | 判定 |
+|---|---|---|---|
+| 1 | 注入 admin token 后 `/finance/outpatient-consume` | 4 行 seed，姓名/卡号/¥86.00/¥1,620.00/¥30.00/¥100.00/状态徽标齐全，待付那行流水号是「—」 | PASS |
+| 2 | 同上，列头 | 单号/就诊人/金额/支付方式/状态/第三方流水号/消费时间/操作，**无筛选栏** | PASS |
+| 3 | 点 SEED-PY-0001 详情 | 「消费明细」两项：血常规 ¥32.00、胃镜检查 ¥68.00 | PASS |
+| 4 | `/finance/outpatient-recharge` | 2 行（¥50 待处理无流水号 / ¥100 成功），列头有「就诊人」无「住院号」 | PASS |
+| 5 | `/finance/inpatient-recharge` | 1 行：张守义 / ZY20260001 / ¥200.00 / 已退款；**列头是「住院人」，全页无「就诊卡号」栏** | PASS |
+| 6 | `/finance/inpatient-consume` | 「住院消费记录暂无数据源」+ 点名 `payment_record` 只挂就诊人 + 「本卡不编数据」 | PASS |
+| 7 | `/finance/medical-record-delivery` | 探针申请 #64：住院人、科室、床号、收件人、地址、待处理 | PASS |
+| 8 | 该单详情 | 「暂无运单号：本系统尚未对接物流公司…」+ 证件照片一段说明 | PASS |
+| 9 | `/finance/refund` | 24 行；`T26UI-RF-PEND` 显示「缴费单 / SEED-PY-0001 / ¥50.00」，孤儿行显示「挂号预约 / —」，未审行审核人「尚未审核」 | PASS |
+| 10 | 点该单「审核通过」→ 弹窗 | 弹窗原文含「**本版本只更新单据状态，不会真的把钱退回微信钱包**——微信退款通道尚未对接（PRD 3.3.7 属二期）」 | PASS |
+| 11 | 弹窗点「通过」 | 页面即刻变「已通过」、审核人变 admin、按钮消失并换成「这张单已经审过了，审核结论不可推翻…」 | PASS |
+| 12 | 库里对账 | `refund_record id=553 → APPROVED / reviewer_id=1`；`audit_log` 水位之上恰一行 `APPROVE_REFUND / refund_record / 553 / ADMIN / 1` | PASS |
+| 13 | 侧边栏「费用管理」展开 | 六个入口齐全（含住院消费那一条，不是隐藏） | PASS |
+| 14 | 换 nurse token 直连 `/finance/refund` | 落在「无访问权限 · 当前账号的角色不包含该模块 · module=finance」 | PASS（见下） |
+
+**步 14 要说清**：护士根本到不了 `/finance/*`，因为 `nav.ts` 把 `/finance/` 映射到 `finance` 模块，
+而 `PermissionService` 给 nurse 的模块列表里没有它（T06 定的 fail-closed）。
+所以"护士看费用页金额是空的"这一条在浏览器里**演示不出来**，它的证明在 HTTP 层（步 32–38）
+与 `MoneyMaskingTest`。两道防线各管一件事，不许因为前端挡住了就说后端可以松。
+
+**本轮没有截图**：in-app browser 这轮拿不到可见 surface
+（`NATIVE_BROWSER_VIEWPORT_UNAVAILABLE`，`visibilityState=hidden`），重试无益。
+证据形式是结构化 snapshot + `document.body.innerText`。
+另记一条坑：snapshot 会**丢掉双栏布局里第二张卡片**（步 3 与步 8 的右侧卡片都不在 snapshot 里，
+但 `innerText` 与 `querySelectorAll('h3')` 证明它们渲染了）——
+"snapshot 里没有"不等于"页面缺块"，必须用 innerText 复核再下结论。
+这一条与 T25「自动化全绿 ≠ 渲染出来是对的」正好是一对：反方向同样成立。
+
+浏览器探针数据（1 条配送 + 2 条退款）由 `t26_ui_setup.py` 铺、`t26_ui_sweep.py` 收，
+收尾报告：`delivery_probe=0 / refund_probe=0 / audit 水位之上=0`，
+钱表回基线 `payment 4 / recharge 3 / refund 22 / case_delivery 0`。
+
+## 10. 附录 B 逐条扫描（14 项）
+
+| # | 检查项 | 本卡答案 |
+|---|---|---|
+| 1 | 金额有没有 FLOAT/DOUBLE | 没有。本卡零 DDL，读的四个 `amount_fen` 全是 BIGINT；DTO 里类型是 `Long` |
+| 2 | 护士视角新接口会不会吐金额 | 不会。8 把读端点全走裁剪层；**本卡特意把 `items` 做成强类型就是为了这一条能命中**（§4.1） |
+| 3 | 新写操作有没有写 audit_log、同事务吗 | 两把审核各有 `@AuditLog`，`RefundReviewService` 是 `@Transactional`，切面在同一事务里写；步 60–61 验的 |
+| 4 | 跨表写入是否一个事务、外部调用 afterCommit | 审核只写一张表 + 一条审计，同一事务；本卡零外部调用 |
+| 5 | 指标口径有没有在别处重算 | 没有。本卡不做汇总、不做统计，页面逐行列流水，不出现"合计" |
+| 6 | 权限判断是否只写在 UI | 不是。`@RequireCap` 在切面层（步 47–49 证明被挡时库里一行不改），前端只是恰好也藏了按钮 |
+| 7 | 自动派发的任务是否幂等 | 本卡无自动派发；人审的幂等由 `WHERE status='PENDING'` 的影响行数兜住 |
+| 8 | 小程序端新接口是否强制注入 userId | 本卡零小程序端接口（全是 `/admin/**`）；患者侧那三把是 T23 的 |
+| 9 | 金额 `<Money>`、列表 `<DataTable>`、状态 `<StatusBadge>` | 全部用了：金额 12 处、列表 5 处、状态徽标 5 处，无一例外 |
+| 10 | 列表筛选/搜索/分页是否进 URL | 本卡五个列表**有意无筛选**（§4.2），翻页仍由 `DataTable` 写进 `?page=` |
+| 11 | 有没有多装 T01 清单外的三方库 | 没有。`package.json` / `pom.xml` 一行未动 |
+| 12 | 有没有实现附录 A「首版不做」的东西 | 没有。真实退款出款（微信退款 API）、物流对接、病案发货后台入口，三样都留在 TODO |
+| 13 | 本卡 J 场景是否逐条真过 | J57 → 步 09–40 + 单测十条；J58 → 步 41–61 + 单测九条 + 浏览器步 10–12。都是跑出来的，不是"应该通过" |
+| 14 | 身份证/手机号加密存储 | 本卡零新增敏感列；`case_delivery.id_card_photo` 首版无人写且**刻意不出接口**（DTO 里没这个字段） |
+
+## 11. 有意未做（每一件都有出处）
+
+| 没做的 | 为什么 |
+|---|---|
+| 住院消费记录/详情（卡片 719 行） | 没有承载表；T23 同结论；页面用说明代替假数据，端点清单测试把它锁住 |
+| 审核通过后的真实出款 | PRD 390 只写"审核通过/拒绝"；出款那句在 PRD 141 行且属微信退款 API（附录 A 二期） |
+| 写 `COMPLETED` | 那属于"钱真出去了"；现存那行是 seed 演示数据 |
+| 改判 / 撤销审核 | 规格没有这个动作，且需要第二次留痕的理由 |
+| 病案配送的发货与运单号 | 快递单号无来源；编一个进财务页 = 假追踪 |
+| 五个列表的筛选 | PRD §4.4 全章没写"筛"字 |
+| 列表带明细 `items` | PRD 369「展示门诊消费记录」不要求列表明细；逐行反解 JSON 是白做的功 |
+| 审核"意见"输入框 | `refund_record` 八列里没有审核意见列；要一个填不进库的框等于谎称记下来了 |
+| 给 `inpatient` 加"穿软删读法" | 全系统没有代码把 `inpatient.deleted` 置 1，不给没有生产者的状态修管道 |
+| 分页进后端 | 与 T17/T18/T19/T21/T22/T23/T25 一起留给 T28；`DataTable` 的 URL 翻页已满足附录 B 第 10 项 |
+
+## 12. 跨卡 TODO（本卡新增/确认）
+
+1. **住院费用表缺位**（本卡确认）：需要一张按住院人挂账的表 + 一个写入方（HIS 对接），
+   补齐后才能兑现卡片 719 行与 PRD 381 行（以及 T23 那条 PRD 308 行）的"住院消费/费用清单"。
+2. `case_delivery.tracking_no` 与 `status` 无生产者（本卡确认：后台也不给发货口）。
+3. 微信退款 API 落地那天，`COMPLETED` 才有主人，且 §4.3 那张"四个数字不变"的断言要**反向重写**。
+4. 全量测试每跑一次会泄漏孤儿行（`payment_record` 的 `YY*`、`refund_record`、`user`）——
+   本卡把"清理谓词按归属而不是按单号前缀"写进了验收脚本，但泄漏本身还在测试代码里。
+5. 未映射路径仍返回 500 而不是 404（T25 就挂着）。
+6. `PaymentService.approveRefund`（T04 靶实现）会把 `payment_record.status` 写成 `REFUND_APPROVED`，
+   这个取值不在 V1:163 的取值域里，而且没有任何 controller 调它。留作"靶代码清场"事项：
+   真做退款审批时应删掉它，而不是让人以为那是业务实现。
+
+## 13. 改动清单
+
+后端新增 **11 个文件**：`AdminFinanceQueryService`、`RefundReviewService`、
+`AdminPaymentController`、`AdminRechargeController`、`AdminInpatientRechargeController`、
+`AdminCaseDeliveryController`、`AdminRefundController`、`AdminPaymentResponse`、
+`AdminRechargeResponse`、`AdminCaseDeliveryResponse`、`AdminRefundResponse`；
+新增测试 1 个：`FinanceIntegrationTest`（19 例）。
+
+后端改动 **4 个**：`ErrorCode`（+3006 `REFUND_ALREADY_REVIEWED`）、
+`RefundRecordMapper`（+`review()`，带 `WHERE status='PENDING'` 的原子推进）、
+`PatientMapper`（+`selectByIdsIncludingDeleted`）、`SecurityUtils`（+`currentAdminId()`）。
+
+admin 前端新增 **13 个文件**：`src/api/finance.ts`、11 个页面、`FinancePages.test.tsx`（26 例）。
+改动 **2 个**：`App.tsx`（6 条 T26 占位 → 11 条真路由）、`lib/format.ts`（+`relatedTypeLabel`）。
+
+`package.json`、`pom.xml`、`SecurityConfig`、`seed.sql`、迁移文件（V1–V6）、`miniprogram/` 一行未动。
+**零新表、零迁移**：本卡读的六张表 V1 里全有（与 T24 第一次为展示内容建表是相反的一种卡）。
+
+## 14. 下一张
+
+**T27 管理后台 · 医院管理**（卡片 733 行起）。逐字十二条：医生 CRUD、科室 CRUD、体检套餐 CRUD、
+体检项目 CRUD、套餐类型 CRUD、健康百科 CRUD、就诊指南 CRUD、医院导航 CRUD、
+医院简介编辑、预约须知编辑、病案配送须知编辑、用户反馈「列表/处理」。
+J59 医生管理 CRUD 通、J60 反馈处理状态更新。
+
+三条本卡留下的下游线索：
+① 卡片 743 行「医院导航管理」在 T24 已被三条独立证据否掉（附录 A 二期 + 卡片红线 + 无图片通道），
+   届时按同一口径处理，别因为卡片列了就建；
+② 「病案配送须知」（卡片 746 行）是 T23/T24 挂过的那张无主内容表，
+   本卡 `case_delivery` 详情页里那句"由谁填这一列，规格里也没有写明"就是写给它的；
+③ 医生 CRUD 一改 `doctor.name` / `department_id`，T25 的预约列表解析与本卡的费用列表姓名都会跟着变——
+   那是真联动，值得在 T27 里断言一次。

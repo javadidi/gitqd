@@ -1,14 +1,25 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import AppLayout from './components/layout/AppLayout'
 import RequireAuth from './components/RequireAuth'
+import CaseDeliveryDetailPage from './pages/CaseDeliveryDetailPage'
+import CaseDeliveryListPage from './pages/CaseDeliveryListPage'
 import Dashboard from './pages/Dashboard'
+import InpatientConsumePage from './pages/InpatientConsumePage'
+import InpatientRechargeDetailPage from './pages/InpatientRechargeDetailPage'
+import InpatientRechargeListPage from './pages/InpatientRechargeListPage'
 import LoginPage from './pages/LoginPage'
 import NucleicDetailPage from './pages/NucleicDetailPage'
 import NucleicListPage from './pages/NucleicListPage'
+import OutpatientRechargeDetailPage from './pages/OutpatientRechargeDetailPage'
+import OutpatientRechargeListPage from './pages/OutpatientRechargeListPage'
+import PaymentDetailPage from './pages/PaymentDetailPage'
+import PaymentListPage from './pages/PaymentListPage'
 import PlaceholderPage from './pages/PlaceholderPage'
 import PhysicalDetailPage from './pages/PhysicalDetailPage'
 import PhysicalListPage from './pages/PhysicalListPage'
 import PhysicalReportPage from './pages/PhysicalReportPage'
+import RefundDetailPage from './pages/RefundDetailPage'
+import RefundListPage from './pages/RefundListPage'
 import RegistrationDetailPage from './pages/RegistrationDetailPage'
 import RegistrationListPage from './pages/RegistrationListPage'
 import ScheduleManagePage from './pages/ScheduleManagePage'
@@ -36,30 +47,17 @@ function App() {
             <Route path="/appointments/physical/:id" element={<PhysicalDetailPage />} />
             <Route path="/appointments/physical/:id/report" element={<PhysicalReportPage />} />
             <Route path="/appointments/schedule" element={<ScheduleManagePage />} />
-            <Route
-              path="/finance/outpatient-consume"
-              element={<PlaceholderPage title="门诊消费记录" prd="4.4.1" card="T26" />}
-            />
-            <Route
-              path="/finance/outpatient-recharge"
-              element={<PlaceholderPage title="门诊充值记录" prd="4.4.2" card="T26" />}
-            />
-            <Route
-              path="/finance/inpatient-recharge"
-              element={<PlaceholderPage title="住院充值记录" prd="4.4.3" card="T26" />}
-            />
-            <Route
-              path="/finance/inpatient-consume"
-              element={<PlaceholderPage title="住院消费记录" prd="4.4.4" card="T26" />}
-            />
-            <Route
-              path="/finance/medical-record-delivery"
-              element={<PlaceholderPage title="病案配送记录" prd="4.4.5" card="T26" />}
-            />
-            <Route
-              path="/finance/refund"
-              element={<PlaceholderPage title="退款记录" prd="4.4.6" card="T26" />}
-            />
+            <Route path="/finance/outpatient-consume" element={<PaymentListPage />} />
+            <Route path="/finance/outpatient-consume/:id" element={<PaymentDetailPage />} />
+            <Route path="/finance/outpatient-recharge" element={<OutpatientRechargeListPage />} />
+            <Route path="/finance/outpatient-recharge/:id" element={<OutpatientRechargeDetailPage />} />
+            <Route path="/finance/inpatient-recharge" element={<InpatientRechargeListPage />} />
+            <Route path="/finance/inpatient-recharge/:id" element={<InpatientRechargeDetailPage />} />
+            <Route path="/finance/inpatient-consume" element={<InpatientConsumePage />} />
+            <Route path="/finance/medical-record-delivery" element={<CaseDeliveryListPage />} />
+            <Route path="/finance/medical-record-delivery/:id" element={<CaseDeliveryDetailPage />} />
+            <Route path="/finance/refund" element={<RefundListPage />} />
+            <Route path="/finance/refund/:id" element={<RefundDetailPage />} />
             <Route
               path="/hospital/doctors"
               element={<PlaceholderPage title="医生管理" prd="4.5.1" card="T27" />}

@@ -4,7 +4,10 @@ import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.hospital.entity.Patient;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
+
+import java.util.List;
 
 @Mapper
 public interface PatientMapper extends BaseMapper<Patient> {
@@ -70,4 +73,22 @@ public interface PatientMapper extends BaseMapper<Patient> {
             + "AND balance_fen >= #{amountFen}")
     int deductBalance(@Param("patientId") Long patientId, @Param("userId") Long userId,
                       @Param("amountFen") long amountFen);
+
+    /**
+     * 按 id 批量读就诊人，**不过滤软删行**。
+     *
+     * <p>给 T26 的费用流水列表用：流水表（{@code payment_record}/{@code recharge_record}/
+     * {@code refund_record}）在 V1 里就没有 deleted 列、只增不删，而 T08 允许患者删除就诊人——
+     * 于是"钱还在、人已被删"是正常状态。按默认读法这些行的姓名列会集体空掉，
+     * 管理员看到的账本就会出现一批不知道是谁的钱。
+     * 手写 SQL 不受 {@code @TableLogic} 注入的影响，理由见
+     * {@code ScheduleMapper.selectByIdsIncludingDeleted} 与 {@link #reviveSoftDeletedByCardNo} 的注释。
+     *
+     * <p>只读名字与卡号用途：本方法不返回 idCard/phone（那两列在库里是密文，
+     * 解不解由调用方决定，费用列表不需要）。
+     */
+    @Select("<script>SELECT * FROM patient WHERE id IN "
+            + "<foreach collection=\"ids\" item=\"id\" open=\"(\" separator=\",\" close=\")\">#{id}</foreach>"
+            + "</script>")
+    List<Patient> selectByIdsIncludingDeleted(@Param("ids") java.util.Collection<Long> ids);
 }

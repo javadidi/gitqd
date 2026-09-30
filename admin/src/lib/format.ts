@@ -44,3 +44,22 @@ export function timeSlotLabel(slot: string | null | undefined): string {
   if (!slot) return '—'
   return TIME_SLOT_LABELS[slot] ?? slot
 }
+
+/**
+ * 退款单的「关联类型」中文。码值逐字来自 V1__init.sql 的 `refund_record.related_type`
+ * 列注释「APPOINTMENT/RECHARGE/PAYMENT」——就这三个，后端也不认别的。
+ *
+ * <p>这一张表放在 {@code lib} 而不是退款页里，是因为列表与详情两页都要用它，
+ * 而 T25 已经把「码表不能同时活在一个组件里两次」这条教训写进
+ * {@code lib/statusRegistry.ts} 了（同一个码值在两处译成不同中文就会漂）。
+ */
+const RELATED_TYPE_LABELS: Record<string, string> = {
+  APPOINTMENT: '挂号预约',
+  RECHARGE: '充值单',
+  PAYMENT: '缴费单',
+}
+
+export function relatedTypeLabel(relatedType: string | null | undefined): string {
+  if (!relatedType) return '—'
+  return RELATED_TYPE_LABELS[relatedType] ?? relatedType
+}
