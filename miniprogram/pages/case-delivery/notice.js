@@ -1,36 +1,48 @@
 const app = getApp()
+const { get } = require('../../utils/request')
 
 // 病案配送须知（T23 卡片 661 行 / PRD 240 行「病案配送须知 — 展示病案邮寄规则和注意事项」）。
 //
-// 四条文案每一条都指着一条已经存在的事实（表列、卡片红线或后台归属），
-// 不写"病案邮寄需本人持身份证办理"这类看着像常识的医学/行政条款——
-// 全仓没有任何出处说过这件事，而 PRD 438 行「病案配送须知管理」（属 T27）
-// 才是这些规则正文的生产者，首版那张表还没有内容可展示（与 T22 体检须知同一条纪律）。
+// T23 建这一页时 delivery_notice 表还不存在，所以当时把四条规则写在本地，
+// 并在注释里指明"生产者属 T27"。T27 落了两张单行须知表，这四条正文都进了种子
+// （原先"标题 + 说明"两段在同一行里用冒号/分号/逗号相连），于是这一页改成读
+// GET /user/notices/delivery ——正文的主人是后台那张表，不是这个文件。
+//
+// 和预约须知同一条取舍：content 按 \n 拆行，不拆回 title/desc（V7 的列注释约定的就是"一行一条"）。
 Page({
   data: {
-    items: [
-      {
-        title: '首版为申请流程演示，不含真实寄递',
-        desc: '提交后不会产生快递，也不收取任何费用',
-      },
-      {
-        title: '提交后本单状态为「待处理」',
-        desc: '寄出与签收由医院后台更新，患者侧不能自行推进',
-      },
-      {
-        title: '快递单号由医院填写，可在申请详情查看',
-        desc: '本系统不对接承运商，看不到物流轨迹',
-      },
-      {
-        title: '本版本不上传证件照片',
-        desc: '申请只登记收件人与收件地址',
-      },
-    ],
+    noticeTitle: '病案配送须知',
+    lines: [],
+    noticeLoading: true,
+    noticeError: '',
   },
 
   onLoad() {
     if (!app.globalData.token) {
       wx.redirectTo({ url: '/pages/login/login' })
+      return
+    }
+    this.loadNotice()
+  },
+
+  async loadNotice() {
+    try {
+      const notice = await get('/user/notices/delivery')
+      if (!notice) {
+        this.setData({ lines: [], noticeLoading: false })
+        return
+      }
+      this.setData({
+        noticeTitle: notice.title || '病案配送须知',
+        lines: String(notice.content || '')
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line !== ''),
+        noticeLoading: false,
+      })
+    } catch (err) {
+      // request.js 已统一 toast；读不到须知不该挡患者提交申请
+      this.setData({ noticeLoading: false, noticeError: '须知加载失败，可稍后重试' })
     }
   },
 

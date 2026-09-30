@@ -116,15 +116,18 @@ public class AppointmentQueryService {
                         .map(Appointment::getPatientId).collect(Collectors.toList())))
                 .stream().collect(Collectors.toMap(Patient::getId, Patient::getName));
 
-        List<Doctor> doctors = doctorMapper.selectBatchIds(distinct(rows.stream()
+        // 医生与科室都读含软删行：T27 起后台能删（卡片 736/737 行「删除」），
+        // 而患者自己的历史预约记录不能因为医院删了那个医生就变成"谁看的不知道"。
+        // 与下面 schedule 那条同一次教训（T25 的"— —"缺陷）。
+        List<Doctor> doctors = doctorMapper.selectByIdsIncludingDeleted(distinct(rows.stream()
                 .map(Appointment::getDoctorId).collect(Collectors.toList())));
         names.doctors = doctors.stream().collect(Collectors.toMap(Doctor::getId, Doctor::getName));
         names.doctorDepartment = doctors.stream()
                 .filter(d -> d.getDepartmentId() != null)
                 .collect(Collectors.toMap(Doctor::getId, Doctor::getDepartmentId, (a, b) -> a));
         if (!names.doctorDepartment.isEmpty()) {
-            names.departments = departmentMapper.selectBatchIds(names.doctorDepartment.values()).stream()
-                    .collect(Collectors.toMap(Department::getId, Department::getName));
+            names.departments = departmentMapper.selectByIdsIncludingDeleted(names.doctorDepartment.values())
+                    .stream().collect(Collectors.toMap(Department::getId, Department::getName));
         }
 
         // 读排班不过滤软删行：T25 的停诊会留下"预约还在、班已撤"的历史，

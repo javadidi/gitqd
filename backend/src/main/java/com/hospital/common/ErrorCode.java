@@ -25,6 +25,18 @@ public enum ErrorCode {
     // T11 取消排班的前置守卫（任务卡 437 行「排班取消时，已预约的记录需处理」）。
     // 2001-2006 是 T02 建模时预留的排班/预约段，本码沿用同一段，编号接在 2006 后。
     SCHEDULE_HAS_APPOINTMENTS(2007, "该排班已有预约，请先退号后再取消"),
+    // T27 删除守卫。沿用 2xxx 段（T02 预留的排班/预约段），接在 2007 之后，
+    // 与 T11 加 2007、T15 加 3004、T19 加 3005、T26 加 3006 同一条规矩：新码只追加不复用。
+    // 为什么要守卫而不是直接软删：appointment.doctor_id / schedule.department 都是 NOT NULL 无外键，
+    // 删一个还有活的班或还有未取消预约的医生，等于让"患者还约在someone名下"这件事失去主体——
+    // 卡片 736/737 行只写了「编辑/删除」，没写"删掉之后别人的号怎么办"，
+    // 所以规格给不出"允许删"的授权，只能拒绝并告诉管理员先处理什么。
+    DEPARTMENT_HAS_DOCTORS(2008, "该科室下仍有医生，请先调整医生所属科室"),
+    DOCTOR_HAS_ACTIVE_SCHEDULES(2009, "该医生仍有排班或未取消的预约，请先停诊或退号"),
+    // T27 体检套餐的删除守卫，与上面 2008/2009 同族，也接在 2xxx 段末尾。
+    // physical_appointment.package_id 是 NOT NULL（V1:283），删掉一个还有人的套餐，
+    // 患者那条记录就指着一个不存在的套餐名。
+    PHYSICAL_PACKAGE_HAS_APPOINTMENTS(2010, "该套餐仍有未取消的体检预约，请先处理预约记录"),
 
     PAYMENT_FAILED(3001, "支付失败"),
     BALANCE_INSUFFICIENT(3002, "余额不足"),

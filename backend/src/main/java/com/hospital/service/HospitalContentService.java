@@ -5,13 +5,18 @@ import com.hospital.common.ErrorCode;
 import com.hospital.dto.GuideArticleResponse;
 import com.hospital.dto.HealthArticleResponse;
 import com.hospital.dto.HospitalProfileResponse;
+import com.hospital.dto.NoticeResponse;
 import com.hospital.dto.StopNoticeResponse;
 import com.hospital.entity.Announcement;
+import com.hospital.entity.AppointmentNotice;
+import com.hospital.entity.DeliveryNotice;
 import com.hospital.entity.GuideArticle;
 import com.hospital.entity.HealthArticle;
 import com.hospital.entity.HospitalProfile;
 import com.hospital.exception.BizException;
 import com.hospital.mapper.AnnouncementMapper;
+import com.hospital.mapper.AppointmentNoticeMapper;
+import com.hospital.mapper.DeliveryNoticeMapper;
 import com.hospital.mapper.GuideArticleMapper;
 import com.hospital.mapper.HealthArticleMapper;
 import com.hospital.mapper.HospitalProfileMapper;
@@ -56,15 +61,59 @@ public class HospitalContentService {
     private final GuideArticleMapper guideMapper;
     private final HealthArticleMapper articleMapper;
     private final AnnouncementMapper announcementMapper;
+    private final AppointmentNoticeMapper appointmentNoticeMapper;
+    private final DeliveryNoticeMapper deliveryNoticeMapper;
 
     public HospitalContentService(HospitalProfileMapper profileMapper,
                                   GuideArticleMapper guideMapper,
                                   HealthArticleMapper articleMapper,
-                                  AnnouncementMapper announcementMapper) {
+                                  AnnouncementMapper announcementMapper,
+                                  AppointmentNoticeMapper appointmentNoticeMapper,
+                                  DeliveryNoticeMapper deliveryNoticeMapper) {
         this.profileMapper = profileMapper;
         this.guideMapper = guideMapper;
         this.articleMapper = articleMapper;
         this.announcementMapper = announcementMapper;
+        this.appointmentNoticeMapper = appointmentNoticeMapper;
+        this.deliveryNoticeMapper = deliveryNoticeMapper;
+    }
+
+    /**
+     * 预约须知（T27 卡片 745 行 / PRD 78 行那页的数据源改造）。
+     * 表里没有行时回 null，患者页显示空态而不是报错——与医院简介同一处理。
+     *
+     * <p><b>读法只有这一份</b>：后台的编辑页也走它（{@code AdminContentCommandService} 委托过来）。
+     * 两处各写一遍，就会出现"管理员看到的"与"患者看到的"不是同一行那种查不出来的 bug。
+     */
+    public NoticeResponse appointmentNotice() {
+        List<AppointmentNotice> rows = appointmentNoticeMapper.selectList(
+                new LambdaQueryWrapper<AppointmentNotice>().orderByAsc(AppointmentNotice::getId));
+        if (rows.isEmpty()) {
+            return null;
+        }
+        AppointmentNotice row = rows.get(0);
+        return toNoticeResponse(row.getId(), row.getTitle(), row.getContent(), row.getUpdatedAt());
+    }
+
+    /** 病案配送须知（T27 卡片 746 行 / PRD 240 行）。 */
+    public NoticeResponse deliveryNotice() {
+        List<DeliveryNotice> rows = deliveryNoticeMapper.selectList(
+                new LambdaQueryWrapper<DeliveryNotice>().orderByAsc(DeliveryNotice::getId));
+        if (rows.isEmpty()) {
+            return null;
+        }
+        DeliveryNotice row = rows.get(0);
+        return toNoticeResponse(row.getId(), row.getTitle(), row.getContent(), row.getUpdatedAt());
+    }
+
+    private NoticeResponse toNoticeResponse(Long id, String title, String content,
+                                            java.time.LocalDateTime updatedAt) {
+        NoticeResponse response = new NoticeResponse();
+        response.setId(id);
+        response.setTitle(title);
+        response.setContent(content);
+        response.setUpdatedAt(updatedAt);
+        return response;
     }
 
     /**

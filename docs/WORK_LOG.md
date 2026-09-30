@@ -7608,3 +7608,206 @@ J59 医生管理 CRUD 通、J60 反馈处理状态更新。
    本卡 `case_delivery` 详情页里那句"由谁填这一列，规格里也没有写明"就是写给它的；
 ③ 医生 CRUD 一改 `doctor.name` / `department_id`，T25 的预约列表解析与本卡的费用列表姓名都会跟着变——
    那是真联动，值得在 T27 里断言一次。
+
+---
+
+# T27 · 管理后台 - 医院管理
+
+任务卡：卡片 735–748 行（DoD「医院管理通」）；PRD §4.5 的 394–442 行，十二节一节一页。
+收口时间：2026-09-30。三层门禁 + 真 HTTP 74 步 + 管理后台浏览器轮 + 小程序轮全过。
+
+## 1. 这一卡在权限上的第一手事实：读是开卷的，写才要能力
+
+数出来的：本卡 10 个控制器、43 把端点，其中 **24 把 `@RequireCap(MANAGE_HOSPITAL)` 正好等于 24 个写端点**（POST/PUT/DELETE 一个不漏），剩下 **19 把 GET 一把都没挂 cap**。
+
+这个数字纠正了我自己两个判断：
+
+- **`nav.ts` 的模块归属复查**：T06-E 把 `/hospital/*` 拆成 3 页给 `physical`、9 页给 `settings`，并自标「settings 是排除法推断，T27 建真页面时必须回查」。我一度打算把 12 页全收进 `settings`（理由：PRD 4.5 是一章 12 节、40 行只把「管理医生、科室」记在医院管理员名下、护士没有写权限）。作废——拿"写权限"裁决"读入口"会**缩小 V2 授予 `physical` 的范围**，护士打开套餐/项目/类型列表是真读得到数据的（价格被裁成 `null`，页面显示 `—`）。原样保留，代价写进注释：护士会看见这三页但一个按钮都按不动（后端 4001）。
+- **任务卡 341 行被我过度引用**：原文是「4 角色登录导航项与 PRD 角色表逐条对上（**护士无收费、医生无设置**）」，讲的是 finance/settings 两个键，从没提 `physical`。
+
+## 2. V7 迁移：三张表 + 一列，逐个对齐规格原文
+
+```
+package_type(id, name, created_at, updated_at, deleted)                    -- PRD 416–417「套餐类型列表 / 新增类型」
+appointment_notice(id, title, content, created_at, updated_at, deleted)   -- 单行，PRD 435「编辑预约挂号须知内容」
+delivery_notice(  同上)                                                    -- 单行，PRD 438「编辑病案邮寄须知内容」
+ALTER TABLE health_article ADD COLUMN category VARCHAR(64)                -- PRD 421 行原文含「分类」，V6 漏了
+```
+
+`content` 的列注释写着「须知正文（**逐条规则，一行一条**）」——这句话是后面所有形状决定的锚：不拆 title/desc 两列、页面按 `\n` 拆行、不按逗号二次切分。
+
+## 3. 种子：把两段既有文案搬进库
+
+第 12 节种 2 个套餐类型，名字出自 PRD 417 行括号里的举例（`入职体检`、`全面体检`）。第 13/14 节把两份须知正文从**小程序硬编码搬进库**：
+
+| 来源 | 去了哪 | 是否逐字 |
+|---|---|---|
+| `pages/appointment/notice.js` 的 `rules` 四条 | `appointment_notice.content` 四行 | 第 1、2 条把"标题+说明"用行内逗号并成一行；**第 3 条整句按 T13 定案重写**；第 4 条只留主句（原说明与主句同义，没重复） |
+| `pages/case-delivery/notice.js` 的 `items` 四条 | `delivery_notice.content` 四行 | 四条都在，"标题+说明"在同一行里用冒号/分号/逗号相连 |
+
+被重写的那句是「退号入口…当前版本暂未开放」——T13 早就开放了退号，留着它是骗患者。种子里现在是真话：`退号入口在「我的 - 预约挂号记录」，仅未就诊的号可退，已支付的号会生成退款单`。
+
+**这一节的纪律**：写「逐字搬」之前真去对了 `seed.sql:285-288 / 292-295`，发现自己那句话不成立才改成上面的写法。同类纠正还有一处：我原本在指南页注释里写「PRD 424 行给指南的字段只有标题、内容」，回读才发现 4.5.7 的 424–425 行只说了「列表」「新增」两件事，**根本没列字段**；字段的落点是 V6 的 `guide_article` 建表（`title` + `content`，无 `category`、无 `publish_time`）。**PRD 撑起"这一页存在"，建表语句撑起"这一页有哪几栏"，两件事不能混着引。**
+
+## 4. 显式 SET ⇒ PUT 必须整表单发（本卡最容易在线上坏掉的一条）
+
+MP 的 `updateById` **跳过 null 字段**，于是"把简介抹掉""取消职称挂靠"会静默不生效而接口照样回 200。本卡编辑一律换成 `LambdaUpdateWrapper.set(col, value)` 逐列显式赋值。
+
+换来的语义代价必须由前端配合：**没发出去的列等于要清空**。所以 `admin/src/api/hospital.ts` 头部与每个编辑页都写着同一条约束——编辑弹窗必须先回填全部列再提交。三条测试钉住：
+
+- 后端 `departmentIntroCanBeClearedNotJustOverwritten`（不发 intro 那一栏真的没了）；
+- 前端 `HospitalPages.test.tsx`「编辑不发 intro → intro 被抹掉」断言 `updateDepartment` 收到 `{name, intro:'', location:'…'}`（清空的是空串，不是缺键）；
+- HTTP 步 17/44/53 在真接口上确认 `intro`/`category`/`honors` 不发就消失。
+
+反面一并钉住：`updateArticle` **故意不把 `publishTime` 放进 SET**——编辑一篇旧文章不该把它挪到"刚刚发布"，那会重排患者侧按发布时间倒序的列表，属于改写排序事实。因此健康百科页没有"修改发布时间"输入框（给了也不生效的框就是假功能）。
+
+## 5. 软删可见性：同一类缺陷第三次修
+
+T25 让我们看见后台读不到软删行导致 `就诊时间=— —`，T26 复查了列表侧，本卡是在**真的提供删除入口的那一刻**把它修在两条共享读路径上：
+
+- `AdminAppointmentQueryService`：科室筛选改用 `selectIdsByDepartmentIncludingDeleted`、名字解析改用 `selectByIdsIncludingDeleted`；
+- 患者侧 `AppointmentQueryService.namesOf` 同步。
+
+否则就是"医生删了，他看过的历史查不到是谁"。HTTP 步 41/42 用真库真接口复现：软删之后，后台预约列表与患者自己的历史列表里 `doctorName`/`departmentName` 仍然解析得到。
+
+## 6. 三处删除守卫与那一处刻意不拦
+
+| 场景 | 码 | 后端 message | 被拒时改了什么 |
+|---|---|---|---|
+| 科室名下还有医生（含已软删的医生） | 2008 | 该科室下仍有医生，请先调整医生所属科室 | 一行都不改 |
+| 医生还有排班或未取消的预约 | 2009 | 该医生仍有排班或未取消的预约，请先停诊或退号 | 一行都不改 |
+| 套餐还有未取消的体检预约 | 2010 | 该套餐仍有未取消的体检预约，请先处理预约记录 | 一行都不改 |
+| 体检项目 | 不拦 | — | 套餐里是**名字快照**，没有引用关系可查，守卫无处可写 |
+
+"项目删除不拦"与"类型没有删除端点"都是有意：分别由 `j59_packageDeleteGuardItemDeleteAndNoTypeDeleteEndpoint` 与端点清单的 forbidden 集合钉住。名字快照的真后果也实测了（HTTP 步 35）：改项目名之后，已建套餐里的 `items[]` 仍是旧名。
+
+## 7. 医院导航：一条规格冲突的取舍，不许伪装成"规格没要求"
+
+- 任务卡 **743 行**白纸黑字要：`- 医院导航管理：CRUD。`
+- PRD **428–429 行**要管的是「院区列表 / 新增院区（名称、地址、地图坐标、楼层信息等）」——**管理的对象就是院区本身**。
+- 附录 A **784 行**：`| 多院区支持 | PRD 医院导航 | 依赖院区数据模型扩展 |`，而附录 A 的标题是「二期待办（首版明确不做，**AI 不得顺手实现》）。
+- 卡片 **684 行**红线：「不做真实地图（二期做）；首版仅模拟」。
+- PRD 256 行「展示院区平面图」需要图片通道，全系统没有（与医生头像、病案证件照片、文章封面图同族）。
+
+冲突时我选 784 行：给院区建 CRUD 就是把那行二期项做掉，而地图坐标只能收假数据。取舍连同"卡片确实要了"一起写在页面上（`HospitalNavigationPage`），不留一张空表页假装还没轮到。
+
+## 8. feedback：一张没有写入方的表，页面必然是空的
+
+控制器只有列表/详情/回复三把端点；小程序侧搜不到任何 feedback 页面；`seed.sql` 里 `INSERT INTO feedback` 出现 **0 次**。所以这一列表首版必然为空，空态直接把这句话讲出来，不编假反馈。提交入口没有归属任何卡片 → 跨卡 TODO。
+
+同表两个形状也钉住：`images` 恒 `[]`（V1:361 有这列但无上传通道，因此无写入方）、`nickname` 是解析列且**可整个缺席**（`non_null` 省键）。HTTP 步 57/58/59 用"改昵称前后各读一次"把可空性证成两次断言。回复只有一次机会（第二次 5002）；`CLOSED` 在 V1 取值域里但规格没给任何"关闭反馈"的句子，所以全库零行、页面不给按钮。
+
+## 9. 交付物与三层自动化
+
+| 层 | 数量 | 说明 |
+|---|---|---|
+| 后端 | 421 例全绿（本卡 +38） | `AdminHospitalIntegrationTest` 19 条：J59 CRUD、三处守卫、软删可见性、两端同源、J60 回复、端点清单 43 + forbidden |
+| 管理端 | 161 例全绿（本卡 +33） | `HospitalPages.test.tsx`：守卫报错透出、`—` 渲染、简介/须知 null、反馈空列表、指南详情短路、导航页无假数据 |
+| 接口层 | `admin/src/api/hospital.ts` | 43 个导出函数，与后端那把 43 条的锁逐组对上（数量按路径前缀分布逐条点过） |
+| 页面 | 12 页 | 科室/医生/套餐/项目/类型/健康百科/指南/导航说明/简介/两份须知/反馈；`App.tsx` 十二条占位路由已全部换成真页面 |
+| 门禁 | typecheck 0 · lint 0（`--max-warnings 0`）· test 161 · build ✓ | |
+
+## 10. 真 HTTP 验收 74 步（`_mp-driver/t27_http.py`）
+
+鉴权三层（匿名 401 / 患者 token 打 `/admin/**` 是 HTTP 403 而 body code 4001 / 员工写 4001 而读 200）、23 把读端点逐条真打无一未映射、5 组写端点**只打自己 POST 出来的行**、八条不该存在的端点确实落 500、J59 与三守卫、名字快照、两端同源、金额裁剪（护士 `priceFen` 键在值为 null，医生读到数字）、J60 全链、收尾绝对行数复账：**合计 74 步，FAIL 0 步**。
+
+## 11. 管理后台浏览器轮（真 UI 登录，不注入 token）
+
+登录走 T06-A 那条真链路：填账号密码 → 点「刷新验证码」→ 从 Redis 读回 `QSW9` → 填验证码 → 点登录 → 落地 `/`。三个角色的能力顺手实测对上了第 1 节：
+
+```
+admin  modules=…,physical,settings,system  caps=APPROVE_REFUND,EDIT_SETTINGS,MANAGE_DOCTOR,MANAGE_HOSPITAL
+nurse  modules=…,physical,system           caps=（空）
+doctor modules=dashboard,schedule,appointment,report   caps=（空）
+```
+
+12 页走查（`aside a[href]` 在 659px 视口下不挂载——窄视口的导航只存在于抽屉里，是 T06-E 的设计而非缺陷；改用 popstate 驱动客户端路由）：
+
+```
+科室 5 行 · 医生 6 行 · 套餐 1 · 项目 1 · 类型 3 · 健康百科 1 · 指南 1
+医院导航 0 行（页面自己写明"首版不做，理由见下（不放假数据、不放假地图）"）
+医院简介 0 行 + 空态「还没有内容」        ← GET 回 null 的形状在真浏览器里演示成立
+两份须知读到"最后编辑 …" · 用户反馈 2 行 · 全程无"加载失败/操作失败"
+```
+
+真写路径走通一步：科室页「添加科室」→ 填三项 → 保存 → 表格 **5 行变 6 行、新行出现在列表里**（form → radix 弹窗 → 真接口 → 重渲染）。编辑清空简介、三处守卫的按钮点击、护士角色的 `—` 这三项，交互脚本被工具侧拦截未完成；但每条都已有 vitest 断言与 HTTP 步覆盖，缺的只是"真浏览器再看一眼"。
+
+## 12. 小程序轮（两份须知页改读接口）
+
+`pages/appointment/notice.js` 与 `pages/case-delivery/notice.js` 不再自带条款，改读 `GET /user/notices/appointment|delivery`，**标题也来自接口**（库里 `title` 是可编辑的，写死在页面上就又是"改了没生效"）。
+
+```
+未登录守卫：reLaunch 须知页 → 栈变成 pages/login/login，lineCount=0、lines=""（旧的本地四条不复活）
+登录态：真点 .login-btn（工具回 timeout，但 user_max 8914→9119、token present ⇒ 真成功了）
+初始：lineCount=4，标题=预约挂号须知，挂号上下文参数仍在
+后台追加一行 → 患者侧 lineCount=5，多出的正是那条探针标记
+还原 → lineCount=4，md5 与基线逐字相同（40cd2425…）
+SQL 删掉那一行 → 标题回落"预约须知"、lineCount=0、lines=""（空态，不是兜底）
+用后台那扇门 PUT 建回来 → lineCount=4，md5 仍是基线值
+病案配送须知 → 读的是另一张表，四条正文与库一致（deli_md5 4002c353… 前后未变）
+错误统计：{"hooked": true, "count": 0, "errs": []}
+复账：appt_rows=1 · 两张须知 md5 与基线一致 · user 19→19 · 审计水位之上 0 行
+```
+
+最关键的是"库里删掉那一行"这步：只要页面还留一份本地兜底数组，它就照样显示四条，后台编辑页于是又成摆设。删干净之后患者侧给的是空态——这才证明兜底真的被拆掉了。
+
+## 13. 本轮教训（四条）
+
+1. **陈旧 test-classes 会冒充测试失败**。整类跑红的两条"跨测试不可见"，根因是我给探针加了未声明字段导致编译失败、surefire 复用了上一版 class，报告里的失败信息是**尸体**。`mvn clean` 之后两条自己就绿。规矩：报告时间戳必须落在本轮之后。
+2. **相对基线会被上一轮污染整体平移**。端点清单第一版直接 `PUT/DELETE /admin/departments/1` 打在 seed 真行上：科室 1 被改名成探针名，随后 preclean 的 `LIKE 'T27HTTP%'` 把这一行 seed 一起删了——库里少一个科室。而"开跑前 vs 收尾"的相对断言照样报 PASS，因为基线是在破坏之后才取的。修法是三件：写探针只打自建行、**开跑前断言 seed 绝对行数**、收尾再对一次绝对值。
+3. **automator 回包超时不等于动作失败**。`el tap .login-btn` 连着回 `timeout waiting for automator response`，判据却在库侧：新用户建出来了、token 写进去了。任何"点击后断言"都要有第二证据。
+4. **`fn/*.js` 源码里不能有注释**：这条通道会把源码折成一行，注释吞掉后面的代码，报 `REFUSED: fn source contains a comment`。之前只记了 selectorQuery 不可用，这次补上。
+
+另外两处是被门禁当场的自我纠错：昵称断言写成了"非空"（探针用户本来就没填昵称）、`'titleId' in input` 拿内存对象断线上报文（键一定存在、值才是 undefined，丢键发生在 `JSON.stringify` 那一步）。
+
+## 14. 附录 B 逐条扫描（14 项）
+
+| # | 条目 | 本卡结论 |
+|---|---|---|
+| 1 | 金额是否被前端隐藏 | 无金额字段的读页面；`priceFen` 一律 `Money` 渲染，护士看到的是 `—` 而不是消失的栏目 |
+| 2 | 审计同事务 | 24 把写端点全带 `@AuditLog`，未用 `@Async`/`REQUIRES_NEW`/`afterCommit`；HTTP 步 67 证被拒的第二次不留痕 |
+| 3 | 新错误码是否与既有冲突 | 新增 2008/2009/2010，均不与 2007、3001–3006 复用 |
+| 4 | 是否新增 permitAll | 没有；患者侧两把须知读端点沿用 `/user/**` 的患者角色 |
+| 5 | 落地/跳转白名单 | 本卡不产生跳转；`nav.ts` 未映射路径继续 fail-closed |
+| 6 | 表结构是否对齐规格原文 | V7 三张表逐列对 PRD 416/435/438 + 421（category），出处写在迁移头注释里 |
+| 7 | 是否引入新依赖 | 零新增（前后端都没有） |
+| 8 | 分页 | 仍未做服务端分页，`?page=` 归 T28（沿用既有 TODO） |
+| 9 | 宁少勿假：列表类交付每项有出处 | 12 页对应 PRD 4.5.1–4.5.12；砍掉的项在第 15 节逐个留名 |
+| 10 | 是否顺手实现二期 | 医院导航明确不做，且把"卡片要了"这件事写在页面上 |
+| 11 | 探针数据自净 | HTTP 74 步收尾绝对对账通过；浏览器轮 sweep 后 `T27UI` 残留 0 行；小程序轮还原两份须知 md5 |
+| 12 | 跨卡钩子是否兑现 | 无新钩子；沿用 T22 体检报告、T25 停诊级联 |
+| 13 | 测试是否只测 happy path | 三处守卫、5002、4001、403、null 行、可空昵称、裁剪、软删可见性都有断言 |
+| 14 | 中文与编码 | 含中文 SQL 全走 UTF-8 文件 + stdin；`fn/*.js` 不留注释；curl/argv 不承载中文体 |
+
+## 15. 有意未做（每件都有出处）
+
+| 未做 | 出处 |
+|---|---|
+| 医院导航 / 院区 / 坐标 / 楼层 / 平面图 | 附录 A 784 行 + 卡片 684 行 + 无图片通道（第 7 节整段） |
+| 套餐类型的删除 | PRD 416–417 只给列表与新增；卡片 743 行的「CRUD」不构成删除授权 |
+| 反馈的删除、改状态、追加回复 | PRD 441–442 只有列表与处理回复；`CLOSED` 没有生产者 |
+| 医生头像、文章封面图 | 无上传通道（PRD 398、421 行都列了，砍掉并留名） |
+| 须知按逗号拆回"标题+说明"两段 | V7 列注释约定的就是"一行一条"，二次切分是替规格编规则 |
+| 简介/须知"新建第二份" | 单行表 + PRD 432/435/438 行都只说"编辑" |
+| 分类字典管理页 | PRD 421 只把「分类」列为文章字段，没给分类管理页，候选项无出处 |
+
+## 16. 跨卡 TODO（本卡新增/确认）
+
+1. **孤儿 `user` 行：一次 `mvn test` 全量泄漏 14 行**（`created_at` 挤在同一 200ms、openid 为 `MOCK_OPENID_*`、名下 0 就诊人）。T24 起记过，本卡量到准确数字，也确认它不属于任何一卡的清理。
+2. 反馈提交入口无人认领：PRD 4.5.12 只给了后台处理侧，小程序侧没有任何一张卡建提交页 → 那一列表在补上之前必然为空。
+3. `announcement.STOP_CLINIC` 无生产者、住院费用表无生产者、病案物流单号无写入方（沿用 T23/T24 记录）。
+4. 未映射路径落 500 而非 404——本卡的 forbidden 断言正是靠这个 500 立着的，改 404 时两处要一起改。
+5. 服务端分页仍欠（`DataTable` 是前端翻页）。
+6. 若将来给护士开写权限，"回填 null 价格"会从形状问题变成事故（`PhysicalPackagePage` 注释里写了这条不变式）。
+
+## 17. 改动清单
+
+后端：`V7__hospital_management_content.sql`、`db/seed.sql`（清场 + 第 12/13/14 节）、实体 `PackageType/AppointmentNotice/DeliveryNotice` + `HealthArticle.category`、`DoctorMapper/DepartmentMapper` 的 including-deleted 读、`Capability.MANAGE_HOSPITAL`、`ErrorCode` 2008/2009/2010、服务 `AdminCatalogCommandService`/`AdminPhysicalCommandService`/`AdminContentCommandService`/`AdminFeedbackService`、控制器 10 把 + `HospitalServiceController` 两把患者侧须知、两条共享读路径修复、`AdminHospitalIntegrationTest`。
+
+管理端：`src/api/hospital.ts`、页面 12 个、`App.tsx` 12 条路由、`components/layout/nav.ts` 注释、`HospitalPages.test.tsx`。
+
+小程序：`pages/appointment/notice.{js,wxml}`、`pages/case-delivery/notice.{js,wxml}`。
+
+## 18. 下一张
+
+T28 · 管理后台 - 系统设置与数据看板（卡片 759 行 / PRD §4.6 的 4.6.1–4.6.5 + 首页看板）。收口即 🚩 M2：打标签 `v4.0` 并推送（Release 由用户在网页侧发布）。

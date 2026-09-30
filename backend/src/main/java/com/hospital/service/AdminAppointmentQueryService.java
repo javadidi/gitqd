@@ -88,11 +88,9 @@ public class AdminAppointmentQueryService {
             query.in(Appointment::getScheduleId, scheduleIds);
         }
         if (departmentId != null) {
-            Set<Long> doctorIds = new HashSet<>();
-            for (Doctor doctor : doctorMapper.selectList(new LambdaQueryWrapper<Doctor>()
-                    .eq(Doctor::getDepartmentId, departmentId))) {
-                doctorIds.add(doctor.getId());
-            }
+            // 含已删医生：他们在这同一个科室看过的病人，管理员按科室筛时必须一起出来
+            Set<Long> doctorIds = new HashSet<>(
+                    doctorMapper.selectIdsByDepartmentIncludingDeleted(departmentId));
             if (doctorIds.isEmpty()) {
                 return List.of();
             }
@@ -197,7 +195,10 @@ public class AdminAppointmentQueryService {
             }
         }
         if (!doctorIds.isEmpty()) {
-            List<Doctor> doctors = doctorMapper.selectBatchIds(new HashSet<>(doctorIds));
+            // T27 起医生与科室都能被后台删（卡片 736/737 行的「删除」），
+            // 而 appointment.doctor_id 是 NOT NULL——历史预约必须仍然说得出是谁、哪个科室。
+            // 与下面 schedule 那条同一次教训（T25 的"— —"缺陷），这次在建删除入口的当卡一起改。
+            List<Doctor> doctors = doctorMapper.selectByIdsIncludingDeleted(new HashSet<>(doctorIds));
             Set<Long> departmentIds = new HashSet<>();
             for (Doctor doctor : doctors) {
                 names.doctors.put(doctor.getId(), doctor);
@@ -206,7 +207,7 @@ public class AdminAppointmentQueryService {
                 }
             }
             if (!departmentIds.isEmpty()) {
-                for (Department department : departmentMapper.selectBatchIds(departmentIds)) {
+                for (Department department : departmentMapper.selectByIdsIncludingDeleted(departmentIds)) {
                     names.departments.put(department.getId(), department.getName());
                 }
             }

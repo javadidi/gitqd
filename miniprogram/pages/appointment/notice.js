@@ -1,14 +1,17 @@
 const app = getApp()
+const { get } = require('../../utils/request')
 
-// 预约须知（PRD 78 行「展示挂号规则、退号规则、注意事项」）。
+// 预约须知（PRD 78 行「展示挂号规则、退号规则、注意事项」；页面清单见 §6.1 第 511 行）。
 //
-// 页面本身是规格要的（PRD 78 / §3.3.1 第 4 步、§6.1 第 511 行的页面清单），
-// 但**内容在这里没有任何数据来源**：库里没有"须知"表（announcement 是公告表，
-// type 只有 NOTICE/ACTIVITY），后台那个「预约须知管理」页标的是 T27（App.tsx:97）。
-// 所以首版这份文案只写 PRD 84-87 那四条业务规则的原话，
-// 一条也不自行补充——"提前 30 分钟到院""过期不予受理""爽约三次进黑名单"这类
-// 看着像常识的条款，本仓库没有任何出处，写上去就是编造（附录 D「宁少勿假」）。
-// T27 的 CMS 落地后，这一页应改为从接口取文案，本页只留渲染。
+// 文案的主人在 T27 换了：这四条原先硬编码在本文件里（旧注释自己写着"等 T27 的 CMS 落地后
+// 本页改成读接口取文案"），现在它们是 appointment_notice 表里的那一行，由后台
+// 「预约须知管理」（PRD 4.5.10）编辑，患者侧经 GET /user/notices/appointment 读同一行。
+// 所以本文件不再自带任何条款——包括那句过时的「退号…当前版本暂未开放」：
+// T13 早就开放了退号，库里那份是按 T13 更正过的，本地这份留着就是骗患者。
+//
+// content 是「一行一条」的纯文本（V7 给这一列的注释就是这么约定的），
+// 这里只按 \n 拆行，不再拆回 title/desc 两段：按逗号再切一刀等于替规格编一条分隔规则，
+// 而且"标题里本来就有逗号"的行会当场切错。
 Page({
   data: {
     scheduleId: null,
@@ -19,14 +22,10 @@ Page({
     timeSlot: '',
     slotLabel: '',
     feeFen: null,
-    rules: [
-      { title: '同一就诊人同一时段只能挂一个号', desc: '重复提交会被拒绝，不会多占号源' },
-      { title: '预约需在规定的时间内完成支付', desc: '本页提交时会同步发起支付' },
-      // 退号按 PRD 84 行写着，但入口要等 T13；这里如实说"暂未开放"，
-      // 不能让患者照着一句不存在的指引去找按钮。
-      { title: '退号', desc: '入口在「我的 - 预约挂号记录」，当前版本暂未开放' },
-      { title: '挂号记录可在个人中心查看', desc: '「我的」页面内查看' },
-    ],
+    noticeTitle: '预约须知',
+    lines: [],
+    noticeLoading: true,
+    noticeError: '',
   },
 
   onLoad(options) {
@@ -44,6 +43,31 @@ Page({
       slotLabel: decodeURIComponent(options.slotLabel || ''),
       feeFen: options.feeFen ? Number(options.feeFen) : null,
     })
+    this.loadNotice()
+  },
+
+  async loadNotice() {
+    try {
+      const notice = await get('/user/notices/appointment')
+      if (!notice) {
+        // 单行表可能一行都还没建过（只跑迁移、没跑 --seed 的库就是这样）。
+        // 这时页面显示空态，不把旧的本地四条端回来兜底——那样后台的编辑页又是摆设。
+        this.setData({ lines: [], noticeLoading: false })
+        return
+      }
+      this.setData({
+        noticeTitle: notice.title || '预约须知',
+        lines: String(notice.content || '')
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line !== ''),
+        noticeLoading: false,
+      })
+    } catch (err) {
+      // request.js 已统一 toast。这里只把页面从"加载中"里放出来：
+      // 须知读不到不该挡患者挂号，"已阅读，下一步"照旧可点。
+      this.setData({ noticeLoading: false, noticeError: '须知加载失败，可稍后重试' })
+    }
   },
 
   onNext() {

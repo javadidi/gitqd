@@ -4,6 +4,7 @@ import com.hospital.common.Result;
 import com.hospital.dto.GuideArticleResponse;
 import com.hospital.dto.HealthArticleResponse;
 import com.hospital.dto.HospitalProfileResponse;
+import com.hospital.dto.NoticeResponse;
 import com.hospital.dto.StopNoticeResponse;
 import com.hospital.service.HospitalContentService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -79,5 +80,23 @@ public class HospitalServiceController {
     @GetMapping("/stop-notices")
     public Result<List<StopNoticeResponse>> stopNotices() {
         return Result.success(hospitalContentService.stopNotices());
+    }
+
+    /**
+     * 预约须知（T27 卡片 745 行建的数据；患者侧页面出处是 PRD 78 行 / §6.1 第 511 行）。
+     * 这两把端点是为"后台编辑真的会改变患者看到的东西"而存在的——
+     * 原先四条规则硬编码在 {@code pages/appointment/notice.js}，那样后台那个编辑页就是摆设；
+     * T27-C 已把那两个小程序页面改成读这里，本地那份删掉了，
+     * 其中「退号…当前版本暂未开放」那句也按 T13 的定案在库里改成了真话。
+     */
+    @GetMapping("/notices/appointment")
+    public Result<NoticeResponse> appointmentNotice() {
+        return Result.success(hospitalContentService.appointmentNotice());
+    }
+
+    /** 病案配送须知（T27 卡片 746 行 / PRD 240 行「病案配送须知」那一页）。 */
+    @GetMapping("/notices/delivery")
+    public Result<NoticeResponse> deliveryNotice() {
+        return Result.success(hospitalContentService.deliveryNotice());
     }
 }

@@ -124,7 +124,7 @@ class PermissionServiceTest {
             System.out.println();
         }
 
-        System.out.println("\n=== 能力矩阵 (4 角色 × 3 能力) ===");
+        System.out.println("\n=== 能力矩阵 (4 角色 × 4 能力) ===");
         System.out.printf("%-10s", "角色");
         for (Capability cap : Capability.values()) {
             System.out.printf("%-16s", cap.name());

@@ -1,17 +1,22 @@
 <view class="page-cd-notice">
   <view class="container">
     <view class="card">
-      <view class="section-title">病案配送须知</view>
+      <!-- 标题来自 delivery_notice 那一行，后台改了这里就跟着变 -->
+      <view class="section-title">{{noticeTitle}}</view>
       <view
-        wx:for="{{items}}"
-        wx:key="index"
+        wx:for="{{lines}}"
+        wx:key="*this"
         class="cdn-item"
       >
         <view class="cdn-index">{{index + 1}}</view>
         <view class="cdn-body">
-          <view class="cdn-item-title">{{item.title}}</view>
-          <view class="text-muted cdn-item-desc">{{item.desc}}</view>
+          <view class="cdn-item-title">{{item}}</view>
         </view>
+      </view>
+      <view wx:if="{{noticeLoading}}" class="text-muted cdn-loading">须知加载中…</view>
+      <view wx:elif="{{noticeError}}" class="text-muted cdn-error">{{noticeError}}</view>
+      <view wx:elif="{{lines.length === 0}}" class="text-muted cdn-empty">
+        医院还没有发布病案配送须知内容
       </view>
     </view>
 

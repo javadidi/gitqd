@@ -4,16 +4,27 @@ import RequireAuth from './components/RequireAuth'
 import CaseDeliveryDetailPage from './pages/CaseDeliveryDetailPage'
 import CaseDeliveryListPage from './pages/CaseDeliveryListPage'
 import Dashboard from './pages/Dashboard'
+import DepartmentManagePage from './pages/DepartmentManagePage'
+import DoctorManagePage from './pages/DoctorManagePage'
+import FeedbackManagePage from './pages/FeedbackManagePage'
+import GuideArticlePage from './pages/GuideArticlePage'
+import HealthArticlePage from './pages/HealthArticlePage'
+import HospitalNavigationPage from './pages/HospitalNavigationPage'
+import HospitalProfilePage from './pages/HospitalProfilePage'
 import InpatientConsumePage from './pages/InpatientConsumePage'
 import InpatientRechargeDetailPage from './pages/InpatientRechargeDetailPage'
 import InpatientRechargeListPage from './pages/InpatientRechargeListPage'
 import LoginPage from './pages/LoginPage'
 import NucleicDetailPage from './pages/NucleicDetailPage'
 import NucleicListPage from './pages/NucleicListPage'
+import NoticeManagePage from './pages/NoticeManagePage'
 import OutpatientRechargeDetailPage from './pages/OutpatientRechargeDetailPage'
 import OutpatientRechargeListPage from './pages/OutpatientRechargeListPage'
+import PackageTypePage from './pages/PackageTypePage'
 import PaymentDetailPage from './pages/PaymentDetailPage'
 import PaymentListPage from './pages/PaymentListPage'
+import PhysicalItemPage from './pages/PhysicalItemPage'
+import PhysicalPackagePage from './pages/PhysicalPackagePage'
 import PlaceholderPage from './pages/PlaceholderPage'
 import PhysicalDetailPage from './pages/PhysicalDetailPage'
 import PhysicalListPage from './pages/PhysicalListPage'
@@ -58,54 +69,27 @@ function App() {
             <Route path="/finance/medical-record-delivery/:id" element={<CaseDeliveryDetailPage />} />
             <Route path="/finance/refund" element={<RefundListPage />} />
             <Route path="/finance/refund/:id" element={<RefundDetailPage />} />
-            <Route
-              path="/hospital/doctors"
-              element={<PlaceholderPage title="医生管理" prd="4.5.1" card="T27" />}
-            />
-            <Route
-              path="/hospital/departments"
-              element={<PlaceholderPage title="科室管理" prd="4.5.2" card="T27" />}
-            />
-            <Route
-              path="/hospital/physical-packages"
-              element={<PlaceholderPage title="体检套餐管理" prd="4.5.3" card="T27" />}
-            />
-            <Route
-              path="/hospital/physical-items"
-              element={<PlaceholderPage title="体检项目管理" prd="4.5.4" card="T27" />}
-            />
-            <Route
-              path="/hospital/package-types"
-              element={<PlaceholderPage title="套餐类型管理" prd="4.5.5" card="T27" />}
-            />
-            <Route
-              path="/hospital/health-articles"
-              element={<PlaceholderPage title="健康百科管理" prd="4.5.6" card="T27" />}
-            />
-            <Route
-              path="/hospital/guides"
-              element={<PlaceholderPage title="就诊指南管理" prd="4.5.7" card="T27" />}
-            />
-            <Route
-              path="/hospital/navigation"
-              element={<PlaceholderPage title="医院导航管理" prd="4.5.8" card="T27" />}
-            />
-            <Route
-              path="/hospital/introduction"
-              element={<PlaceholderPage title="医院简介管理" prd="4.5.9" card="T27" />}
-            />
+            {/* T27 医院管理：PRD 4.5.1–4.5.12 十二节，一节一条路由。
+                /hospital/navigation 是有意的说明页（卡片 743 行要 CRUD，附录 A 784 行把院区
+                数据模型判给二期），不是还没做。 */}
+            <Route path="/hospital/doctors" element={<DoctorManagePage />} />
+            <Route path="/hospital/departments" element={<DepartmentManagePage />} />
+            <Route path="/hospital/physical-packages" element={<PhysicalPackagePage />} />
+            <Route path="/hospital/physical-items" element={<PhysicalItemPage />} />
+            <Route path="/hospital/package-types" element={<PackageTypePage />} />
+            <Route path="/hospital/health-articles" element={<HealthArticlePage />} />
+            <Route path="/hospital/guides" element={<GuideArticlePage />} />
+            <Route path="/hospital/navigation" element={<HospitalNavigationPage />} />
+            <Route path="/hospital/introduction" element={<HospitalProfilePage />} />
             <Route
               path="/hospital/appointment-notice"
-              element={<PlaceholderPage title="预约须知管理" prd="4.5.10" card="T27" />}
+              element={<NoticeManagePage kind="appointment" />}
             />
             <Route
               path="/hospital/delivery-notice"
-              element={<PlaceholderPage title="病案配送须知管理" prd="4.5.11" card="T27" />}
+              element={<NoticeManagePage kind="delivery" />}
             />
-            <Route
-              path="/hospital/feedback"
-              element={<PlaceholderPage title="用户反馈管理" prd="4.5.12" card="T27" />}
-            />
+            <Route path="/hospital/feedback" element={<FeedbackManagePage />} />
             <Route
               path="/system/admins"
               element={<PlaceholderPage title="管理员管理" prd="4.6.1" card="T28" />}
