@@ -1,6 +1,7 @@
 package com.hospital.controller;
 
 import com.hospital.common.ErrorCode;
+import com.hospital.dto.ChangePasswordRequest;
 import com.hospital.dto.LoginRequest;
 import com.hospital.dto.LoginResponse;
 import com.hospital.dto.WechatLoginRequest;
@@ -12,6 +13,7 @@ import com.hospital.exception.BizException;
 import com.hospital.mapper.AdminMapper;
 import com.hospital.mapper.RoleMapper;
 import com.hospital.security.LoginUser;
+import com.hospital.service.AdminAccountService;
 import com.hospital.service.CaptchaService;
 import com.hospital.service.PermissionService;
 import com.hospital.service.UserService;
@@ -21,6 +23,7 @@ import jakarta.validation.Valid;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -39,6 +42,7 @@ public class AuthController {
     private final PermissionService permissionService;
     private final CaptchaService captchaService;
     private final UserService userService;
+    private final AdminAccountService adminAccountService;
 
     public AuthController(AdminMapper adminMapper,
                           RoleMapper roleMapper,
@@ -46,7 +50,8 @@ public class AuthController {
                           JwtUtil jwtUtil,
                           PermissionService permissionService,
                           CaptchaService captchaService,
-                          UserService userService) {
+                          UserService userService,
+                          AdminAccountService adminAccountService) {
         this.adminMapper = adminMapper;
         this.roleMapper = roleMapper;
         this.passwordEncoder = passwordEncoder;
@@ -54,6 +59,7 @@ public class AuthController {
         this.permissionService = permissionService;
         this.captchaService = captchaService;
         this.userService = userService;
+        this.adminAccountService = adminAccountService;
     }
 
     @GetMapping("/captcha")
@@ -94,7 +100,11 @@ public class AuthController {
         }
 
         String roleName = role.getName();
-        List<String> modules = permissionService.getModules(roleName);
+        // 模块列表读 role.permissions（V1:392），不再只读代码里的静态表：
+        // 卡片 763 行「角色管理：CRUD + 权限配置」配的就是这一列，
+        // 登录不读它的话，页面上的勾选永远不会生效。四个内置角色的等价性由
+        // PermissionServiceTest.resolveModules_coreRolesMatchStaticMatrix 钉住。
+        List<String> modules = permissionService.resolveModules(roleName, role.getPermissions());
         List<String> caps = permissionService.getCaps(roleName).stream()
                 .map(Enum::name)
                 .collect(Collectors.toList());
@@ -111,6 +121,20 @@ public class AuthController {
         response.setLandingPage(resolveLandingPage(roleName));
 
         return Result.success(response);
+    }
+
+    /**
+     * 修改自身密码（T28 卡片 766 行 / PRD 4.6.5 的 465 行、PRD 9.2 的 628 行把它列在
+     * 「认证授权 | 管理员登录、登出、<b>修改密码</b>」而不是系统设置那一行，所以路由挂在 /auth 下，
+     * 与 /auth/login 同族——它需要的是"是我本人"，不是"我有管理能力"）。
+     *
+     * <p>不挂 {@code @RequireCap}：四个后台角色都该能改自己的口令。
+     * 主体从 token 取，因此没有"改别人密码"的路径（替别人重置在规格里不存在）。
+     */
+    @PutMapping("/password")
+    public Result<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request) {
+        adminAccountService.changePassword(request);
+        return Result.success(null);
     }
 
     private String resolveLandingPage(String roleName) {

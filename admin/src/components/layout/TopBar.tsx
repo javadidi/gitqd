@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 import { roleLabel, useAuth } from '@/store/auth'
+import { getDashboard, pendingTotalOf } from '@/api/system'
+import { useResource } from '@/hooks/useResource'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
@@ -12,7 +14,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { breadcrumbOf } from './nav'
-import { ChevronDown, ChevronRight, LogOut, Menu, Search } from 'lucide-react'
+import { Bell, ChevronDown, ChevronRight, LogOut, Menu, Search } from 'lucide-react'
 
 function Breadcrumb({ pathname }: { pathname: string }) {
   const trail = breadcrumbOf(pathname)
@@ -44,6 +46,11 @@ export default function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
   const [commandOpen, setCommandOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
+
+  // 红点的数：换页时重取一次，这样处理完一条退款、点回首页时顶栏不会还挂着旧数字。
+  // 取不到就当没有（不渲染），红点不该把顶栏变成报错页。
+  const dashboard = useResource(() => getDashboard(), [location.pathname])
+  const pendingTotal = pendingTotalOf(dashboard.data)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -93,6 +100,28 @@ export default function TopBar({ onOpenNav }: { onOpenNav: () => void }) {
       <nav aria-label="面包屑" className="min-w-0 flex-1">
         <Breadcrumb pathname={location.pathname} />
       </nav>
+
+      {/* 任务红点（卡片第 323 行，T06-E 当时主动欠下的一项）。
+          数字来自 GET /admin/dashboard 的 pendingItems 之和——与首页看板同一份数、同一个来源，
+          不在前端再算一遍口径。task 表（T05 内核）首版没有任何生产者（卡片 308 行红线明写
+          「不写业务触发」），拿它的行数做红点会永远不亮，那是把欠项做成假账。
+          刻意"零条就整颗不渲染"，而不是放一个不亮的铃铛——T06-E 的原话是宁可没有也不要假的。 */}
+      {pendingTotal > 0 && (
+        <button
+          onClick={() => navigate('/')}
+          aria-label={`待处理事项 ${pendingTotal} 条`}
+          title="待处理事项，打开首页数据看板"
+          className={cn(
+            'relative flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground',
+            'transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+          )}
+        >
+          <Bell className="h-4 w-4" />
+          <span className="topbar-task-badge absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-semibold text-white">
+            {pendingTotal}
+          </span>
+        </button>
+      )}
 
       <Button
         variant="outline"

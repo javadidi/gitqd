@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { breadcrumbOf, filterNav, moduleOf, navItems, type ModuleKey } from './nav'
+import { breadcrumbOf, filterNav, moduleOf, navItems, requiresSystemCap, SYSTEM_CAPABILITY, type ModuleKey } from './nav'
 
 const ALL: ModuleKey[] = [
   'dashboard',
@@ -157,5 +157,39 @@ describe('filterNav：按角色裁剪', () => {
       '/appointments/nucleic-acid',
       '/appointments/physical',
     ])
+  })
+})
+
+/**
+ * T28 给 filterNav 加的第二道闸门。上面那批用例都只传一个参数（默认"能力都有"），
+ * 所以它们的语义一字未动——这道闸门只对 /system 生效，别的组仍旧只看模块。
+ */
+describe('filterNav：/system 这一组额外看 EDIT_SETTINGS（T28 的读端点也要能力）', () => {
+  const noCaps = () => false
+
+  it('护士有 system 模块但没有能力：系统设置只剩「修改密码」一项', () => {
+    const items = filterNav(by('nurse'), noCaps)
+    const system = items.find((i) => i.title === '系统设置')
+    expect(system?.children?.map((c) => c.to)).toEqual(['/system/password'])
+  })
+
+  it('管理员两个闸门都过：系统设置 5 项全在', () => {
+    const items = filterNav(by('admin'), () => true)
+    const system = items.find((i) => i.title === '系统设置')
+    expect(system?.children).toHaveLength(5)
+  })
+
+  it('医生根本没有 system 模块：整组不见，与能力参数无关', () => {
+    expect(filterNav(by('doctor'), () => true).map((i) => i.title)).toEqual(['首页', '预约管理'])
+  })
+
+  it('只有 /system/password 免能力：改自己的密码不需要管理别人', () => {
+    expect(requiresSystemCap('/system/password')).toBe(false)
+    for (const path of ['/system/admins', '/system/roles', '/system/titles', '/system/notices']) {
+      expect(requiresSystemCap(path), path).toBe(true)
+    }
+    // 别的组不受影响：医院管理那一组的读端点从 T25 起就是开卷的
+    expect(requiresSystemCap('/hospital/doctors')).toBe(false)
+    expect(SYSTEM_CAPABILITY).toBe('EDIT_SETTINGS')
   })
 })

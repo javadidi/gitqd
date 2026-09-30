@@ -1,8 +1,11 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import AppLayout from './components/layout/AppLayout'
 import RequireAuth from './components/RequireAuth'
+import AdminManagePage from './pages/AdminManagePage'
+import AnnouncementManagePage from './pages/AnnouncementManagePage'
 import CaseDeliveryDetailPage from './pages/CaseDeliveryDetailPage'
 import CaseDeliveryListPage from './pages/CaseDeliveryListPage'
+import ChangePasswordPage from './pages/ChangePasswordPage'
 import Dashboard from './pages/Dashboard'
 import DepartmentManagePage from './pages/DepartmentManagePage'
 import DoctorManagePage from './pages/DoctorManagePage'
@@ -25,7 +28,6 @@ import PaymentDetailPage from './pages/PaymentDetailPage'
 import PaymentListPage from './pages/PaymentListPage'
 import PhysicalItemPage from './pages/PhysicalItemPage'
 import PhysicalPackagePage from './pages/PhysicalPackagePage'
-import PlaceholderPage from './pages/PlaceholderPage'
 import PhysicalDetailPage from './pages/PhysicalDetailPage'
 import PhysicalListPage from './pages/PhysicalListPage'
 import PhysicalReportPage from './pages/PhysicalReportPage'
@@ -33,7 +35,9 @@ import RefundDetailPage from './pages/RefundDetailPage'
 import RefundListPage from './pages/RefundListPage'
 import RegistrationDetailPage from './pages/RegistrationDetailPage'
 import RegistrationListPage from './pages/RegistrationListPage'
+import RoleManagePage from './pages/RoleManagePage'
 import ScheduleManagePage from './pages/ScheduleManagePage'
+import TitleManagePage from './pages/TitleManagePage'
 import { AuthProvider } from './store/AuthProvider'
 
 function App() {
@@ -90,26 +94,14 @@ function App() {
               element={<NoticeManagePage kind="delivery" />}
             />
             <Route path="/hospital/feedback" element={<FeedbackManagePage />} />
-            <Route
-              path="/system/admins"
-              element={<PlaceholderPage title="管理员管理" prd="4.6.1" card="T28" />}
-            />
-            <Route
-              path="/system/roles"
-              element={<PlaceholderPage title="角色管理" prd="4.6.2" card="T28" />}
-            />
-            <Route
-              path="/system/titles"
-              element={<PlaceholderPage title="职称管理" prd="4.6.3" card="T28" />}
-            />
-            <Route
-              path="/system/notices"
-              element={<PlaceholderPage title="消息公告管理" prd="4.6.4" card="T28" />}
-            />
-            <Route
-              path="/system/password"
-              element={<PlaceholderPage title="修改密码" prd="4.6.5" card="T28" />}
-            />
+            {/* T28 系统设置：PRD 4.6.1–4.6.5 五节，一节一条路由。
+                这一组的读端点在后端也挂 EDIT_SETTINGS（不同于 T25–T27 的"读全开"），
+                所以导航按能力额外裁一刀，唯一例外是 /system/password——见 nav.ts。 */}
+            <Route path="/system/admins" element={<AdminManagePage />} />
+            <Route path="/system/roles" element={<RoleManagePage />} />
+            <Route path="/system/titles" element={<TitleManagePage />} />
+            <Route path="/system/notices" element={<AnnouncementManagePage />} />
+            <Route path="/system/password" element={<ChangePasswordPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

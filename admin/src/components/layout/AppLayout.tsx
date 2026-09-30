@@ -7,20 +7,33 @@ import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import ForbiddenPage from '@/pages/ForbiddenPage'
 import SidebarNavList from './SidebarNavList'
 import TopBar from './TopBar'
-import { filterNav, moduleOf, type ModuleKey } from './nav'
+import {
+  SYSTEM_CAPABILITY,
+  filterNav,
+  moduleOf,
+  requiresSystemCap,
+  type ModuleKey,
+} from './nav'
 import { Menu, Stethoscope } from 'lucide-react'
 
 export default function AppLayout() {
   const [collapsed, setCollapsed] = useState(false)
   const [navOpen, setNavOpen] = useState(false)
   const location = useLocation()
-  const { hasModule } = useAuth()
+  const { hasCap, hasModule } = useAuth()
 
-  const items = useMemo(() => filterNav((key: ModuleKey) => hasModule(key)), [hasModule])
+  const items = useMemo(
+    () => filterNav((key: ModuleKey) => hasModule(key), hasCap),
+    [hasModule, hasCap],
+  )
 
   // 侧边栏裁掉入口还不够：手敲地址也得给出 403，否则"看不见菜单"就成了唯一防线
   const currentModule = moduleOf(location.pathname)
-  const denied = currentModule !== null && !hasModule(currentModule)
+  const denied =
+    currentModule !== null &&
+    (!hasModule(currentModule) ||
+      // T28 起 /system 那一组的读端点也要能力，导航裁掉的那 4 项直接敲地址也得 403
+      (requiresSystemCap(location.pathname) && !hasCap(SYSTEM_CAPABILITY)))
 
   // 抽屉里点完导航必须自己收起，否则覆盖层会挡住刚切出来的页面
   useEffect(() => {

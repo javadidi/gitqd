@@ -39,6 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       profile,
       isAuthenticated: profile !== null,
       hasModule: (module: string) => profile?.modules.includes(module) ?? false,
+      hasCap: (capability: string) => profile?.caps.includes(capability) ?? false,
       signIn,
       signOut,
     }),

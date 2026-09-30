@@ -7811,3 +7811,295 @@ SQL 删掉那一行 → 标题回落"预约须知"、lineCount=0、lines=""（�
 ## 18. 下一张
 
 T28 · 管理后台 - 系统设置与数据看板（卡片 759 行 / PRD §4.6 的 4.6.1–4.6.5 + 首页看板）。收口即 🚩 M2：打标签 `v4.0` 并推送（Release 由用户在网页侧发布）。
+
+---
+
+# T28 · 管理后台 - 系统设置与数据看板（🚩 M2：首版交付完成）
+
+2026-10-01 收口。这是 28 张卡的最后一张，DoD 就是里程碑本身。
+
+## 0. 规格原文（逐字引用，不是转述）
+
+任务卡 759–775 行：
+
+```
+## T28 · 管理后台 - 系统设置 + 数据看板
+
+**要做什么**
+1. 管理员管理：CRUD。
+2. 角色管理：CRUD + 权限配置。
+3. 职称管理：CRUD。
+4. 消息公告管理：CRUD。
+5. 修改密码。
+6. 数据看板：今日预约量/就诊量/收入统计/待处理事项。
+
+**红线**：指标口径全局唯一定义处。
+
+**测试场景（必做）**
+- J61 管理员管理 → CRUD 通。
+- J62 数据看板 → 数据正确。
+
+**DoD**：🚩 M2：首版交付完成。
+```
+
+PRD 4.6 的 446–465 行（五节原文）：
+
+```
+448: #### 4.6.1 管理员管理
+449: 1. **管理员列表** — 展示所有管理员账号
+450: 2. **新增管理员** — 创建管理员账号（用户名、密码、角色、联系方式等）
+452: #### 4.6.2 角色管理
+453: 1. **角色列表** — 展示所有角色
+454: 2. **新增角色** — 创建角色并配置权限
+456: #### 4.6.3 职称管理
+457: 1. **职称列表** — 展示医生职称（主任医师、副主任医师、主治医师等）
+458: 2. **新增职称** — 添加职称类型
+460: #### 4.6.4 消息公告管理
+461: 1. **公告列表** — 展示所有消息公告
+462: 2. **新增消息公告** — 发布公告（标题、内容、类型、推送范围等）
+464: #### 4.6.5 修改密码
+465: - 管理员修改自身登录密码
+```
+
+PRD 4.2 的 335–340 行是看板四项的唯一出处（337 今日预约量统计 / 338 今日就诊量统计 / 339 收入统计（门诊/住院/体检等）/ 340 待处理事项提醒）；PRD 4.1 的 333 行「登录后进入管理后台首页（数据看板）」决定了看板对四个后台角色全开；PRD 9.2 的 628 行把「修改密码」归在**认证授权**那一行（不是系统设置），629 行给数据看板写的是「今日统计数据、图表数据」。数据字典的三行是字段来源：593 公告（公告ID、标题、内容、类型、发布时间）、595 管理员（管理员ID、用户名、角色ID、联系方式）、596 角色（角色ID、名称、权限列表）。
+
+另外两条与本卡直接相关的既有约束：卡片 308 行「**红线**：不做 /tasks 页（T28）；不写业务触发」（T05 的），卡片 323 行「顶栏面包屑 + command(⌘K) 占位 + **任务红点** + 用户下拉退出」（T06 的，红点在 T06-E 被主动欠下，见 1851–1857 行「红点为什么不做」）。
+
+## 1. 范围裁定：18 把端点、16 把挂能力，职称那一组只有三把
+
+| 组 | 端点 | 能力 | 出处 |
+|---|---|---|---|
+| 管理员 | `GET /admin/admins`、`POST`、`PUT /{id}`、`DELETE /{id}` | 4 把全挂 `EDIT_SETTINGS` | 卡 762 行 + J61 点名 CRUD |
+| 角色 | `GET /admin/roles`、`POST`、`PUT /{id}`、`DELETE /{id}` | 4 把全挂 | 卡 763 行 + PRD 454 行「配置权限」 |
+| 职称 | `GET /admin/titles`、`POST`、`PUT /{id}` | 3 把全挂，**无 DELETE** | 卡 764 行 vs PRD 457–458 只两句 |
+| 公告 | `GET /admin/announcements`、`GET /options`、`POST`、`PUT /{id}`、`DELETE /{id}` | 5 把全挂 | 卡 765 行 + PRD 461–462 |
+| 看板 | `GET /admin/dashboard` | **不挂**（PRD 333 行：所有人登录后落这一页） | 卡 767 行 |
+| 密码 | `PUT /auth/password` | **不挂**（PRD 465 行主语是"自身"，9.2 归在认证授权） | 卡 766 行 |
+
+18 把里 16 把挂能力，由 `AdminSystemIntegrationTest.t28EndpointRegistryIsExactlyWhatTheCardAskedFor` 那份字面清单钉住（多一把少一把都红）。这把锁在本卡里显式列了「职称没有 DELETE」这一条。
+
+**职称为什么不开删除**——三条独立证据，不是"顺手少写一把"：
+1. PRD 4.6.3（457–458 行）只给「职称列表」和「新增职称」两句，连删除都没提；卡片 764 行那句笼统的「CRUD」在这一格不构成删除授权。
+2. `doctor.title_id`（V1:88）是 `DEFAULT NULL`：删掉一个还在用的职称不会报错，那几位医生的职称列会**静默变成空**，而"医生没有职称"在页面上读起来像数据缺失，不像有人删过东西。
+3. seed 第 2 段那三行名字是 PRD 457 行括号里点名的（主任医师、副主任医师、主治医师）。删掉规格钦定的数据，规格里没有任何一句授权。
+
+这与 T27 给套餐类型（卡片 740 行 CRUD vs PRD 416–417 两句）的结论同一条路数——两卡形状相同，裁决必须相同，否则 WORK_LOG 里留下两套互相打脸的说法。建错名字的真实需求由"编辑"覆盖（改名即可），列表因此带 `doctorCount`，让管理员看见哪个职称在用、几个在用。
+
+**读端点也要能力**，这是本卡与 T25–T27 唯一相反的口径，理由是一条具体泄漏而不是"更安全"这种口号：`GET /admin/admins` 吐的是登录主体清单（用户名 + 角色归属 + 联系方式），而 PRD 31–40 行的角色表里，四类后台用户（医生、护士、系统管理员、医院管理员）没有一类的工作对象是"其他管理员"。T25–T27 能让读全开，是因为那些行本来就是给患者看的内容（科室、医生、套餐）。代价写在 `nav.ts` 里：V2 恰好给了 nurse `system` 模块，所以侧边栏对这一组额外按能力裁一刀，唯一放行的子项是 `/system/password`。
+
+## 2. 三处权限地基改动（本卡的真正风险面）
+
+卡片 763 行「角色管理：CRUD + 权限配置」一落地，仓库里三处硬编会立刻自相矛盾。三处都改了，且每一处都有回归测试守着。
+
+**① `SecurityConfig`：`hasAnyRole("system","admin","doctor","nurse")` → `hasRole("STAFF")`。** 原写法把四个角色名列在这里（注释还写着"新增角色要同步这里"），后台新建的角色不在名单里，用它登录的账号连读端点都进不来，在 Spring Security 层就 403，走不到 `@RequireCap` 的 4001——权限配置等于一件不发生的事。改法是在 `LoginUser.getAuthorities()` 里并列发一个类别权限 `ROLE_STAFF`，兜底规则只认"是不是员工"；患者主体 `LoginPatient` 只有 `ROLE_patient`，越权口子没有变大（`AuthIntegrationTest` 的 noToken/invalidToken 与 T07 那条"员工进不了 /user/**"全部原样成立）。
+
+**② `PermissionService.resolveModules(roleName, permissionsJson)`：登录时模块列表改读 `role.permissions`（V1:392 JSON）。** 这一列从 V1 起就是 PRD 596 行「权限列表」的落点，V2 也照它写了四行，但 T03 之后登录一直只读代码里的静态表。改完对四个内置角色**零行为变化**——逐行核对过 V2 的 JSON 与静态表等价（system 走 `["*"]` → 全 8 个、admin 8 个、doctor 4 个、nurse 6 个），等价性由新增的 `PermissionServiceTest.resolveModules_coreRolesMatchStaticMatrix` 等四条钉住，不靠人再数一遍。脏数据两条退路：未知键丢弃（不发明模块），整串解析不了退回静态表（不把一个人关在门外）。
+
+**③ V8 迁移：`UPDATE admin SET phone = NULL`。** V2:14–17 给四个账号写了明文 `1380000000x`——那是 T03 时代的产物，当时 T07 的 `CryptoService` 还不存在。本卡把这一列变成可读写业务字段之后，明文过不去两道：`decrypt()` 对非本类产出的串刻意抛错（不静默当未绑定），所以 `GET /admin/admins` 会直接 500；而加一层"解不开就当明文回显"的兜底，等于把"明文可以留在库里"变成制度，违反 PRD 5.2 的 483 行与附录 B 的 812 行。清掉是唯一同时满足两条的做法，真验收里第 18 步就是这个的证据。
+
+## 3. 新错误码：4007–4011，只追加不复用
+
+| 码 | 文案 | 为什么不能复用 |
+|---|---|---|
+| 4007 `ADMIN_USERNAME_EXISTS` | 该用户名已被占用 | 5002「数据已存在」是给业务对象重名用的（T27 的重名类型）；账号名重了管理员要知道的是"换一个名，或把删掉的那个复活" |
+| 4008 `ADMIN_CANNOT_DELETE_SELF` | 不能删除当前登录的账号 | 删完当前 token 还活着，但账号再也登不回来，PRD 没有注册通道 |
+| 4009 `ADMIN_IS_BUILT_IN` | 系统内置账号不可删除 | V2 四行是四个角色的登录入口，也是每一条集成测试的凭据 |
+| 4010 `ROLE_IN_USE` | 该角色下仍有管理员，请先调整他们的角色 | `admin.role_id`（V1:378）NOT NULL，删了那批人没有主语 |
+| 4011 `ROLE_IS_BUILT_IN` | 内置角色的名称与权限由权限地基定义，不可修改或删除 | 内置角色改名不报错，只会静默抽掉那一类人的全部写权限（caps 的键就是名字） |
+
+沿用 T11 加 2007、T15 加 3004、T19 加 3005、T26 加 3006 的同一条例：新码只追加，不复用，每个都写清"那句文案是说给谁听的"。
+
+## 4. 审计：本卡唯一一处不走 `@AuditLog` 切面
+
+切面的 detail 是 `buildDetail(sig, joinPoint.getArgs())`——把方法入参整个序列化成 JSON 存进 `audit_log.detail`。这个设计对排班、退款、套餐是对的（参数就是要留痕的东西），但本卡三个方法的参数里躺着凭据：`create(AdminCreateRequest)` 带明文新密码，`changePassword(ChangePasswordRequest)` 带明文旧密码 + 明文新密码。挂上切面等于把口令抄送进一张后台「审计流水」页（`AuditTimeline`，T04-E 做的）读得到的表。
+
+所以三处写入改为在 `@Transactional` 方法体内显式调 `AuditLogService.write`，detail 由代码逐字段构造：口令字段一律不进，手机号只记 `phoneFilled: true/false`，不记号码本身。同事务这条没有放松——写入发生在事务方法内部，与 J8（`AuditLogTest.j8_auditRollsBackWithBusiness`）验的是同一件事。真验收第 63/64 步是对着库里的 detail 原文断言"不含 password 字样"。
+
+## 5. 指标口径：卡片 769 行的红线，落成一个类 + 一份响应
+
+全项目此前**没有任何一处**跑过 `SUM`/`COUNT` 业务表（`grep -rn "SUM(\|COUNT(" src/main` 只命中 `SeedCheckService` 的四条自检 SQL），所以本卡是第一处，也必须是唯一一处。三个层次同一份定义：SQL 在 `DashboardMapper`（八条 `@Select`），口径文字在 `DashboardMetricsService` 类注释那张表，并且随响应返回（附录 B 第 803 行原文要求的第二半件：「且返回口径文字」）。
+
+| 字段 | SQL 条件 | 出处 | 为什么是这个口径 |
+|---|---|---|---|
+| `todayAppointmentCount` | `appointment`：`deleted=0` 且 `DATE(created_at)=CURDATE()` | PRD 337 / 卡 767 | 量的是"一天里发生的预约动作"。按下单时间不按就诊时间：`appointment` 没有"预约日期"列，只有 `appointment_time`(V1:125) 与 `created_at`(V1:126)，按就诊日算就得跟就诊量共用窗口，两个数会打起来。**含之后被取消的**——取消不注销"今天有人约过" |
+| `todayVisitCount` | 同上 + `status='COMPLETED'` + `DATE(appointment_time)=CURDATE()` | PRD 338 | 四状态（V1:124 注释）里只有 COMPLETED 说"看过病了"，CONFIRMED 只算挂了号 |
+| `outpatientConsumeFen` | `payment_record`：`status='SUCCESS'` 且今天 | PRD 339「门诊」 | PENDING 钱没到账、REFUNDED 已退出。与 T14/T15"只有 SUCCESS 才动余额"同一把尺子 |
+| `outpatientRechargeFen` | `recharge_record`：`status='SUCCESS'` 且 `patient_id IS NOT NULL` 且今天 | PRD 339 | 门诊/住院的区分方式是 V1:143-144 那两个列，T23 的住院充值也照这条落列 |
+| `inpatientRechargeFen` | 同上，`inpatient_id IS NOT NULL` | PRD 339「住院」 | 住院**消费**没有数字：库里没有按住院人挂账的流水表（T26 的住院消费页因此是零端点） |
+| `pendingItems[REFUND_REVIEW]` | `refund_record`：`status='PENDING'` | PRD 340 | 消掉它的是 T26 的两把审核端点 |
+| `pendingItems[FEEDBACK_REPLY]` | `feedback`：`status='PENDING'` 且未删 | PRD 340 | 消掉它的是 T27 的反馈处理端点 |
+
+三条"给不出"的都在代码注释里写明，没有填 0：
+- **体检/核酸收入**：`physical_appointment`（V1:280-292）与 `nucleic_appointment` 都没有金额列，T22 定的就是"费用只读不扣"。套餐价格（V1:255）是标价不是收入。填 0 会被读成"今天体检收入是零"这个业务结论。
+- **退款汇总**：T26 的审核只改状态不出钱，金额没动，列进"收入"就是假账。
+- **图表**：PRD 629 行那句"图表数据"是接口概览表的举例列，不是需求条目；4.2 四条与卡 767 行四项里没一处指定画什么。
+
+"今天"以**数据库时钟**为准：八条查询全用 `CURDATE()`，`statDate()` 回同一个 `CURDATE()`，页面显示的日期与数字的窗口必然同一天。MySQL 容器 TZ=Asia/Shanghai（docker-compose.yml:15），而 `mvn test` 跑在宿主机时区上——若改用 Java 侧 `LocalDate.now()` 就出现两个时钟，深夜那几个小时会差一天。
+
+## 6. 待处理事项与顶栏红点：判据是"有一把写端点能消掉"
+
+入选判据不是"状态看着像待办"，而是**本卡之外真有一把写端点能把它消掉**。三类没进来的原因写在看板类的注释里，不散落三张卡：病案配送 PENDING（T26 只有列表 + 详情两把读端点，`tracking_no` 从 V1 起没有生产者，管理员点进去什么也做不了）；预约 PENDING_PAYMENT（那是等患者付钱，不是等医院做事）；**task 表的 OPEN 待办**——T05 四方法内核完整，但卡片 308 行红线明写「不写业务触发」，首版没有任何地方调用 `dispatchTask`（`grep` 全仓只有 DTO 注释里提过一次），那张表恒为空。
+
+于是卡片 323 行 T06-E 欠下的**任务红点**（本卡补上，`TopBar.tsx`）用的不是 task 表的行数，而是上面两条真队列之和。用一张恒空的表做红点，红点永远不亮，那是把欠项做成假账——这正是 T06-E 当时欠下的理由（1851–1857 行：「现在要红点只有两条路：给 T05 补一个接口，或者前端写死一个数字」），本卡走的是第三条：换一个**真有数据、真有动作**的源，并把口径写在同一处。零条时整颗不渲染，沿用 T06-E「不放一个假的铃铛」那句话。
+
+红点的数与看板的数是同一次取数（`GET /admin/dashboard` 的 `pendingItems`），前端只做一次加法，没有第二处口径。跳转目标不外放：服务端只给 `type`，路由由前端白名单 `PENDING_ROUTES` 换，表里没有的 type 渲染成"无入口"——与 T03/T06-A 处理 `landingPage` 是同一条做法。
+
+## 7. 前端：五页 + 看板 + 红点 + 导航的第二道闸门
+
+- `admin/src/api/system.ts`：18 个函数 + 类型，头注释写清「读也要 EDIT_SETTINGS」这条反例、`number|null` 与 `?` 分别对应谁、PUT 必须整份提交、自定义角色是只读角色。
+- `AdminManagePage`：编辑弹窗**没有密码栏**（改口令是 4.6.5 那一页、要旧密码；替别人重置整本规格不存在）；联系方式编辑时**不回填脱敏串**（回填会把 `138****0001` 当新号码存进去）；V2 四行不渲染删除按钮。
+- `RoleManagePage`：八个模块的中文标签 + 键名并排显示；内置四行整行锁死；页面顶部写明"勾选的是可见范围，写权限由代码授予，自定义角色是只读角色"。
+- `TitleManagePage`：一行删除按钮都没有，`doctorCount` 就是这句话的证据。
+- `AnnouncementManagePage`：类型下拉取自 `GET /admin/announcements/options`（后端由 `AnnouncementType` 生成，前端不抄第四份）；弹窗里没有发布时间输入框（编辑不许把公告顶回最新）；「推送范围」不出现，理由在页头注释里。
+- `ChangePasswordPage`：主体从 token 取，改成功后的文案写清「当前这个浏览器还会停在登录态（JWT 未过期）」，不假装吊销。
+- `Dashboard.tsx`：三个计数卡 + 收入三项（全走 `<Money>`，护士的 null 显示 `—`）+ 待处理两条入口 + 后端口径原文整块；体检那一档是说明文字不是 0。
+- `nav.ts` / `AuthProvider` / `AppLayout`：新增 `hasCap`，`filterNav(hasModule, hasCap)` 对 `/system/`（除 `/system/password`）额外裁一刀，直接敲地址也走同一判定给 403，与后端 4001 同口径。旧的 `nav.test.ts` 用例一律单参调用，默认 `hasCap=()=>true`，语义一字未动。
+
+## 8. 门禁结果（2026-10-01）
+
+| 门禁 | 命令 | 结果 |
+|---|---|---|
+| 后端全量 | `mvn clean test`（JDK 26，离线） | **Tests run: 444, Failures: 0, Errors: 0**（T27 的 421 + 本卡 `AdminSystemIntegrationTest` 19 + `PermissionServiceTest` 新增 4） |
+| 后端编译 | `mvn -o -q test-compile` | 0 错误（注释行号修正后复跑） |
+| 前端类型 | `npx tsc --noEmit` | 0 错误 |
+| 前端 lint | `npx eslint . --max-warnings 0` | LINT_EXIT=0 |
+| 前端测试 | `npx vitest run` | **Test Files 20 / Tests 201**（T27 后 19 文件 161 例 → 本卡 +`SystemPages.test.tsx` 33 例、+`TopBar` 红点 3 例、+`nav` 能力闸门 4 例） |
+| 前端构建 | `npx vite build` | ✓ 1829 modules，463.90 kB |
+
+## 9. 集成测试 19 例（`AdminSystemIntegrationTest`）
+
+J61 一条：`j61_adminCreateReadUpdateDeleteRoundTrip`（建 → 列表 → 编辑清空 → 软删 → 同名复活且 id 不变，四步串在一根链上）。J62 两条：`j62_dashboardCountsOnlyTodayWindowAndExcludesYesterdayProbe`（同窗口对账 + 窗口外负对照 + 非 SUCCESS 不算收入 + 待处理两条 + 口径七条 + 服务端不吐路径）、`nurseSeesNullMoneyButRealCountsOnDashboard`（读原始 JSON 断言键在值为 null）。其余 15 例覆盖：4007/4008/4009/4010/4011 五把守卫各一条、`systemReadsRequireEditSettings`（五条读端点 × nurse/doctor 4001 × 患者 4001+403）、`editSettingsCapGatesEverySystemWrite`、`clerkWithCustomRoleCanReadDashboardButNotWrite`（**真登录**：`GET /auth/captcha` → Redis 读答案 → `POST /auth/login` → 断 token 的 modules/caps → 该 token 读看板 200、写职称 4001）、公告→停诊通知跨卡链、改密码三态 + 审计不含口令、`renamedDoctorStillNamedInAdminAppointmentList`（兑现 T27 的跨卡 TODO ③）、`dashboardResponseCarriesExactlyTheDocumentedFields`（字段集合锁死 8 个）、`t28EndpointRegistryIsExactlyWhatTheCardAskedFor`（18 把字面清单）。
+
+清理纪律沿用 T27：探针走真 API，`@AfterEach` 裸 SQL 物理删 + 绝对行数快照。本卡把 **`admin` 与 `role` 两张 V2 表也纳入快照**——seed.sql 第 1 条注释明写"不碰 role/admin"，这两张表漏一行没人报警，而它们恰好是本卡唯一会被写脏的地基表。
+
+一处踩坑记录：软删同名复活最初写成 `LambdaUpdateWrapper.set(Admin::getDeleted, 0)`，MyBatis-Plus 给 wrapper 形式的 UPDATE 也追加 `WHERE deleted = 0`，这条语句**永远匹配 0 行**，接口照样回 200——是 J61 那条链跑到复活那步 500 才暴露的。改为 `AdminMapper.reviveById` 手写 SQL（`WHERE id=? AND deleted=1`），与 T11 的 `ScheduleMapper.reviveSoftDeleted` 同一个坑、同一个答案。
+
+## 10. 真 HTTP 验收：`t28_http.py`，67 步 FAIL 0
+
+后端重启（Flyway 落到 V8，`SELECT version FROM flyway_schema_history` 回 `8 | 1`）后跑真接口，登录一律走真通道（验证码答案从 Redis 读回，不猜不注入）。原文摘录：
+
+```
+01   基线 开跑前                    | 期望 各表等于种子绝对行数        | 实际 ok                    | PASS
+18   V8 清掉了 V2 的明文手机号      | 期望 4 行内置账号 phone 全为 NULL | 实际 not_null=0            | PASS
+23   自定义角色账号登录：模块来自 role.permissions
+                                  | 期望 modules=[dashboard, ...]   | 实际 200 ['dashboard','appointment'] | PASS
+24   自定义角色的 caps 是空数组     | 期望 caps=[]                   | 实际 []                    | PASS
+25   该 token 读看板（改造前在这里吃 403） | 期望 200                  | 实际 200/200               | PASS
+26   该 token 写职称               | 期望 200 + 4001 且不产生行       | 实际 200/4001 rows=0       | PASS
+33   同名重建走复活                | 期望 200 且 id 不变             | 实际 200/200 id=36 vs 36   | PASS
+34   职称列表带在用医生数           | 期望 3 行且合计=5               | 实际 counts={'主任医师': 2, '副主任医师': 1, '主治医师': 2} | PASS
+37   职称删除这把端点不存在         | 期望 HTTP 500                  | 实际 500                   | PASS
+41   跨卡：后台一发，小程序停诊通知页立刻读到 | 期望 含 T28HTTP 探针停诊公告 | 实际 ['T28HTTP 探针停诊公告'] | PASS
+42   编辑公告不改发布时间           | 期望 前后一字不差               | 实际 ...03.94 vs ...03.94  | PASS
+46   今日门诊消费收入 == 口径 SQL   | 期望 相等且含探针               | 实际 api=12345 sql=12345 all=1192944 | PASS
+47   昨天的探针没被算进来（负对照）  | 期望 窗口值 < 不带日期的总额      | 实际 window=12345 all=1192944 gap=1180599 | PASS
+48-51 其余四个指标                | 期望 相等且 >= 探针下限           | 实际 api=2/1/5000/7000 == sql | PASS
+53   statDate 与 CURDATE 同一时钟  | 期望 等于库里的 CURDATE()        | 实际 2026-10-01 vs 2026-10-01 | PASS
+56   护士视角三个金额键在值为 null   | 期望 null 而不是 0、也不是没键    | 实际 masked=True           | PASS
+61   改过以后新密码可登录、旧密码不可 | 期望 新 200 / 旧 401            | 实际 new=200/200 old=200/401 | PASS
+63   审计留痕但不含口令             | 期望 detail 里没有 password 字样 | 实际 {"username": "t28http_clerk"} | PASS
+65   收尾绝对对账                  | 期望 回到种子绝对行数            | 实际 {'title':3,'doctor':5,...} | PASS
+66   探针行全部清干净               | 期望 七个计数全为 0             | 实际 {'payment':0,'recharge':0,...} | PASS
+合计 67 步，FAIL 0 步
+```
+
+脚本第一版有四个 FAIL，全是**验收脚本自己的错**，产品行为是对的——这一条值得记下来，因为它又是"harness 自我抬绿"的家族：
+1. 三条校验类断言写成 `st == 200 and biz == 400`，而 Bean Validation 走的是 HTTP 400（不是 BizException 那条"HTTP 200 + body code"的路），期望写反导致假 FAIL；改断言而不是改产品。
+2. 第 30 步"删自己"用 clerk 那个自定义角色账号打，它 `caps` 是空的，先在 `@RequireCap` 上吃 4001，**根本走不到 4008 这条守卫**。这一条最险：如果把产品改成"先判自删再判能力"来让测试通过，就把权限模型弄坏了。正解是换一个有能力、非内置的账号打，4008 才露出来。
+3. 第 60 步用 HTTP 状态码判断登录成败，而登录失败也是 HTTP 200 + body 401，`st_old != 200` 永远成立不了；改成对 body 的 code 断言。
+4. 第 48–51 步第一轮是 `api=0 sql=0` 的空断言——0==0 也报 PASS。补了"今天的探针"（2 条预约含 1 条已完成、门诊/住院充值各 1 笔）并给每个指标配下限，另加一条负对照（不带日期的总额必须比窗口值大 888888 以上）。
+
+## 11. 浏览器轮：被拦下，成交接头
+
+Qoder 的自动模式分类器再次拒绝浏览器侧的凭据动作（这次拦的是登录页的「刷新验证码」按钮），与此前记录的三次同类拦截同一条：批准不覆盖。因此 T28 的浏览器人工核验交给用户，按下面这张表走一遍即可，每条都写了"如果不成立会看到什么"。
+
+```js
+// 贴进 Chrome 控制台先自证身份，再逐条核对
+console.log('innerWidth=', window.innerWidth,           // 必须 ≥1024，否则你看的是抽屉布局
+            'user=', JSON.parse(localStorage.getItem('hospital_auth')||'{}').username,
+            'caps=', JSON.parse(localStorage.getItem('hospital_auth')||'{}').caps)
+```
+
+| # | 角色 | 页面 | 成立时看到 | 不成立说明什么 |
+|---|---|---|---|---|
+| 1 | admin | `/system/admins` | 四行内置账号显示「内置账号」而不是删除按钮；联系方式全是「未填写」 | V8 没生效或脱敏写错 |
+| 2 | admin | 新增管理员 | 填手机号后列表立刻显示 `138****xxxx` | 加密或脱敏链断 |
+| 3 | admin | `/system/roles` | 只读说明在页头；新建角色勾 2 个模块后列表显示两个中文名 | 模块候选或 `modules` 解析 |
+| 4 | **新账号** | 退出后用第 3 步建的账号重新登录 | 侧边栏**只有**首页 + 预约管理，没有系统设置分组；首页看板能打开，职称页写操作必然 4001 | 这条就是 `SecurityConfig` STAFF 改造 + `resolveModules` 读库在 UI 上的样子，是本轮唯一不可省的一步 |
+| 5 | admin | `/system/titles` | 三行职称带「N 位」在用数，且整页没有删除按钮 | 有意未做被做坏了 |
+| 6 | admin | `/system/notices` | 发一条「停诊通知」→ 立刻在小程序停诊通知页可见；点「撤回」→ 立刻消失 | announcement 写侧与 T24 读侧的链 |
+| 7 | admin | `/`（首页） | 顶栏铃铛上的数 == 看板待处理之和；四个数下方各自带口径小字 | 两处取数不同源 |
+| 8 | nurse | 任意页 | 顶栏没有铃铛以外的异常；系统设置分组只剩「修改密码」；直接敲 `/system/admins` 给 403 页 | 导航第二道闸门 |
+| 9 | nurse | 首页 | 三个金额显示 `—`，条数是数字 | 裁剪层绕过（字段改名） |
+| 10 | admin | `/system/password` | 旧密码填错 → 红字「原密码不正确」；改对后当前浏览器仍在线 | 文案假装吊销 |
+
+## 12. 本卡四条教训
+
+1. **"CRUD"这个词在卡片里出现，不等于四个动词都有授权。** 判定顺序是：PRD 那一节的动词清单 → 被删对象的引用列能不能空 → 规格有没有写"删了之后别人怎么办"。三问有一问答不上就不开删除，并且把裁决写在页面与类注释里，让下一个读代码的人不必重新推一遍。本卡的职称与 T27 的套餐类型是同一形状的两次同解。
+2. **新权限模型落地时，先找哪一层会把自己打死。** 本卡最容易漏的不是端点写错，而是三处硬编（SecurityConfig 的角色名单、PermissionService 的静态模块表、V2 的角色名做 caps 键）互相咬合：少改一处，"权限配置"就成了一件不发生的事，而且**所有自动化测试仍然全绿**——因为现有测试全用那四个内置角色名造 token。只有"真建一个角色、真登录一次"才暴露，这就是第 4 步那条测试存在的理由。
+3. **守卫类断言要用有能力的人打。** 用无能力的账号去测 4008，会在前一道闸门就返回，看起来像"产品不对"，实际是探针选错。这类"被拒两次，误诊一次"的坑，修法永远是往链条上游再退一步看谁先接住。
+4. **指标验收不许留 0==0 的断言。** 本轮第一版四个指标全等 SQL 却都是 0——窗口里没有行，相等关系毫无信息量。给每个指标配一条"探针金额/条数下限"再加一条窗口外负对照，才第一次真的测到那条 `DATE(...)=CURDATE()`。
+
+## 13. 附录 B 14 项逐条扫描（卡片 799–812 行原文）
+
+| 行 | 检查项 | 本卡结论 |
+|---|---|---|
+| 799 | 金额有没有 FLOAT/DOUBLE？ | 无新金额列；看板三个金额是 `Long`（分）字段，`*Fen` 命名 |
+| 800 | 护士视角新接口会不会吐金额？ | `GET /admin/dashboard` 三个 `*Fen` 走裁剪；集成测试与 HTTP 第 56 步都断"键在值为 null" |
+| 801 | 新写操作有没有写 audit_log？同事务吗？ | 12 把写端点全留痕；账号/密码三处刻意不走 dump 入参的切面，改为事务内显式写（第 4 节） |
+| 802 | 跨表写入是否包在一个事务？外部调用放 afterCommit？ | 本卡无跨表写；无外部调用 |
+| 803 | 指标口径有没有在别处重算？（只在 MetricsService，且返回口径文字） | SQL 只在 `DashboardMapper`，定义只在 `DashboardMetricsService`，口径随响应返回；前端只做一次加法（红点），注释里写明那不是重算 |
+| 804 | 权限判断是否只写在 UI？ | 16 把挂 `@RequireCap`（读也算）；导航按能力裁剪只是镜像，直接敲地址仍由后端 4001 兜 |
+| 805 | 自动派发的任务是否幂等？ | 本卡没有派单；task 表继续零生产者（卡 308 行红线），红点因此不用它 |
+| 806 | 小程序端新接口是否强制注入 userId？ | 本卡未新增患者端接口；`/user/stop-notices` 是 T24 的既有读口 |
+| 807 | 金额用 `<Money>`、列表用 `<DataTable>`、状态用 `<StatusBadge>`？ | 看板三笔走 `<Money>`；五页列表全走 `<DataTable>`；本卡没有状态机列，故无 StatusBadge |
+| 808 | 列表筛选/搜索/分页是否进 URL？ | `DataTable` 自带 `?page=`；本卡列表按规格无筛选参数（PRD 461/449/453/457 都是"展示所有"） |
+| 809 | 有没有多装 T01 清单外的三方库？ | 无。模块勾选用原生 `<input type=checkbox>`，类型下拉用原生 `<select>` |
+| 810 | 有没有实现附录 A 中「首版不做」的东西？ | 无。多院区/医院导航（784 行）继续不做；「推送范围」正是 786 行「消息推送/企微公众号」的落点，本卡只记归属 |
+| 811 | 本卡测试场景（J 编号）是否逐条真实通过、而非"应该通过"？ | J61 = 1 例链式 + 4 例守卫；J62 = 2 例（对账 + 裁剪）+ HTTP 第 46–57 步原文摘录 |
+| 812 | 身份证/手机号是否加密存储？ | `admin.phone` 由本卡开始真正读写：写入走 AES-GCM，V8 清掉 V2 的四处明文；HTTP 第 16/18 步是证据 |
+
+## 14. 有意未做（每条都有出处，不是漏写）
+
+| 项 | 出处 | 为什么不做 |
+|---|---|---|
+| 职称删除端点 | PRD 457–458 只两句 + `doctor.title_id`（V1:88）可空 | 见第 1 节三条证据 |
+| 角色的"写能力"配置 | V2 的 role 表没有 caps 列；`Capability` 枚举注释早写明"能力列表不落库" | 做一半（存进库没人读）就是假功能；完整实现要新列 + 改 `@RequireCap` 判定源，规格没授权 |
+| 内置角色可改名/可删 | `PermissionService.ROLE_CAPS` 以名字为键 | 改名不报错、静默抽掉写权限，这种坑不开放（4011） |
+| 替别人重置密码 | PRD 4.6.5 的 465 行主语是"自身" | 规格里不存在这个动作；`AdminUpdateRequest` 也没有 password 字段 |
+| 公告「推送范围」 | PRD 462 行列了四个字段 | `announcement` 没有该列，唯一读侧只按 type 过滤；加一列没人读 = 让管理员以为有定向效果（归属附录 A 786 行消息推送） |
+| 看板图表 | PRD 629 行举例列提过一句"图表数据" | 4.2 四条与卡 767 行四项都没指定轴/聚合方式，不发明一张编出来的图 |
+| 体检/核酸收入、住院消费、退款汇总 | `physical_appointment`/`nucleic_appointment` 无金额列；无住院流水表 | 见第 5 节，页面写"库里无落点"而不是 0 |
+| `/tasks` 待办页 | 卡 308 行「不做 /tasks 页（T28）」 | task 表首版零生产者（同一条红线"不写业务触发"），做一页永远是空表；红点因此改用真队列。归属二期或真有触发的那一张卡 |
+| 服务端分页 | 卡 762–767 都没要分页 | 沿用 T25–T27 的全量列表 + 前端分页；管理员/角色/职称三张表行数天然是个位数 |
+| 患者侧公告列表 | PRD 62 行「医院公告/停诊通知」的"医院公告"半句 | T24 只开了停诊通知一把读口，本卡不把患者侧接口范围扩大（那是另一张展示卡的账） |
+
+## 15. 跨卡 TODO（继续带着走）
+
+1. 未映射路径落 **500** 而不是 404（本卡第 37 步又撞上一次：`DELETE /admin/titles/{id}` 返回 500）。验收脚本因此把"不该存在的端点"一律按 500 判，这是仓库既有形状，不是 T28 能顺手改的全局异常处理。
+2. 服务端分页：列表卡到几百行时要统一改成 `?page`。
+3. 全量 `mvn test` 每跑一次会泄漏孤儿 `user`/`refund_record` 行（T24 记的），本卡把 `admin`/`role` 纳入快照但没有掩盖这个问题。
+4. `announcement` 表里 `NOTICE`/`ACTIVITY` 两类**有生产者但没有读者**（本卡补了生产者，小程序仍只有 STOP_CLINIC 一条读口）；`queue_status` 仍无生产者（T16）；`case_delivery.tracking_no` 仍无写者（T23/T26）；`feedback.CLOSED` 仍无写者（T27）。这四格是"有主的空"，各自的消费者都在二期。
+5. 小程序「问题反馈」提交页仍无人认领（T27 只做了后台的处理侧）。
+
+## 16. 改动清单
+
+**后端**：`V8__admin_phone_plaintext_removed.sql`；`common/ErrorCode`（4007–4011）；`enums/AnnouncementType`（新）+ `HospitalContentService` 改用枚举（删掉重复的字符串常量）；`security/LoginUser`（`ROLE_STAFF`）+ `config/SecurityConfig`（兜底规则换类别角色）；`service/PermissionService`（`resolveModules`/`parseModules`/`CORE_ROLES` + 注入 ObjectMapper）+ `controller/AuthController`（登录读库 + `PUT /auth/password`）；`mapper/AdminMapper`（含软删读 + `reviveById`）+ `mapper/DashboardMapper`（新）；服务 5 个（`AdminAccountService`/`AdminRoleService`/`AdminTitleService`/`AdminAnnouncementService`/`DashboardMetricsService`）；控制器 5 个（`AdminAccountController`/`AdminRoleController`/`AdminTitleController`/`AdminAnnouncementController`/`AdminDashboardController`）；DTO 12 个（Admin 3 / Role 2 / Title 2 / Announcement 2 / ChangePasswordRequest / Dashboard 3）。
+
+**测试**：`AdminSystemIntegrationTest`（新，19 例）；`PermissionServiceTest`（+4 例模块解析等价性，构造器补 ObjectMapper，能力矩阵表头改为动态计数）。
+
+**管理端**：`src/api/system.ts`（新）；页面 5 个（Admin/Role/Title/Announcement/ChangePassword）+ `Dashboard.tsx` 填实；`App.tsx` 五条 `/system/*` 路由替换占位；`components/layout/nav.ts`（`requiresSystemCap`/`SYSTEM_CAPABILITY`/`filterNav` 第二参）+ `AuthProvider.tsx`/`store/auth.ts`（`hasCap`）+ `AppLayout.tsx`（403 判定同步）+ `TopBar.tsx`（任务红点，T06-E 欠项）；`SystemPages.test.tsx`（新，33 例）+ `nav.test.ts`（+4）+ `TopBar.test.tsx`（+3，并 mock 掉顶栏新增的看板取数）。
+
+**小程序**：本卡无改动。
+
+**驱动（仓库外，`E:\qdspace\_mp-driver`）**：`t28_http.py`（67 步）、`t28-probe.sql`、`t28-probe-users.txt`、`t28-http-result.txt`、`t28-backend.log`、`t28-vite.log`。
+
+## 17. 🚩 M2 收口
+
+DoD 是「🚩 M2：首版交付完成」。T01–T28 全部收口，四道门禁全绿，本卡真 HTTP 67 步 0 FAIL，唯一欠着的是第 11 节那张浏览器核对表（分类器拦下凭据动作，交接给人）。
+
+按既定节奏：本卡提交后打标签 `v4.0` 并推送 `main` + tag（Release 由用户在网页侧发布——浏览器外部写操作同样被拦，这条已记录）。里程碑表：v1.0 = M0 地基（`95bddb5`）、v2.0 = M1 预约主链（`ff49803`）、v3.0 = T24 医院服务（`32feb05`）、**v4.0 = M2 首版交付（本卡）**。
+
+## 18. 下一步
+
+首版交付完成，28 张卡走完。接下来只有两件事：第 11 节的浏览器核对表（人工），以及二期排期——附录 A 建议顺序「真实支付 → 多院区 → 消息推送 → 对账 → 票据」，其中"消息推送"能顺手补掉本卡留下的「推送范围」与首页公告两处空白。

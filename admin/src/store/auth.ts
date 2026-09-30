@@ -16,6 +16,12 @@ export interface AuthContextValue {
   profile: AuthProfile | null
   isAuthenticated: boolean
   hasModule: (module: string) => boolean
+  /**
+   * 能力判定。T28 之前只有页面自己读 {@code profile.caps}（各卡的操作按钮），
+   * 这一卡导航也要用它：{@code /system} 那一组的读端点在后端也挂 EDIT_SETTINGS，
+   * 只按模块裁剪会让护士看见 4 个点了必然 4001 的入口。
+   */
+  hasCap: (capability: string) => boolean
   signIn: (result: LoginResult) => AuthProfile
   signOut: () => void
 }

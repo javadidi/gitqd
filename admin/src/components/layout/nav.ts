@@ -148,11 +148,36 @@ export function breadcrumbOf(pathname: string): string[] {
  * 按授权模块裁剪导航。分组本身不挂模块键 —— 只要还剩一个可见子项就渲染，
  * 全被裁掉才整组消失，这样分组粒度不会和 8 个键强行 1:1。
  * 未映射的路由一律不显示（fail-closed）：宁可漏入口，不可漏出口。
+ *
+ * <h2>T28 加了第二个闸门：{@code /system} 这一组额外看能力</h2>
+ * 后端 T25–T27 四张卡的读端点全部不挂能力（只有写才拦），所以护士打开科室、套餐列表是真读得到东西的，
+ * 导航只需要按模块裁剪。T28 把这条口径改了：管理员清单、角色权限地图、职称、公告，
+ * 连 GET 都要 {@code EDIT_SETTINGS}（后端 18 把里 16 把挂能力，只有看板和改密码不挂）。
+ * 于是"有 system 模块"不再等于"看得见这一组的页面"——V2 恰好给了 nurse {@code system} 模块，
+ * 不额外裁的话，护士会看见 4 个点了只能吃 4001 的入口。
+ *
+ * <p>唯一的例外是 {@code /system/password}：改自己的密码是自助动作（PRD 9.2 的 628 行把它归在
+ * 认证授权那一行，不是系统设置），后端 {@code PUT /auth/password} 也不挂能力，
+ * 所以四个角色都该看得见这一项。
+ *
+ * <p>{@code hasCap} 有默认值 {@code () => true}：调用方不传时行为与本函数改造前完全一致，
+ * 老的 nav.test.ts 用例（只按模块裁剪）不需要跟着改语义。
  */
-export function filterNav(hasModule: (key: ModuleKey) => boolean): NavItem[] {
+export const SYSTEM_CAPABILITY = 'EDIT_SETTINGS'
+
+/** 这一组路由的读端点也要 EDIT_SETTINGS；/system/password 是唯一例外（自助改密）。 */
+export function requiresSystemCap(pathname: string): boolean {
+  return pathname.startsWith('/system/') && pathname !== '/system/password'
+}
+
+export function filterNav(
+  hasModule: (key: ModuleKey) => boolean,
+  hasCap: (capability: string) => boolean = () => true,
+): NavItem[] {
   const visible = (to: string) => {
     const key = moduleOf(to)
-    return key !== null && hasModule(key)
+    if (key === null || !hasModule(key)) return false
+    return requiresSystemCap(to) ? hasCap(SYSTEM_CAPABILITY) : true
   }
 
   return navItems

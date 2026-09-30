@@ -7,6 +7,7 @@ import com.hospital.dto.HealthArticleResponse;
 import com.hospital.dto.HospitalProfileResponse;
 import com.hospital.dto.NoticeResponse;
 import com.hospital.dto.StopNoticeResponse;
+import com.hospital.enums.AnnouncementType;
 import com.hospital.entity.Announcement;
 import com.hospital.entity.AppointmentNotice;
 import com.hospital.entity.DeliveryNotice;
@@ -49,13 +50,6 @@ import java.util.List;
  */
 @Service
 public class HospitalContentService {
-
-    /**
-     * 停诊通知在公告表里的类型值。V1:348 的注释只举了 NOTICE/ACTIVITY 两例，
-     * 列本身是 VARCHAR(32) 且无 CHECK/枚举约束；卡片 682 行点名了第三种公告，
-     * 而 PRD 从没打算为它另建一张表（数据字典 22 行里没有"停诊通知"这一行）。
-     */
-    public static final String STOP_CLINIC_TYPE = "STOP_CLINIC";
 
     private final HospitalProfileMapper profileMapper;
     private final GuideArticleMapper guideMapper;
@@ -187,7 +181,7 @@ public class HospitalContentService {
     /** 停诊通知列表（卡片 682 行）。只读 announcement 里 STOP_CLINIC 那一族，别的种类不外泄。 */
     public List<StopNoticeResponse> stopNotices() {
         return announcementMapper.selectList(new LambdaQueryWrapper<Announcement>()
-                        .eq(Announcement::getType, STOP_CLINIC_TYPE)
+                        .eq(Announcement::getType, AnnouncementType.STOP_CLINIC.name())
                         .orderByDesc(Announcement::getPublishTime)
                         .orderByDesc(Announcement::getId))
                 .stream().map(row -> {
