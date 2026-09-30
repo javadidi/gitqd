@@ -120,29 +120,36 @@ export default function Dashboard() {
               <CardTitle>待处理事项</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {data.pendingItems.length === 0 ? (
+              {/* 两条队列都是 0 时不列"0 条 · 去处理"两行——那样下面那句空态永远走不到，
+                  而"待处理事项"这一栏的正确读法本来就是"没有要打扰你的事"（红点同一条判据）。 */}
+              {data.pendingItems.every((item) => item.count === 0) ? (
                 <p className="dashboard-pending-empty text-sm text-muted-foreground">
                   当前没有待处理事项
                 </p>
               ) : (
-                data.pendingItems.map((item) => {
-                  const to = PENDING_ROUTES[item.type]
-                  return (
-                    <div
-                      key={item.type}
-                      className="dashboard-pending-row flex items-center justify-between gap-4 text-sm"
-                    >
-                      <span>{item.label}</span>
-                      {to ? (
-                        <Link className="dashboard-pending-link font-medium text-primary hover:underline" to={to}>
-                          {item.count} 条 · 去处理
-                        </Link>
-                      ) : (
-                        <span className="text-muted-foreground">{item.count} 条</span>
-                      )}
-                    </div>
-                  )
-                })
+                data.pendingItems
+                  .filter((item) => item.count > 0)
+                  .map((item) => {
+                    const to = PENDING_ROUTES[item.type]
+                    return (
+                      <div
+                        key={item.type}
+                        className="dashboard-pending-row flex items-center justify-between gap-4 text-sm"
+                      >
+                        <span>{item.label}</span>
+                        {to ? (
+                          <Link
+                            className="dashboard-pending-link font-medium text-primary hover:underline"
+                            to={to}
+                          >
+                            {item.count} 条 · 去处理
+                          </Link>
+                        ) : (
+                          <span className="text-muted-foreground">{item.count} 条</span>
+                        )}
+                      </div>
+                    )
+                  })
               )}
               <p className="dashboard-pending-note pt-1 text-xs text-muted-foreground">
                 这里只列后台真有一把写端点能消掉的两类。病案配送的申请不算：T26 只给了列表和详情

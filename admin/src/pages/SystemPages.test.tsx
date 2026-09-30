@@ -595,7 +595,7 @@ describe('修改密码页（PRD 4.6.5）', () => {
   })
 })
 
-describe('数据看板页（PRD 4.2 / 卡片 766 行）', () => {
+describe('数据看板页（PRD 4.2 / 卡片 767 行）', () => {
   const metrics = {
     statDate: '2026-10-01',
     todayAppointmentCount: 7,
@@ -671,6 +671,22 @@ describe('数据看板页（PRD 4.2 / 卡片 766 行）', () => {
 
     renderAt('/')
     expect(await screen.findByText('4 条')).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /去处理/ })).not.toBeInTheDocument()
+  })
+
+  it('两条队列都是 0 时只说"当前没有待处理事项"，不列两行 0 条', async () => {
+    seed(ADMIN_CAPS)
+    mockGetDashboard.mockResolvedValue({
+      ...metrics,
+      pendingItems: [
+        { type: 'REFUND_REVIEW', label: '退款待审核', count: 0 },
+        { type: 'FEEDBACK_REPLY', label: '反馈待回复', count: 0 },
+      ],
+    })
+
+    renderAt('/')
+    expect(await findClass(document, 'dashboard-pending-empty')).toHaveTextContent('当前没有待处理事项')
+    expect(classOf(document, 'dashboard-pending-row')).toBeNull()
     expect(screen.queryByRole('link', { name: /去处理/ })).not.toBeInTheDocument()
   })
 
