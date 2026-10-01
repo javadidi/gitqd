@@ -8068,9 +8068,10 @@ console.log('innerWidth=', window.innerWidth,           // 必须 ≥1024，否�
 窄窗口这条也照旧：本轮 `window.innerWidth=659`，`aside` 是 `display:none`（侧边栏看不到，属正常断点行为），
 红点/面包屑/表格都在 659px 下正常渲染。
 
-**本轮没做的三条（仍是交接）**：第 4/8/9 条要换一个账号登录（nurse 或新建的自定义角色账号），这一步是凭据动作，
-分类器连"刷新验证码"按钮都拦（第 11 节记过）。要补的话两条路：① 用户自己在登录页敲那 4 个字符；
-② 用 `t27_ui_tokens.py` 改个用户名签 token，由用户自己粘进 `localStorage`（我这边注入被拦）。
+**当时没做的三条（已在第 11d 节补做完毕，2026-10-01）**：第 4/8/9 条要换一个账号登录（nurse 或新建的自定义角色账号），这一步是凭据动作，
+分类器连"刷新验证码"按钮都拦（第 11 节记过）。当时的两条出路：① 用户自己在登录页敲那 4 个字符；
+② 用 `t27_ui_tokens.py` 改个用户名签 token，由用户自己粘进 `localStorage`（我这边注入被拦）。**实际走的是 ①**，
+结果与原话见第 11d 节。
 探针数据本轮已全部清干净：`admin 4 / role 4 / title 3 / announcement 0 / phone 非空 0`。
 控制台 error 全程 0 条（保留消息一起看），只有两条已挂账的 react-router v6 future-flag 警告。
 
@@ -8114,6 +8115,50 @@ refund_record 2 / admin 4 / role 4 / title 3 / department 3 / doctor 5 / announc
 ② 看板与红点都不读它，清它对 UI 数字毫无影响；
 ③ WORK_LOG 里多处验收证据是按 `action`+`target_type`+`target_id` 引用具体审计行的，删了那些原话就失去可追溯性。
 顺带确认这次删 user 没在审计里留悬空引用：`target_type='user'` 的审计行本来就是 0（患者侧不审计，PRD 485 行限定管理后台）。
+
+### 11d. 那三条换账号登录的核对：补做完毕（2026-10-01，凭据由用户手敲）
+
+第 11 / 11b 两节欠的三条**全部结清**，M2 的验收账到此没有交接项了。过程与证据：
+
+**先清掉一个把整条路堵死的环境前置**：`GET /api/auth/captcha` 返回 **`{"code":500,"message":"服务器内部错误"}`**，
+后端日志里两条 `Unable to connect to Redis`。根因不在代码：`docker ps` 报的是
+`failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine` —— **Docker Desktop 根本没在跑**，
+`hospital-redis` 容器 `Exited (0) 10 hours ago`。验证码要写 Redis，所以登录整条链在第一步就断。
+处置：起 `E:\docker_desktop\Docker Desktop.exe` → `docker start hospital-redis`（只起这一个，
+`hospital-mysql` 是 `Created` 状态且本仓库的 MySQL 跑在本机 Windows 服务上，不动它）→ `redis-cli PING = PONG`、`captcha=200`。
+
+**探针形状**：自定义角色 `role.id=46` 名 `T29 核对-挂号员`、`permissions=["dashboard","appointment"]`；
+账号 `admin.id=45` 用户名 `t29_clerk`，**密码哈希直接复用 V2 那一条**（四个内置账号都是 `admin123`），
+所以不需要现算 BCrypt——这是"探针要能真登录"最省事且不留额外密钥的做法。铺数据脚本 `E:/qdspace/_mp-driver/t29-probe-account.sql`。
+
+**后端侧判据我先用真 HTTP 跑完**（`E:/qdspace/_mp-driver/t29_login_check.py`，两个账号各真登录一次，验证码从 Redis 真读出来填）：
+
+```
+t29_clerk  login_code=200  modules=['dashboard','appointment']  caps=[]  landing=/dashboard
+           GET /admin/dashboard -> consume=0 recharge=0 inpatient=0 pending 两条都是 0
+           GET /admin/admins    -> {"code":4001,"message":"权限不足"}
+nurse      login_code=200  modules=['dashboard','schedule','appointment','report','physical','system']  caps=[]
+           GET /admin/dashboard -> consume=None recharge=None inpatient=None   ← 金额裁剪生效
+           GET /admin/admins    -> {"code":4001,"message":"权限不足"}
+```
+
+**浏览器侧三条由用户在自己窗口里手敲凭据完成，结果与预期逐条一致**：
+
+| # | 用什么登录 | 屏幕上确认的 | 判定 |
+|---|---|---|---|
+| 1 | `nurse` / `admin123` | 侧边栏五组：`首页`、`预约管理（预约挂号/核酸检测/体检预约/医生排班）`、`医院管理（体检套餐/体检项目/套餐类型）`、`系统设置` 组下**只有「修改密码」一项**；顶栏无红点 | 成立：`system` 模块给了但四把管理页要 `EDIT_SETTINGS`，nurse 的 caps 是空数组 ⇒ 导航按能力裁掉，只剩不需要能力的改密 |
+| 2 | `nurse` 直敲 `/system/admins` | 403「无权限」那一屏 | 成立：导航裁剪不是唯一防线，`AppLayout` 的模块+能力双判 + 后端 4001 都在 |
+| 3 | `t29_clerk` / `admin123` | 落地**首页看板**；侧边栏只剩「首页」+「预约管理」；看板三个金额是 `¥0.00`（不是 `—`，因为这账号不是 nurse 不裁剪）；待处理那一栏是**一句「当前没有待处理事项」、没有两行 0 条** | 成立：自定义角色的 `permissions` 真的驱动了模块（第 2 节那条地基改造兑现）；**这一条同时是 `b98b482` 那处零态修复的 UI 取证**——库此刻是干净的，这一屏是它唯一能被看见的时刻 |
+
+**顺带答一个由第 1 条引出的疑问（nurse 站在「体检套餐管理」看到空态，对不对）**：对，而且理由与权限无关，是库里本来就没有。
+`physical_package=0 / physical_item=0 / package_type=2 / physical_appointment=0`，
+`backend/src/main/resources/db/seed.sql:253` 逐字写着「`physical_package` 本身仍然零行（T22 的"有主的空"），所以这两行暂时没人引用」——
+T22 定案三张体检表不塞 seed，写侧留给 T27，而 T27 建的就是这三页。**连带后果要说白**：此刻小程序「体检预约」没有可约套餐，
+要演示体检链路必须先在后台建一条套餐并勾项目；这不是缺陷，是"写侧刚建好、内容还没录"的必然状态。
+
+**探针已回收**（`E:/qdspace/_mp-driver/t29-sweep.sql`，删除谓词同时锁 id 与名字，锁不到 seed 行）：
+`admin 5→4 / role 5→4`、`残留 t29 账号=0`、`残留 T29 角色=0`、`孤儿账号(角色不存在)=0`，
+剩下的正是 seed 的 `admin/system/doctor/nurse` 与四个内置角色。
 
 ## 12. 本卡六条教训
 
@@ -8184,14 +8229,24 @@ refund_record 2 / admin 4 / role 4 / title 3 / department 3 / doctor 5 / announc
 
 **小程序**：本卡无改动。
 
-**驱动（仓库外，`E:\qdspace\_mp-driver`）**：`t28_http.py`（67 步）、`t28-probe.sql`、`t28-probe-users.txt`、`t28-http-result.txt`、`t28-backend.log`、`t28-vite.log`。
+**驱动（仓库外，`E:\qdspace\_mp-driver`）**：`t28_http.py`（67 步）、`t28-probe.sql`、`t28-probe-users.txt`、`t28-http-result.txt`、`t28-backend.log`、`t28-vite.log`；
+收口之后另加 `t28-db-check.sql`（16 表对账）、`t28-orphan-users.txt`（44 行孤儿 user 的 id 清单）、
+`t29-probe-account.sql` / `t29_login_check.py` / `t29-sweep.sql`（第 11d 节那三条换账号核对的铺靶、真 HTTP 与回收）。
 
 ## 17. 🚩 M2 收口
 
-DoD 是「🚩 M2：首版交付完成」。T01–T28 全部收口，四道门禁全绿，本卡真 HTTP 67 步 0 FAIL，浏览器轮 11 步里 8 步已自己跑完并留原话证据（第 11b 节），剩 3 步要换一个账号登录才能看，是凭据动作、被分类器拦下，仍是交接。
+DoD 是「🚩 M2：首版交付完成」。T01–T28 全部收口，四道门禁全绿，本卡真 HTTP 67 步 0 FAIL，浏览器轮 11 步里 8 步我自己跑完（第 11b 节），
+剩 3 步要换一个账号登录才能看、是凭据动作被分类器拦下——**这 3 步已在第 11d 节由用户手敲凭据补做完毕，结果逐条与预期一致**。
+**M2 的验收账到此没有交接项。**
 
-按既定节奏：本卡提交后打标签 `v4.0` 并推送 `main` + tag（Release 由用户在网页侧发布——浏览器外部写操作同样被拦，这条已记录）。里程碑表：v1.0 = M0 地基（`95bddb5`）、v2.0 = M1 预约主链（`ff49803`）、v3.0 = T24 医院服务（`32feb05`）、**v4.0 = M2 首版交付（本卡）**。
+按既定节奏：本卡提交后打标签 `v4.0` 并推送 `main` + tag；**四条 Release（v1.0–v4.0）均已由用户在网页发布，`latest` 指向 `v4.0`**（浏览器外部写操作被拦，这条分工已记录）。里程碑表：v1.0 = M0 地基（`95bddb5`）、v2.0 = M1 预约主链（`ff49803`）、v3.0 = T24 医院服务（`32feb05`）、**v4.0 = M2 首版交付（本卡 `10937a5`）**。
 
 ## 18. 下一步
 
-首版交付完成，28 张卡走完。接下来只有两件事：第 11 节的浏览器核对表（人工），以及二期排期——附录 A 建议顺序「真实支付 → 多院区 → 消息推送 → 对账 → 票据」，其中"消息推送"能顺手补掉本卡留下的「推送范围」与首页公告两处空白。
+首版交付完成，28 张卡走完，验收与发布两条都结清。剩下的只有两件，都不在首版范围内：
+
+1. **测试卫生（建议先做，因为它会让"看板/统计类界面能不能信"这件事长期成立）**：全量 `mvn test` 每跑一次仍会再造孤儿
+   `user` 与 `refund_record` 行，今天的手工清理是一次性的。根治两条：退号链的测试自己删 `refund_record`；
+   `--seed-check` 扩两条孤儿引用检查。见第 15 节 TODO 3。
+2. **二期排期**：附录 A 建议顺序「真实支付 → 多院区 → 消息推送 → 对账 → 票据」，其中"消息推送"能顺手补掉本卡留下的「推送范围」与首页公告两处空白。
+   另记一条本轮确认的运营前提：**体检链路要能演示，必须先在后台「体检套餐管理」建套餐并勾项目**——三张体检表首版是"有主的空"，seed 里零行（第 11d 节）。
